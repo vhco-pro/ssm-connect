@@ -6,6 +6,9 @@ import SwiftUI
 // ConnectionStateMachine to drive icon + menu content dynamically.
 @main
 struct SSMConnectApp: App {
+    // Task B5 — temporary auth scaffold to validate the SSO flow end-to-end.
+    @State private var auth = AuthViewModel()
+
     var body: some Scene {
         // F-01: MenuBarExtra provides a menu-bar-only presence (no Dock icon via LSUIElement=true)
         MenuBarExtra {
@@ -21,6 +24,14 @@ struct SSMConnectApp: App {
                     }
                 }
             }
+
+            Divider()
+
+            // Task B5 — temporary "Sign In" item exercising AWSAuthProvider.authenticate()
+            Button(auth.status.menuTitle) {
+                auth.signIn()
+            }
+            .disabled(auth.isBusy)
 
             Divider()
 

@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phase A (Project Scaffolding & Plugin Bundling) COMPLETE — build + tests green, plugin embedded. Phase B (AWS SSO Authentication) next."
+status_description: "Phases A & B COMPLETE — build + 19 tests green. Phase B: SSO auth (cache reuse / silent refresh / device-auth) implemented + unit-tested; B8 live sign-in pending. Phase C (EC2) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -249,13 +249,13 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Goal**: Working SSO-OIDC device authorization flow and token cache reuse/silent-refresh, testable via a "Sign In" button in the menu.
 
 **Tasks**:
-- [ ] Task B1 — Define `AuthProviding` protocol with methods: `authenticate(profile:) async throws -> AWSCredentials`, `refreshIfNeeded(profile:) async throws -> AWSCredentials`
-- [ ] Task B2 — Implement `SSOCacheReader`: scan `~/.aws/sso/cache/*.json`, match by `startUrl` + `region`, return parsed token (accessToken, refreshToken, clientId, clientSecret, expiresAt, registrationExpiresAt) (F-05, spec §12.1 SSO token cache format)
-- [ ] Task B3 — Implement `AWSAuthProvider` conforming to `AuthProviding`: (1) check cache via `SSOCacheReader`, (2) if valid `accessToken` → `SSO.GetRoleCredentials` → return, (3) if expired but `refreshToken` present → `SSOOIDC.CreateToken(grant_type=refresh_token)` → if success update cache → `SSO.GetRoleCredentials` → return, (4) else full device-auth: `RegisterClient` → `StartDeviceAuthorization` → open `verificationUriComplete` in browser → poll `CreateToken(grant_type=device_code)` → `GetRoleCredentials` (F-04, F-05)
-- [ ] Task B4 — Region handling: all SSO-OIDC + SSO calls use the profile's **SSO region** (`eu-west-1`); EC2/SSM/Secrets use the profile's **resource region** (`eu-central-1`). Validate that `SSOOIDCClient` and `SSOClient` are initialized with the SSO region
-- [ ] Task B5 — Wire a temporary "Sign In" menu item that calls `AWSAuthProvider.authenticate()` and displays the result (credentials obtained / error) in the menu
-- [ ] Task B6 — Write `MockAuthProvider` conforming to `AuthProviding` (configurable success/failure/delay)
-- [ ] Task B7 — Unit tests: `SSOCacheReader` with fixture JSON files (valid token, expired token, expired-with-refresh, no match, malformed); `AWSAuthProvider` orchestration with mocked SDK clients (happy path, refresh path, browser-auth path, failure)
+- [x] Task B1 — Define `AuthProviding` protocol with methods: `authenticate(profile:) async throws -> AWSCredentials`, `refreshIfNeeded(profile:) async throws -> AWSCredentials`
+- [x] Task B2 — Implement `SSOCacheReader`: scan `~/.aws/sso/cache/*.json`, match by `startUrl` + `region`, return parsed token (accessToken, refreshToken, clientId, clientSecret, expiresAt, registrationExpiresAt) (F-05, spec §12.1 SSO token cache format)
+- [x] Task B3 — Implement `AWSAuthProvider` conforming to `AuthProviding`: (1) check cache via `SSOCacheReader`, (2) if valid `accessToken` → `SSO.GetRoleCredentials` → return, (3) if expired but `refreshToken` present → `SSOOIDC.CreateToken(grant_type=refresh_token)` → if success update cache → `SSO.GetRoleCredentials` → return, (4) else full device-auth: `RegisterClient` → `StartDeviceAuthorization` → open `verificationUriComplete` in browser → poll `CreateToken(grant_type=device_code)` → `GetRoleCredentials` (F-04, F-05)
+- [x] Task B4 — Region handling: all SSO-OIDC + SSO calls use the profile's **SSO region** (`eu-west-1`); EC2/SSM/Secrets use the profile's **resource region** (`eu-central-1`). Validate that `SSOOIDCClient` and `SSOClient` are initialized with the SSO region
+- [x] Task B5 — Wire a temporary "Sign In" menu item that calls `AWSAuthProvider.authenticate()` and displays the result (credentials obtained / error) in the menu
+- [x] Task B6 — Write `MockAuthProvider` conforming to `AuthProviding` (configurable success/failure/delay)
+- [x] Task B7 — Unit tests: `SSOCacheReader` with fixture JSON files (valid token, expired token, expired-with-refresh, no match, malformed); `AWSAuthProvider` orchestration with mocked SDK clients (happy path, refresh path, browser-auth path, failure)
 - [ ] Task B8 — Manual integration test: run app, trigger SSO login on a real AWS account, verify credentials obtained
 
 **Depends on**: Phase A
