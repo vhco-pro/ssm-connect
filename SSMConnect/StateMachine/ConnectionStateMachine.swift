@@ -64,6 +64,9 @@ final class ConnectionStateMachine {
     private var currentHandle: TunnelHandle?
     private var monitorTask: Task<Void, Never>?
     private var connectTask: Task<Void, Never>?
+    /// Monotonic id for the current `connectTask`. A finishing task clears `connectTask` only if
+    /// it is still the current one, so a cancelled flow can't null out its successor's handle.
+    private var connectGeneration = 0
 
     init(
         authProvider: AuthProviding = AWSAuthProvider(),
@@ -99,6 +102,7 @@ final class ConnectionStateMachine {
         self.maxReconnectAttempts = maxReconnectAttempts
         self.reconnectBackoff = reconnectBackoff
         self.reconnectSleep = reconnectSleep
+        clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
     }
 
     // MARK: - Public API (F1)
@@ -106,6 +110,7 @@ final class ConnectionStateMachine {
     /// Apply a new active profile / settings. Ignored while a connection is in flight so we
     /// never swap the target out from under an active tunnel (takes effect on next connect).
     func apply(profile: ConnectionProfile, settings: AppSettings) {
+        clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
         guard state == .disconnected else {
             self.settings = settings // settings (e.g. auto-reconnect) are safe to update live
             return
@@ -126,49 +131,60 @@ final class ConnectionStateMachine {
     /// Run the full connection flow. No-op if already connecting/connected.
     func connect() {
         guard connectTask == nil, state != .connected else { return }
-        let task = Task { await runConnect() }
-        connectTask = task
+        launchTask { await self.runConnect() }
     }
 
     /// Tear down any tunnel and return to `disconnected`.
     func disconnect() {
-        connectTask?.cancel()
-        let task = Task {
-            defer { connectTask = nil }
-            await teardownTunnel()
-            resetToDisconnected()
+        let previous = connectTask
+        previous?.cancel()
+        launchTask {
+            await previous?.value
+            await self.teardownTunnel()
+            self.resetToDisconnected()
         }
-        connectTask = task
     }
 
     /// Tear down and re-run the full flow (re-resolves the instance, F-14).
     func reconnect() {
-        connectTask?.cancel()
-        let task = Task {
-            await teardownTunnel()
-            await runConnect()
+        let previous = connectTask
+        previous?.cancel()
+        launchTask {
+            await previous?.value
+            await self.teardownTunnel()
+            await self.runConnect()
         }
-        connectTask = task
     }
 
     /// Stop the workstation instance and disconnect (F-15).
     func stopWorkstation() {
         guard let instanceId, let credentials else { return }
-        connectTask?.cancel()
-        connectTask = nil
-        let task = Task {
-            defer { connectTask = nil }
-            await teardownTunnel()
+        let previous = connectTask
+        previous?.cancel()
+        launchTask {
+            await previous?.value
+            await self.teardownTunnel()
             do {
-                log.log(.ec2, "Stopping instance \(instanceId)…")
-                try await ec2.stopInstance(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
-                resetToDisconnected()
-                await notifier.post(.stopped)
+                self.log.log(.ec2, "Stopping instance \(instanceId)…")
+                try await self.ec2.stopInstance(instanceId: instanceId, region: self.profile.resourceRegion, credentials: credentials)
+                self.resetToDisconnected()
+                await self.notifier.post(.stopped)
             } catch {
-                fail(error)
+                self.fail(error)
             }
         }
-        connectTask = task
+    }
+
+    /// Launch `body` as the single in-flight connect/disconnect/reconnect/stop task. On completion
+    /// it clears `connectTask` only if a newer `launchTask` hasn't replaced it — so a cancelled
+    /// task unwinding later can't clobber its successor (defeating the `connect()` guard).
+    private func launchTask(_ body: @escaping () async -> Void) {
+        connectGeneration += 1
+        let generation = connectGeneration
+        connectTask = Task {
+            await body()
+            if self.connectGeneration == generation { self.connectTask = nil }
+        }
     }
 
     /// Copy the in-memory DCV password to the clipboard (F-11).
@@ -186,7 +202,6 @@ final class ConnectionStateMachine {
     // MARK: - Connection flow (F2)
 
     private func runConnect() async {
-        defer { connectTask = nil }
         errorMessage = nil
         warningMessage = nil
         log.log(.ui, "Connecting to \(profile.name) (\(profile.resourceRegion))…")
@@ -379,6 +394,7 @@ final class ConnectionStateMachine {
                 return
             } catch {
                 if attempt == maxReconnectAttempts {
+                    await teardownTunnel() // don't leave a half-open plugin process behind (F-13)
                     errorMessage = "Auto-reconnect failed after \(maxReconnectAttempts) attempts (\(detail)): \(describe(error))"
                     state = .error
                 }

@@ -47,7 +47,10 @@ final class ProcessPluginProcess: SpawnedPluginProcess, @unchecked Sendable {
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
         process.standardError = stderrPipe
-        process.standardOutput = Pipe()
+        // The plugin writes keepalive/progress lines to stdout for the life of the session.
+        // We don't consume them, so discard to /dev/null — an unread Pipe would fill its ~64KB
+        // OS buffer and block the plugin's write(), stalling the data channel and the tunnel.
+        process.standardOutput = FileHandle.nullDevice
     }
 
     func start() throws {
@@ -115,7 +118,7 @@ struct SystemPortProbe: PortProbing {
         lsof.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-Fpcn"]
         let pipe = Pipe()
         lsof.standardOutput = pipe
-        lsof.standardError = Pipe()
+        lsof.standardError = FileHandle.nullDevice
         do {
             try lsof.run()
             lsof.waitUntilExit()

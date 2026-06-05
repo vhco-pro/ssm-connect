@@ -10,14 +10,21 @@ protocol Pasteboard: Sendable {
 /// with optional auto-clear hygiene (E8, F-11, NF-03).
 final class ClipboardManager: @unchecked Sendable {
     private let pasteboard: Pasteboard
-    /// Auto-clear delay; `nil` or `<= .zero` disables clearing.
-    private let autoClearAfter: Duration?
+    /// Auto-clear delay; `nil` or `<= .zero` disables clearing. Mutable so it can be synced from
+    /// `AppSettings.clipboardAutoClearSeconds` while the app runs (see `setAutoClear(seconds:)`).
+    private var autoClearAfter: Duration?
     private let lock = NSLock()
     private var pendingClear: Task<Void, Never>?
 
     init(pasteboard: Pasteboard = NSPasteboardAdapter(), autoClearAfter: Duration? = .seconds(30)) {
         self.pasteboard = pasteboard
         self.autoClearAfter = autoClearAfter
+    }
+
+    /// Sync the auto-clear delay from settings; `seconds <= 0` disables auto-clear (NF-03).
+    func setAutoClear(seconds: Int) {
+        lock.lock(); defer { lock.unlock() }
+        autoClearAfter = seconds > 0 ? .seconds(seconds) : nil
     }
 
     /// Copy `value` and (if enabled) schedule an auto-clear. Returns the clear task for testing.

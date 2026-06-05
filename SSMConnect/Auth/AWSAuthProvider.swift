@@ -132,6 +132,7 @@ final class AWSAuthProvider: AuthProviding {
         let deadline = Date().addingTimeInterval(TimeInterval(authorization.expiresIn))
 
         while Date() < deadline {
+            try Task.checkCancellation()
             do {
                 let token = try await client.createToken(CreateTokenInput(
                     clientId: clientId,
@@ -142,6 +143,8 @@ final class AWSAuthProvider: AuthProviding {
                 if let accessToken = token.accessToken, !accessToken.isEmpty {
                     return accessToken
                 }
+                // Success but no token yet — back off before polling again so we never busy-spin.
+                try await Task.sleep(for: interval)
             } catch is AuthorizationPendingException {
                 try await Task.sleep(for: interval)
             } catch is SlowDownException {
