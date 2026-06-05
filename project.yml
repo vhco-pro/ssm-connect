@@ -1,0 +1,94 @@
+# XcodeGen project definition for SSM Connect
+# Generate the Xcode project: xcodegen generate
+# ADR-P1: Xcode project (not pure SwiftPM) for .app bundle, Info.plist, entitlements, build phases
+name: SSMConnect
+
+options:
+  bundleIdPrefix: pro.vhco
+  deploymentTarget:
+    macOS: "14.0"
+  minimumXcodeGenVersion: "2.40.0"
+
+packages:
+  # Task A2 — aws-sdk-swift SwiftPM dependencies, pinned from 1.7.13 (spec §12.1)
+  aws-sdk-swift:
+    url: https://github.com/awslabs/aws-sdk-swift.git
+    from: "1.7.13"
+
+targets:
+  SSMConnect:
+    type: application
+    platform: macOS
+    sources:
+      - path: SSMConnect
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: pro.vhco.ssm-connect
+        PRODUCT_MODULE_NAME: SSMConnect
+        INFOPLIST_FILE: SSMConnect/Info.plist
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        SWIFT_VERSION: "5"
+    dependencies:
+      # Task A2 — AWSSSOOIDC, AWSSSO, AWSEC2, AWSSSM, AWSSecretsManager
+      - package: aws-sdk-swift
+        product: AWSSSOOIDC
+      - package: aws-sdk-swift
+        product: AWSSSO
+      - package: aws-sdk-swift
+        product: AWSEC2
+      - package: aws-sdk-swift
+        product: AWSSSM
+      - package: aws-sdk-swift
+        product: AWSSecretsManager
+    # Task A5/A6 — Build-time plugin fetch + embed (ADR-7, ADR-P3)
+    preBuildScripts:
+      - script: '"${SRCROOT}/scripts/fetch-plugin.sh"'
+        name: "Fetch session-manager-plugin"
+    postBuildScripts:
+      - script: |
+          set -e
+          # Task A6 — Copy plugin binary to Contents/Helpers/ and LICENSE to Contents/Resources/ (ADR-7)
+          HELPERS_DIR="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers"
+          RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Resources"
+          mkdir -p "${HELPERS_DIR}"
+          cp "${SRCROOT}/.build/plugin/session-manager-plugin" "${HELPERS_DIR}/"
+          chmod +x "${HELPERS_DIR}/session-manager-plugin"
+          mkdir -p "${RESOURCES_DIR}"
+          cp "${SRCROOT}/.build/plugin/LICENSE" "${RESOURCES_DIR}/session-manager-plugin-LICENSE"
+        name: "Embed session-manager-plugin"
+
+  SSMConnectTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SSMConnectTests
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - target: SSMConnect
+    settings:
+      base:
+        SWIFT_VERSION: "5"
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  # Wire the unit-test bundle into the SSMConnect scheme's test action
+  SSMConnect:
+    build:
+      targets:
+        SSMConnect: all
+        SSMConnectTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SSMConnectTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

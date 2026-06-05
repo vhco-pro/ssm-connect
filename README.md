@@ -64,7 +64,36 @@ See the spec for the full state machine, requirements, acceptance criteria, and 
 | Swift | 6.3.2 |
 | Xcode | 26.5 |
 | macOS | 26.4 |
+| XcodeGen | 2.45+ |
 | session-manager-plugin | 1.2.814.0 |
+
+### Building
+
+The Xcode project is generated from `project.yml` via [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+The generated `SSMConnect.xcodeproj/` is gitignored — always regenerate from the text-based definition.
+
+```bash
+# One-time: install XcodeGen
+brew install xcodegen
+
+# Generate the Xcode project
+xcodegen generate
+
+# Build (resolves SwiftPM deps + fetches session-manager-plugin on first run)
+xcodebuild build -project SSMConnect.xcodeproj -scheme SSMConnect \
+  -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation
+
+# Run tests
+xcodebuild test -project SSMConnect.xcodeproj -scheme SSMConnect \
+  -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation
+```
+
+> `-skipPackagePluginValidation` is required because `aws-sdk-swift` (smithy-swift) ships a
+> SwiftPM build-tool plugin (`SmithyCodeGeneratorPlugin`); without the flag a headless
+> `xcodebuild` fails with a plug-in validation error.
+
+The first build downloads `session-manager-plugin` (v1.2.814.0) from AWS and verifies its checksum.
+Subsequent builds skip the download (cached at `.build/plugin/`).
 
 ## Spec-driven development
 

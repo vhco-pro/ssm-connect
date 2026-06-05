@@ -1,6 +1,6 @@
 ---
-status: not-started
-status_description: "Plan written, reviewed against spec, no code yet. All phases defined, acceptance criteria mapped to spec requirements."
+status: in-progress
+status_description: "Phase A (Project Scaffolding & Plugin Bundling) COMPLETE — build + tests green, plugin embedded. Phase B (AWS SSO Authentication) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -227,14 +227,14 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Goal**: A buildable Xcode project that produces `SSM Connect.app` with `MenuBarExtra`, a placeholder menu, the 8-state enum, and the bundled `session-manager-plugin` binary at the correct path inside the `.app` bundle.
 
 **Tasks**:
-- [ ] Task A1 — Create `SSMConnect.xcodeproj` with SwiftUI App lifecycle, deployment target macOS 14, bundle id `pro.vhco.ssm-connect`, `LSUIElement=true` in Info.plist (F-01, NF-10, NF-11) — [ADR-P1]
-- [ ] Task A2 — Add `aws-sdk-swift` SwiftPM dependencies: `AWSSSOOIDC`, `AWSSSO`, `AWSEC2`, `AWSSSM`, `AWSSecretsManager`, pinned `from: "1.7.13"` (spec §12.1)
-- [ ] Task A3 — Implement `SSMConnectApp.swift` with `MenuBarExtra` showing a static placeholder menu with the 8 SF Symbol states (F-01, spec §5 icon table)
-- [ ] Task A4 — Define `ConnectionState` enum (8 states: `disconnected`, `authenticating`, `resolving`, `starting`, `waitingForSSM`, `tunneling`, `connected`, `error`) with SF Symbol + color mapping (spec §5)
-- [ ] Task A5 — Write `scripts/fetch-plugin.sh`: download `session-manager-plugin` 1.2.814.0 macOS arm64 package from AWS CDN, verify SHA-256 checksum, extract binary to build products (ADR-7) — [ADR-P3]
-- [ ] Task A6 — Add Xcode Run Script build phase to invoke `fetch-plugin.sh`, copy binary to `Contents/Helpers/`, copy Apache 2.0 LICENSE to `Contents/Resources/` (ADR-7)
-- [ ] Task A7 — Create the test target `SSMConnectTests` with Swift Testing framework; add one placeholder test that asserts `ConnectionState` has 8 cases — [ADR-P2]
-- [ ] Task A8 — Verify: `xcodebuild build` succeeds, `.app` launches as menu-bar icon, `session-manager-plugin` exists at `SSM Connect.app/Contents/Helpers/session-manager-plugin` and is executable
+- [x] Task A1 — Create `SSMConnect.xcodeproj` with SwiftUI App lifecycle, deployment target macOS 14, bundle id `pro.vhco.ssm-connect`, `LSUIElement=true` in Info.plist (F-01, NF-10, NF-11) — [ADR-P1]
+- [x] Task A2 — Add `aws-sdk-swift` SwiftPM dependencies: `AWSSSOOIDC`, `AWSSSO`, `AWSEC2`, `AWSSSM`, `AWSSecretsManager`, pinned `from: "1.7.13"` (spec §12.1)
+- [x] Task A3 — Implement `SSMConnectApp.swift` with `MenuBarExtra` showing a static placeholder menu with the 8 SF Symbol states (F-01, spec §5 icon table)
+- [x] Task A4 — Define `ConnectionState` enum (8 states: `disconnected`, `authenticating`, `resolving`, `starting`, `waitingForSSM`, `tunneling`, `connected`, `error`) with SF Symbol + color mapping (spec §5)
+- [x] Task A5 — Write `scripts/fetch-plugin.sh`: download `session-manager-plugin` 1.2.814.0 macOS arm64 package from AWS CDN, verify SHA-256 checksum, extract binary to build products (ADR-7) — [ADR-P3]
+- [x] Task A6 — Add Xcode Run Script build phase to invoke `fetch-plugin.sh`, copy binary to `Contents/Helpers/`, copy Apache 2.0 LICENSE to `Contents/Resources/` (ADR-7)
+- [x] Task A7 — Create the test target `SSMConnectTests` with Swift Testing framework; add one placeholder test that asserts `ConnectionState` has 8 cases — [ADR-P2]
+- [x] Task A8 — Verify: `xcodebuild build` succeeds, `.app` launches as menu-bar icon, `session-manager-plugin` exists at `SSM Connect.app/Contents/Helpers/session-manager-plugin` and is executable
 
 **Depends on**: None
 
@@ -613,6 +613,6 @@ This table will be filled during the review stage. It maps each acceptance crite
 
 | # | Question | Owner | Impact | Notes |
 |---|----------|-------|--------|-------|
-| PQ-1 | **Plugin `.pkg` extraction method** — AWS distributes the macOS plugin as a `.pkg` installer. Need to confirm: can `pkgutil --expand` + `tar` extract the Go binary without running the installer? Alternative: use `installer -pkg ... -target /tmp/...` in a temp dir. Must be validated in Task A5. | Implementer | Medium | Blocks Phase A Task A5. If `.pkg` extraction is awkward, fall back to copying the Homebrew-installed binary at `$(brew --prefix)/sessionmanagerplugin/bin/session-manager-plugin` and verifying its checksum |
-| PQ-2 | **Plugin download URL** — The exact AWS CDN URL for the macOS arm64 `.pkg` needs to be confirmed. Candidates: `https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/sessionmanager-bundle.zip` or the `.pkg` from `https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.814.0/mac_arm64/session-manager-plugin.pkg`. Verify in Phase A. | Implementer | Medium | PIN the version-specific URL, not `/latest/` |
-| PQ-3 | **Swift Testing Xcode integration maturity** — Swift Testing is fully supported in Xcode 16+ and should work in Xcode 26.5 (the author's toolchain). Confirm that `@Test` and `@Suite` work correctly in the test navigator. Fallback: use XCTest with the same protocol-DI approach. | Implementer | Low | Test in Phase A Task A7 |
+| PQ-1 | **Plugin `.pkg` extraction method** — AWS distributes the macOS plugin as a `.pkg` installer. Need to confirm: can `pkgutil --expand` + `tar` extract the Go binary without running the installer? Alternative: use `installer -pkg ... -target /tmp/...` in a temp dir. Must be validated in Task A5. | Implementer | Medium | **RESOLVED** — `pkgutil --expand` + `cpio -idmu < Payload` extracts the arm64 Mach-O binary (`usr/local/sessionmanagerplugin/bin/session-manager-plugin`) and LICENSE without running the installer. Verified in `scripts/fetch-plugin.sh` |
+| PQ-2 | **Plugin download URL** — The exact AWS CDN URL for the macOS arm64 `.pkg` needs to be confirmed. Candidates: `https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/sessionmanager-bundle.zip` or the `.pkg` from `https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.814.0/mac_arm64/session-manager-plugin.pkg`. Verify in Phase A. | Implementer | Medium | **RESOLVED** — Pinned `https://session-manager-downloads.s3.amazonaws.com/plugin/1.2.814.0/mac_arm64/session-manager-plugin.pkg`; pkg SHA-256 `7fa5a1…726b`, bin SHA-256 `fcef1e…de1f`. Both verified by fresh download |
+| PQ-3 | **Swift Testing Xcode integration maturity** — Swift Testing is fully supported in Xcode 16+ and should work in Xcode 26.5 (the author's toolchain). Confirm that `@Test` and `@Suite` work correctly in the test navigator. Fallback: use XCTest with the same protocol-DI approach. | Implementer | Low | **RESOLVED** — 5 `@Test`/`@Suite` ConnectionState tests pass under `xcodebuild test` on Xcode 26.5 ("Test run with 5 tests in 1 suite passed") |
