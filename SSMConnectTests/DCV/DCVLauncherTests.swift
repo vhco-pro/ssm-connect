@@ -19,7 +19,8 @@ struct DCVLauncherTests {
     func launchWritesOpensDeletes() async throws {
         let store = SpyConnectionFileStore()
         let opener = SpyViewerOpener()
-        let launcher = DCVLauncher(locator: FakeViewerLocator(url: viewerURL), store: store, opener: opener)
+        // cleanupDelay: .zero so the test doesn't wait the production grace period.
+        let launcher = DCVLauncher(locator: FakeViewerLocator(url: viewerURL), store: store, opener: opener, cleanupDelay: .zero)
 
         try await launcher.launch(connectionFile: connectionFile)
 

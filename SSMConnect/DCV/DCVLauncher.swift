@@ -7,15 +7,24 @@ final class DCVLauncher: DCVLaunching {
     private let locator: DCVViewerLocating
     private let store: DCVConnectionFileStore
     private let opener: DCVViewerOpening
+    /// Grace period to keep the `.dcv` file on disk after launching DCV Viewer. The viewer reads
+    /// the connection file *asynchronously* after `open` returns (which only signals launch, not
+    /// read); deleting it immediately races that read and the viewer fails with a bogus
+    /// "DNS resolution (domain: 'file')" error. We hold the `0600` file for this window so the
+    /// viewer reliably reads it, then delete it. A crash within the window is covered by the
+    /// startup sweep (ADR-8).
+    private let cleanupDelay: Duration
 
     init(
         locator: DCVViewerLocating = SystemDCVViewerLocator(),
         store: DCVConnectionFileStore = TempDCVConnectionFileStore(),
-        opener: DCVViewerOpening = WorkspaceDCVViewerOpener()
+        opener: DCVViewerOpening = WorkspaceDCVViewerOpener(),
+        cleanupDelay: Duration = .seconds(5)
     ) {
         self.locator = locator
         self.store = store
         self.opener = opener
+        self.cleanupDelay = cleanupDelay
     }
 
     func isViewerInstalled() -> Bool { locator.viewerAppURL() != nil }
@@ -24,14 +33,17 @@ final class DCVLauncher: DCVLaunching {
         guard let appURL = locator.viewerAppURL() else { throw DCVError.viewerNotInstalled }
 
         let fileURL = try store.write(connectionFile.iniContent())
-        // Delete the password-bearing file as soon as the viewer launch returns (or on error).
-        defer { store.remove(fileURL) }
 
         do {
             try await opener.open(fileURL: fileURL, withApp: appURL)
         } catch {
+            store.remove(fileURL) // launch failed — remove the password-bearing file now
             throw DCVError.launchFailed(reason: error.localizedDescription)
         }
+
+        // Let DCV Viewer read the file before we delete it (see `cleanupDelay`).
+        try? await Task.sleep(for: cleanupDelay)
+        store.remove(fileURL)
     }
 
     func sweepOrphanedFiles() { store.sweepOrphans() }
