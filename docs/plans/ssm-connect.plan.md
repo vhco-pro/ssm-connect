@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phases A, B, C & D COMPLETE — build + 42 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. Menu redesigned (current-state header + context action + legend, AM/PM expiry). Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10 manual pending. Phase E (DCV launch & secrets) next."
+status_description: "Phases A–E COMPLETE — build + 57 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. E: Secrets fetch + DCV auto-login via transient 0600 .dcv connection file (ADR-8) + clipboard copy/auto-clear +15 tests. Menu redesigned (current-state header + context action + legend, AM/PM expiry). Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10/E live-manual pending. Phase F (ConnectionStateMachine — wires auto-start of stopped instances) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -326,21 +326,22 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 
 **Priority: MEDIUM** — Low technical risk; dependent on tunnel being up.
 
-**Goal**: Detect DCV Viewer, launch it at the tunnel endpoint, fetch + display + copy the DCV password with clipboard hygiene.
+**Goal**: Fetch the DCV password from Secrets Manager, write a transient `.dcv` connection file for **auto-login**, launch DCV Viewer on it, and copy the password to the clipboard for the in-VM re-login — with clipboard hygiene and disk-cleanup safety.
 
 **Tasks**:
-- [ ] Task E1 — Implement DCV Viewer detection: check `/Applications/DCV Viewer.app` existence and optionally `NSWorkspace.urlForApplication(withBundleIdentifier: "com.amazon.dcv.viewer")` (F-16)
-- [ ] Task E2 — Implement DCV Viewer launch: `NSWorkspace.shared.open(_:configuration:)` with `https://localhost:<localPort>` (F-10)
-- [ ] Task E3 — If DCV Viewer missing: show alert with install instructions (`brew install --cask dcv-viewer` + download link); keep tunnel alive (F-16, spec §8)
-- [ ] Task E4 — Define `SecretsProviding` protocol, implement `SecretsService`: `GetSecretValue` for the profile's configured secret ID using the **resource region** (F-11)
-- [ ] Task E5 — Handle missing/empty secret: `ResourceNotFoundException` or empty value → show guidance in menu (spec §8)
-- [ ] Task E6 — Implement `ClipboardManager`: copy to `NSPasteboard`, optional timed clear (default 30s, 0 = disabled), brief confirmation in menu (NF-03)
-- [ ] Task E7 — Write `MockSecretsService`
-- [ ] Task E8 — Unit tests: clipboard copy + auto-clear timer, secret-not-found handling
+- [x] Task E1 — Define `SecretsProviding` protocol + `SecretsService`: `GetSecretValue` for the profile's secret ID (default `ec2/workstation-dcv-password`) using the **resource region** behind a `SecretsClienting` seam + factory (F-11). Plus `MockSecretsService`
+- [x] Task E2 — Handle missing/empty secret: `ResourceNotFoundException` → `SecretsError.notFound`, nil/empty value → `.empty`, surfaced as menu guidance (spec §8)
+- [x] Task E3 — Implement `DCVConnectionFile` builder: INI `[version]`+`[connect]` with `host=localhost`, `port=<localPort>`, `user=ec2-user`, `password=<secret>`, `weburlpath=/`; unit-tested string output (F-10, ADR-8)
+- [x] Task E4 — Implement DCV Viewer detection: `/Applications/DCV Viewer.app` + `NSWorkspace.urlForApplication(withBundleIdentifier:)` behind `DCVViewerLocating`/`DCVLaunching` (F-16)
+- [x] Task E5 — Implement `DCVLauncher.launch`: write the `.dcv` to a `0600` temp file, open it with DCV Viewer, then **delete immediately** (`defer` on all paths); injectable locator/store/opener seams (F-10, ADR-8)
+- [x] Task E6 — Startup sweep: `sweepOrphanedFiles()` removes orphaned `ssm-connect-*.dcv` temp files (ADR-8, spec §8)
+- [x] Task E7 — If DCV Viewer missing: `DCVError.viewerNotInstalled` with install guidance; tunnel stays alive; no `.dcv` written (F-16, spec §8)
+- [x] Task E8 — Implement `ClipboardManager`: copy password to `NSPasteboard` on connect (in-VM re-login), optional timed clear (default 30s, 0 = disabled, only clears if pasteboard still holds our value), `Pasteboard` seam (NF-03, F-11)
+- [x] Task E9 — Mocks + unit tests: secret fetch + not-found/empty, `.dcv` content contract, launcher writes-opens-deletes + missing-viewer + delete-on-open-failure + sweep, clipboard copy + auto-clear timer — 15 tests (4 Secrets + 2 DCVConnectionFile + 5 DCVLauncher + 4 Clipboard)
 
 **Depends on**: Phase D (tunnel must be active for DCV + secret fetch)
 
-**Verifiable by**: DCV Viewer launches pointed at tunnel; password shown masked in menu; clipboard copy + auto-clear works.
+**Verifiable by**: connecting writes a transient `.dcv`, DCV Viewer auto-logs-in, the temp file is gone afterward, the password is on the clipboard, and auto-clear works.
 
 ---
 

@@ -52,7 +52,7 @@ extension ConnectionProfile {
         resourceRegion: "eu-central-1",
         instanceTagKey: "Name",
         instanceTagValue: "example-workstation",
-        secretId: nil,
+        secretId: "ec2/workstation-dcv-password",
         localPort: 8443,
         remotePort: 8443
     )
