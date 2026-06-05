@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phases A, B & C COMPLETE — build + 28 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) + 8 tests. Menu redesigned (current-state header + context action + legend, AM/PM expiry). Dev tooling: scripts/run.sh + Makefile. C6/B8 live tests pending. Phase D (SSM tunnel) next."
+status_description: "Phases A, B, C & D COMPLETE — build + 42 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. Menu redesigned (current-state header + context action + legend, AM/PM expiry). Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10 manual pending. Phase E (DCV launch & secrets) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -305,15 +305,15 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Goal**: `SSM.DescribeInstanceInformation` polling + `SSM.StartSession` + bundled-plugin tunnel with process lifecycle management. `localhost:<port>` accepts TCP connections.
 
 **Tasks**:
-- [ ] Task D1 — Define `SSMProviding` protocol with methods: `waitForSSMOnline(instanceId:region:credentials:timeout:interval:) async throws`, `startSession(instanceId:region:credentials:localPort:remotePort:) async throws -> SSMSessionResponse`
-- [ ] Task D2 — Implement `SSMService` conforming to `SSMProviding`: poll `DescribeInstanceInformation` until `PingStatus=Online` (5s interval, 3min timeout), call `StartSession` with document `AWS-StartPortForwardingSession` and port parameters (F-08, F-09)
-- [ ] Task D3 — Implement `TunnelProvider` and `TunnelHandle` protocols (from spec §6.2)
-- [ ] Task D4 — Implement `BundledPluginTunnel` conforming to `TunnelProvider`: locate plugin at `Bundle.main.path(forAuxiliaryExecutable: "session-manager-plugin")`, construct the 5-arg command line (spec §6.4), launch via `Process`, monitor stdout/stderr, detect tunnel-ready state (F-09, ADR-1)
-- [ ] Task D5 — Implement `TunnelHandle` in `BundledPluginTunnel`: `isActive` (process running + port responding), `terminate()` (SIGTERM → 5s wait → SIGKILL), `onDisconnect` (AsyncStream emitting on process exit / broken pipe) (F-13)
-- [ ] Task D6 — Pre-tunnel port-in-use check: TCP connect to `localhost:<localPort>`, detect existing plugin processes, error with PID + process name if occupied (spec §8)
-- [ ] Task D7 — Plugin binary validation on launch: verify `Contents/Helpers/session-manager-plugin` exists and is executable; fatal error if missing (spec §8)
-- [ ] Task D8 — Write `MockSSMService` and `MockTunnelProvider` / `MockTunnelHandle`
-- [ ] Task D9 — Unit tests: SSM polling (online, timeout, error), port-in-use detection, tunnel lifecycle (start, terminate, unexpected exit), plugin-missing check
+- [x] Task D1 — Define `SSMProviding` protocol with methods: `waitForSSMOnline(instanceId:region:credentials:timeout:interval:) async throws`, `startSession(instanceId:region:credentials:localPort:remotePort:) async throws -> SSMSessionResponse` (`SSMProviding.swift`; `SSMError.notOnlineInTime`/`.malformedSessionResponse`)
+- [x] Task D2 — Implement `SSMService` conforming to `SSMProviding`: poll `DescribeInstanceInformation` (filter `InstanceIds`) until `PingStatus=Online`, call `StartSession` with document `AWS-StartPortForwardingSession` and port parameters (F-08, F-09). Client behind `SSMClienting`/`SSMClientFactory` for DI
+- [x] Task D3 — Implement `TunnelProvider` and `TunnelHandle` protocols (`TunnelProvider.swift`; status/drop/error enums per spec §6.2)
+- [x] Task D4 — Implement `BundledPluginTunnel` conforming to `TunnelProvider`: plugin at `Contents/Helpers/session-manager-plugin`, construct the 5-arg command line (spec §6.4), launch via injected `PluginSpawning` (`Foundation.Process`), capture stderr (F-09, ADR-1)
+- [x] Task D5 — Implement `BundledPluginTunnelHandle`: `isActive` (not-finished + process running), `terminate()` (SIGTERM → 5s grace → SIGKILL), `onDisconnect` (AsyncStream emitting `.processExited`/`.terminatedByUser` once on exit) (F-13)
+- [x] Task D6 — Pre-tunnel port-in-use check via `PortProbing` (`SystemPortProbe`: TCP connect + `lsof` occupant), throws `localPortInUse(port:pid:processName:)` (spec §8)
+- [x] Task D7 — Plugin binary validation: `checkAvailability()` verifies the binary exists and is executable; `startTunnel` throws `pluginMissing`/`pluginNotExecutable` (spec §8)
+- [x] Task D8 — `MockSSMService`, `MockTunnelProvider`/`MockTunnelHandle` (+ test doubles: `MockSSMClient`, `FakePluginProcess`, `FakePluginSpawner`, `StubPortProbe`)
+- [x] Task D9 — Unit tests: SSM polling (online/timeout/malformed), arg-contract, port-in-use, plugin-missing, tunnel lifecycle (start, terminate SIGTERM/SIGKILL, unexpected exit) — 13 tests (4 SSMService + 9 BundledPluginTunnel)
 - [ ] Task D10 — Manual integration test: full SSM poll + StartSession + plugin tunnel against live instance; verify `curl -k https://localhost:8443` gets a response
 
 **Depends on**: Phase A (plugin bundling), Phase B (credentials), Phase C (instance ID for live test)

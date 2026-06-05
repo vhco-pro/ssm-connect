@@ -191,31 +191,60 @@ graph TB
 
 ### 6.2 Key Protocols / Interfaces
 
+**SSM service layer** (`SSMProviding`) — waits for the SSM agent then opens the port-forwarding session (Phase D):
+
+```swift
+protocol SSMProviding: Sendable {
+    /// Poll DescribeInstanceInformation until PingStatus == .online (else throws notOnlineInTime).
+    func waitForSSMOnline(instanceId: String, region: String, credentials: AWSCredentials,
+                          timeout: Duration, interval: Duration) async throws
+    /// Call StartSession with AWS-StartPortForwardingSession; returns sessionId/streamUrl/tokenValue.
+    func startSession(instanceId: String, region: String, credentials: AWSCredentials,
+                      localPort: Int, remotePort: Int) async throws -> SSMSessionResponse
+}
+
+enum SSMError: LocalizedError, Equatable {
+    case notOnlineInTime(instanceId: String)
+    case malformedSessionResponse   // StartSession returned without sessionId/streamUrl/tokenValue
+}
+```
+
+**Tunnel abstraction** — `TunnelProvider` shells out to the bundled plugin in v1 (NF-13, ADR-1). The implemented signatures carry `region` + `instanceId` (needed to build the plugin's parameter JSON, §6.4) and use `Int` ports:
+
 ```swift
 /// Abstracts the SSM port-forwarding tunnel mechanism.
 /// v1: BundledPluginTunnel (shells out to session-manager-plugin)
 /// Future: NativeWebSocketTunnel (reimplements SSM data-channel in Swift)
-protocol TunnelProvider {
-    /// Establish a port-forwarding tunnel.
-    /// - Parameters:
-    ///   - session: The SSM StartSession response (streamUrl, tokenValue, sessionId)
-    ///   - localPort: Local TCP port to listen on
-    ///   - remotePort: Remote TCP port on the instance
-    /// - Returns: A TunnelHandle for monitoring and teardown
-    func startTunnel(session: SSMSessionResponse, localPort: UInt16, remotePort: UInt16) async throws -> TunnelHandle
-
-    /// Check if the tunnel provider's dependencies are available
+protocol TunnelProvider: Sendable {
+    func startTunnel(session: SSMSessionResponse, region: String, instanceId: String,
+                     localPort: Int, remotePort: Int) async throws -> TunnelHandle
+    /// Check that the plugin binary exists and is executable.
     func checkAvailability() -> TunnelProviderStatus
 }
 
-protocol TunnelHandle {
-    var isActive: Bool { get }
-    var processIdentifier: Int32? { get }
-    func terminate() async
-    /// Publisher that emits when the tunnel drops
+protocol TunnelHandle: Sendable {
+    var isActive: Bool { get }            // !finished && child process still running
+    var processIdentifier: Int32? { get } // child PID, nil if not yet running
+    func terminate() async                // SIGTERM → grace period → SIGKILL
+    /// Emits exactly once when the tunnel drops, then finishes.
     var onDisconnect: AsyncStream<TunnelDropReason> { get }
 }
+
+enum TunnelProviderStatus: Equatable { case available, pluginMissing(path: String), pluginNotExecutable(path: String) }
+enum TunnelDropReason: Equatable { case processExited(code: Int32, stderr: String), terminatedByUser }
+enum TunnelError: LocalizedError, Equatable {
+    case pluginMissing(path: String)               // D7 — binary absent
+    case pluginNotExecutable(path: String)         // D7 — binary present but not +x
+    case localPortInUse(port: Int, pid: Int32?, processName: String?)  // D6 — §8 port-in-use
+    case launchFailed(reason: String)
+}
 ```
+
+**Process & port abstraction** — `BundledPluginTunnel` depends on `PluginSpawning` (spawns a
+`SpawnedPluginProcess` wrapping `Foundation.Process`) and `PortProbing` (TCP-connect + `lsof`
+occupant lookup), both injected so the tunnel's SIGTERM→SIGKILL lifecycle and port-in-use guard are
+unit-testable without a real plugin binary (D8). The handle wires the process's `onExit` handler
+**before** `start()` so no exit is missed.
 
 ### 6.3 Distribution & Signing
 
