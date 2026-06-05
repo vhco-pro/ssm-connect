@@ -25,10 +25,7 @@ struct SSMConnectApp: App {
     var body: some Scene {
         // F-01: MenuBarExtra provides a menu-bar-only presence (no Dock icon via LSUIElement=true)
         MenuBarExtra {
-            menuContent
-                // Re-apply the latest active profile / settings each time the menu opens, so a
-                // change made in the Settings window takes effect on the next connect (Phase G).
-                .onAppear { machine.apply(profile: store.activeProfile, settings: store.settings) }
+            MenuContentView(machine: machine, store: store)
         } label: {
             // Menu-bar icon reflects the current connection state.
             Image(systemName: machine.state.sfSymbol)
@@ -38,69 +35,12 @@ struct SSMConnectApp: App {
         Settings {
             SettingsView(store: store, loginItem: loginItem)
         }
-    }
 
-    @ViewBuilder
-    private var menuContent: some View {
-        // Header: the CURRENT connection state only (icon + label), non-interactive.
-        Label {
-            Text(machine.state.tooltip)
-        } icon: {
-            Image(systemName: machine.state.sfSymbol)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(machine.state.color)
+        // Phase H — connection-log window (F-19), opened from "Show Log".
+        Window("Connection Log", id: SSMConnectWindow.log) {
+            LogView(log: machine.log)
         }
-        .disabled(true)
-
-        // Secondary detail line: session expiry / warning, or the last error message.
-        if let detail = machine.detailLine {
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-
-        Divider()
-
-        // Context-aware primary action (Connect / Connecting… / Connected / Retry).
-        Button(machine.actionTitle) {
-            machine.primaryAction()
-        }
-        .disabled(!machine.actionEnabled)
-
-        // Connected-only actions (F-11/F-14/F-15).
-        if machine.state == .connected {
-            if machine.password != nil {
-                Button("Copy Password") { machine.copyPassword() }
-            }
-            Button("Reconnect") { machine.reconnect() }
-            Button("Stop Workstation") { machine.stopWorkstation() }
-            Button("Disconnect") { machine.disconnect() }
-        }
-
-        // Expandable legend: all 8 states behind a submenu (spec §5 icon table).
-        Menu("All States") {
-            ForEach(ConnectionState.allCases, id: \.self) { state in
-                Label {
-                    Text(state.tooltip)
-                } icon: {
-                    Image(systemName: state.sfSymbol)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(state.color)
-                }
-            }
-        }
-
-        Divider()
-
-        SettingsLink {
-            Text("Settings…")
-        }
-        .keyboardShortcut(",")
-
-        Button("Quit") {
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q")
+        .windowResizability(.contentMinSize)
     }
 }
 

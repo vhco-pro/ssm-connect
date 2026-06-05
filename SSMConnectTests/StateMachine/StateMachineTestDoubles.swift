@@ -103,3 +103,22 @@ final class SequencedEC2Service: EC2Providing, @unchecked Sendable {
 
 /// Sentinel error treated as "credentials expired" by an injected predicate.
 struct StubExpiredError: Error {}
+
+/// Records notification calls for assertions (H8, F-20).
+final class MockNotifier: Notifying, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _events: [NotificationEvent] = []
+    private var _authRequests = 0
+
+    var events: [NotificationEvent] { lock.lock(); defer { lock.unlock() }; return _events }
+    var authorizationRequests: Int { lock.lock(); defer { lock.unlock() }; return _authRequests }
+
+    func requestAuthorization() async {
+        lock.lock(); _authRequests += 1; lock.unlock()
+    }
+
+    func post(_ event: NotificationEvent) async {
+        lock.lock(); _events.append(event); lock.unlock()
+    }
+}
+

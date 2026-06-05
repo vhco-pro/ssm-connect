@@ -41,6 +41,43 @@ extension ConnectionStateMachine {
         }
     }
 
+    /// Connection status detail lines for the menu when connected (F-12): instance id + state,
+    /// tunnel pid/port, and elapsed connection time.
+    var connectionDetailLines: [String] {
+        guard state == .connected else { return [] }
+        var lines: [String] = []
+        if let instanceId {
+            if let instanceState {
+                lines.append("Instance: \(instanceId) (\(instanceState.rawValue))")
+            } else {
+                lines.append("Instance: \(instanceId)")
+            }
+        }
+        if let tunnelPID, let localPort {
+            lines.append("Tunnel: pid \(tunnelPID) · localhost:\(localPort)")
+        }
+        if let connectedAt {
+            lines.append("Up \(Self.elapsed(since: connectedAt))")
+        }
+        return lines
+    }
+
+    /// Masked DCV password for the menu (F-12); nil when no password is held.
+    var maskedPassword: String? {
+        guard let password, !password.isEmpty else { return nil }
+        return String(repeating: "•", count: min(password.count, 12))
+    }
+
+    private static func elapsed(since start: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(start))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let secs = seconds % 60
+        if hours > 0 { return String(format: "%dh %02dm", hours, minutes) }
+        if minutes > 0 { return String(format: "%dm %02ds", minutes, secs) }
+        return "\(secs)s"
+    }
+
     // 12-hour clock with explicit AM/PM (SSO sessions last ~12 h, so numerals can repeat).
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()

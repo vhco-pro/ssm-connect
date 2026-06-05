@@ -18,6 +18,7 @@ struct ConnectionStateMachineTests {
         secrets: MockSecretsService = MockSecretsService(),
         dcv: MockDCVLauncher = MockDCVLauncher(),
         clipboard: ClipboardManager = ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
+        notifier: Notifying = MockNotifier(),
         settings: AppSettings = .default,
         isExpired: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck
     ) -> ConnectionStateMachine {
@@ -29,6 +30,7 @@ struct ConnectionStateMachineTests {
             secrets: secrets,
             dcv: dcv,
             clipboard: clipboard,
+            notifier: notifier,
             settings: settings,
             isExpiredCredentials: isExpired,
             maxReconnectAttempts: 3,
@@ -289,6 +291,62 @@ struct ConnectionStateMachineTests {
         await machine.awaitInFlightTask()
 
         #expect(machine.state == .connected)
+    }
+
+    // MARK: Notifications + logging (Phase H)
+
+    @Test("a successful connect posts a Connected notification and logs transitions")
+    func connectNotifiesAndLogs() async {
+        let notifier = MockNotifier()
+        let machine = makeMachine(ec2: runningEC2(), notifier: notifier)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(notifier.events.contains(.connected))
+        #expect(machine.log.entries.contains { $0.message.contains("State:") })
+    }
+
+    @Test("stop workstation posts a Stopped notification")
+    func stopNotifies() async {
+        let notifier = MockNotifier()
+        let machine = makeMachine(ec2: runningEC2(), notifier: notifier)
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        machine.stopWorkstation()
+        await machine.awaitInFlightTask()
+
+        #expect(notifier.events.contains(.stopped))
+    }
+
+    @Test("onLaunch requests notification authorization once")
+    func onLaunchRequestsAuthorization() async {
+        let notifier = MockNotifier()
+        let machine = makeMachine(ec2: runningEC2(), notifier: notifier)
+
+        machine.onLaunch()
+        await machine.awaitInFlightTask()
+        // The auth request is fired on a detached Task; wait for it to run.
+        await waitUntil { notifier.authorizationRequests >= 1 }
+
+        #expect(notifier.authorizationRequests >= 1)
+    }
+
+    @Test("an expired-credentials recovery posts a sign-in-required notification")
+    func reauthNotifiesSignIn() async {
+        let ec2 = SequencedEC2Service(resolveResults: [
+            .failure(StubExpiredError()),
+            .success(.stub(id: "i-reauth", state: .running)),
+        ])
+        let notifier = MockNotifier()
+        let machine = makeMachine(ec2: ec2, notifier: notifier, isExpired: { $0 is StubExpiredError })
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(notifier.events.contains(.signInRequired))
     }
 }
 

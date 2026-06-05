@@ -15,11 +15,18 @@ import Observation
 final class ConnectionStateMachine {
     // MARK: Observed state (drives the menu + menu-bar icon)
 
-    private(set) var state: ConnectionState = .disconnected
+    private(set) var state: ConnectionState = .disconnected {
+        didSet {
+            guard oldValue != state else { return }
+            log.log(.ui, "State: \(oldValue.rawValue) \u{2192} \(state.rawValue)")
+        }
+    }
     private(set) var errorMessage: String?
     /// Non-fatal note shown while still Connected (e.g. DCV Viewer missing, F-16).
     private(set) var warningMessage: String?
     private(set) var instanceId: String?
+    /// Last-known EC2 instance state, shown in the menu detail (F-12).
+    private(set) var instanceState: EC2Instance.State?
     private(set) var tunnelPID: Int32?
     private(set) var localPort: Int?
     /// DCV password held in memory only (F-11) for the menu's masked display + copy.
@@ -36,6 +43,9 @@ final class ConnectionStateMachine {
     private let secrets: SecretsProviding
     private let dcv: DCVLaunching
     private let clipboard: ClipboardManager
+    /// In-memory connection log (F-19) + Apple Unified Logging (NF-14). Exposed for the log window.
+    let log: ConnectionLog
+    private let notifier: Notifying
     /// Active connection profile + global settings. Updatable via `apply(profile:settings:)`
     /// while disconnected so an active-profile switch in Settings takes effect on next connect.
     private(set) var profile: ConnectionProfile
@@ -63,6 +73,8 @@ final class ConnectionStateMachine {
         secrets: SecretsProviding = SecretsService(),
         dcv: DCVLaunching = DCVLauncher(),
         clipboard: ClipboardManager = ClipboardManager(),
+        log: ConnectionLog? = nil,
+        notifier: Notifying = UserNotificationService(),
         profile: ConnectionProfile = .factoryDefault,
         settings: AppSettings = .default,
         timeouts: ConnectionTimeouts = .default,
@@ -78,6 +90,8 @@ final class ConnectionStateMachine {
         self.secrets = secrets
         self.dcv = dcv
         self.clipboard = clipboard
+        self.log = log ?? ConnectionLog()
+        self.notifier = notifier
         self.profile = profile
         self.settings = settings
         self.timeouts = timeouts
@@ -103,6 +117,7 @@ final class ConnectionStateMachine {
     /// Called once on app launch: sweep stale DCV files and auto-connect if configured (F-03).
     func onLaunch() {
         dcv.sweepOrphanedFiles()
+        Task { await notifier.requestAuthorization() }
         if settings.autoConnect, state == .disconnected {
             connect()
         }
@@ -145,8 +160,10 @@ final class ConnectionStateMachine {
             defer { connectTask = nil }
             await teardownTunnel()
             do {
+                log.log(.ec2, "Stopping instance \(instanceId)…")
                 try await ec2.stopInstance(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
                 resetToDisconnected()
+                await notifier.post(.stopped)
             } catch {
                 fail(error)
             }
@@ -172,6 +189,7 @@ final class ConnectionStateMachine {
         defer { connectTask = nil }
         errorMessage = nil
         warningMessage = nil
+        log.log(.ui, "Connecting to \(profile.name) (\(profile.resourceRegion))…")
 
         do {
             // 1. Authenticate (F-04/F-05)
@@ -183,6 +201,7 @@ final class ConnectionStateMachine {
             }
             try Task.checkCancellation()
             setCredentials(creds)
+            log.log(.auth, "Authenticated; SSO session valid.")
 
             // 2. Resolve the instance by tag (F-06)
             state = .resolving
@@ -198,6 +217,8 @@ final class ConnectionStateMachine {
             }
             try Task.checkCancellation()
             instanceId = instance.id
+            instanceState = instance.state
+            log.log(.ec2, "Resolved instance \(instance.id) (\(instance.state.rawValue)).")
             if instance.state.isTerminal {
                 throw EC2Error.instanceTerminated(instanceId: instance.id)
             }
@@ -205,6 +226,7 @@ final class ConnectionStateMachine {
             // 3. Auto-start a stopped instance (F-07)
             if instance.state != .running {
                 state = .starting
+                log.log(.ec2, "Instance is \(instance.state.rawValue); starting it…")
                 instance = try await withReauth { [ec2, profile, timeouts] creds in
                     try await ec2.startInstance(instanceId: instance.id, region: profile.resourceRegion, credentials: creds)
                     return try await ec2.pollUntilRunning(
@@ -216,10 +238,13 @@ final class ConnectionStateMachine {
                     )
                 }
                 try Task.checkCancellation()
+                instanceState = instance.state
+                log.log(.ec2, "Instance is now running.")
             }
 
             // 4. Wait for the SSM agent (F-08)
             state = .waitingForSSM
+            log.log(.ssm, "Waiting for the SSM agent to come online…")
             try await withReauth { [ssm, profile, timeouts] creds in
                 try await ssm.waitForSSMOnline(
                     instanceId: instance.id,
@@ -230,6 +255,7 @@ final class ConnectionStateMachine {
                 )
             }
             try Task.checkCancellation()
+            log.log(.ssm, "SSM agent is online.")
 
             // 5. Open the port-forwarding tunnel (F-09)
             state = .tunneling
@@ -242,7 +268,9 @@ final class ConnectionStateMachine {
             // 7. Connected
             state = .connected
             connectedAt = Date()
+            log.log(.tunnel, "Connected: localhost:\(profile.localPort) → \(instance.id):\(profile.remotePort).")
             startTunnelMonitor(handle: handle)
+            await notifier.post(.connected)
         } catch is CancellationError {
             // disconnect()/reconnect() cancelled us; they own the resulting state.
             return
@@ -334,6 +362,8 @@ final class ConnectionStateMachine {
 
     private func attemptAutoReconnect(detail: String) async {
         guard let instanceId else { state = .error; return }
+        log.log(.tunnel, "Tunnel dropped (\(detail)); reconnecting…")
+        await notifier.post(.reconnecting)
         for attempt in 1...maxReconnectAttempts {
             do {
                 try await reconnectSleep(reconnectBackoff)
@@ -342,6 +372,8 @@ final class ConnectionStateMachine {
                 state = .connected
                 connectedAt = Date()
                 startTunnelMonitor(handle: handle)
+                log.log(.tunnel, "Reconnected after \(attempt) attempt(s).")
+                await notifier.post(.connected)
                 return
             } catch is CancellationError {
                 return
@@ -364,6 +396,8 @@ final class ConnectionStateMachine {
             return try await op(creds)
         } catch {
             guard isExpiredCredentials(error) else { throw error }
+            log.log(.auth, "SSO session expired; re-authenticating…")
+            await notifier.post(.signInRequired)
             let fresh = try await authProvider.authenticate(profile: profile)
             setCredentials(fresh)
             return try await op(fresh)
@@ -392,13 +426,16 @@ final class ConnectionStateMachine {
         errorMessage = nil
         warningMessage = nil
         instanceId = nil
+        instanceState = nil
         localPort = nil
         password = nil
         connectedAt = nil
     }
 
     private func fail(_ error: Error) {
-        errorMessage = describe(error)
+        let message = describe(error)
+        errorMessage = message
+        log.log(.ui, "Error: \(message)")
         state = .error
     }
 

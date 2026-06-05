@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phases A–G COMPLETE — build + 89 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. E: Secrets fetch + DCV auto-login via transient 0600 .dcv connection file (ADR-8) + clipboard copy/auto-clear +15 tests. F: ConnectionStateMachine orchestrates all 8 states end-to-end (auto-start F-07, per-stage timeouts F-06, tunnel-drop auto-reconnect 3×/5s F-13, SSO-expiry re-auth without tunnel teardown F-17, stop-workstation F-15, best-effort DCV F-16) +16 tests. G: ProfileStore (UserDefaults, no secrets) + AWSConfigParser (sso-session+legacy formats) + first-launch seeder + SettingsView/ProfileEditorView (multi-profile CRUD, login-item toggle via SMAppService) +16 tests. Menu wired to state machine + Settings scene. Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10/E/F8/G10 live-manual pending. Phase H (notifications/logging/actions polish) next."
+status_description: "Phases A–H COMPLETE — build + 101 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. E: Secrets fetch + DCV auto-login via transient 0600 .dcv connection file (ADR-8) + clipboard copy/auto-clear +15 tests. F: ConnectionStateMachine orchestrates all 8 states end-to-end (auto-start F-07, per-stage timeouts F-06, tunnel-drop auto-reconnect 3×/5s F-13, SSO-expiry re-auth without tunnel teardown F-17, stop-workstation F-15, best-effort DCV F-16) +16 tests. G: ProfileStore (UserDefaults, no secrets) + AWSConfigParser (sso-session+legacy formats) + first-launch seeder + SettingsView/ProfileEditorView (multi-profile CRUD, login-item toggle via SMAppService) +16 tests. H: structured os.Logger (subsystem pro.vhco.ssm-connect, 5 categories) + 200-line RingBuffer connection log + LogView window + UNUserNotification events (connected/stopped/reconnecting/sign-in) + enriched menu (instance/state/tunnel pid+port/elapsed/masked password) + Stop-Workstation confirmation +12 tests. Menu wired to state machine + Settings scene. Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10/E/F8/G10 live-manual pending. Phase I (signing/Homebrew distribution) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -398,14 +398,14 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Goal**: Notification support, structured logging, connection log viewer, reconnect and stop-workstation menu actions.
 
 **Tasks**:
-- [ ] Task H1 — Implement structured logging with `os.Logger`: subsystem `pro.vhco.ssm-connect`, categories `auth`, `ec2`, `ssm`, `tunnel`, `ui`. Sensitive values logged as `<private>` via `OSLogPrivacy` (NF-14)
-- [ ] Task H2 — Implement `RingBuffer<LogEntry>` (capacity 200) for in-memory connection log (F-19)
-- [ ] Task H3 — Implement `LogView`: SwiftUI window showing timestamped log entries, opened from "Show Log" menu item (F-19)
-- [ ] Task H4 — Implement macOS notifications via `UNUserNotificationCenter`: "Connected to workstation", "Workstation stopped (idle timeout)", "Tunnel disconnected — reconnecting…", "SSO login required". Request permission on first notification (F-20)
-- [ ] Task H5 — Wire "Reconnect" menu item: tear down tunnel, re-resolve instance, re-run full flow (F-14)
-- [ ] Task H6 — Wire "Stop Workstation" menu item: confirmation dialog → `EC2Service.stopInstance()` → transition to Disconnected (F-15)
-- [ ] Task H7 — Complete the dynamic menu content: state icon, instance ID, instance state, tunnel status (PID, port), elapsed time, masked password with copy button, connect/disconnect/reconnect/stop actions, settings, show log, quit (F-01, F-12)
-- [ ] Task H8 — Unit tests: RingBuffer capacity/ordering, notification request
+- [x] Task H1 — Implement structured logging with `os.Logger`: subsystem `pro.vhco.ssm-connect`, categories `auth`, `ec2`, `ssm`, `tunnel`, `ui`. Sensitive values logged as `<private>` via `OSLogPrivacy` (NF-14)
+- [x] Task H2 — Implement `RingBuffer<LogEntry>` (capacity 200) for in-memory connection log (F-19)
+- [x] Task H3 — Implement `LogView`: SwiftUI window showing timestamped log entries, opened from "Show Log" menu item (F-19)
+- [x] Task H4 — Implement macOS notifications via `UNUserNotificationCenter`: "Connected to workstation", "Workstation stopped (idle timeout)", "Tunnel disconnected — reconnecting…", "SSO login required". Request permission on first notification (F-20)
+- [x] Task H5 — Wire "Reconnect" menu item: tear down tunnel, re-resolve instance, re-run full flow (F-14)
+- [x] Task H6 — Wire "Stop Workstation" menu item: confirmation dialog → `EC2Service.stopInstance()` → transition to Disconnected (F-15)
+- [x] Task H7 — Complete the dynamic menu content: state icon, instance ID, instance state, tunnel status (PID, port), elapsed time, masked password with copy button, connect/disconnect/reconnect/stop actions, settings, show log, quit (F-01, F-12)
+- [x] Task H8 — Unit tests: RingBuffer capacity/ordering, notification request
 
 **Depends on**: Phase F (state machine), Phase G (settings for notification preferences)
 
