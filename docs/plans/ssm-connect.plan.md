@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phases A–E COMPLETE — build + 57 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. E: Secrets fetch + DCV auto-login via transient 0600 .dcv connection file (ADR-8) + clipboard copy/auto-clear +15 tests. Menu redesigned (current-state header + context action + legend, AM/PM expiry). Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10/E live-manual pending. Phase F (ConnectionStateMachine — wires auto-start of stopped instances) next."
+status_description: "Phases A–F COMPLETE — build + 73 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) +8 tests. D: SSM service (online-poll + StartSession port-forward) + BundledPluginTunnel (5-arg plugin exec, port-in-use guard, plugin validation, SIGTERM→SIGKILL lifecycle, onDisconnect) +13 tests. E: Secrets fetch + DCV auto-login via transient 0600 .dcv connection file (ADR-8) + clipboard copy/auto-clear +15 tests. F: ConnectionStateMachine orchestrates all 8 states end-to-end (auto-start of stopped instance F-07, per-stage timeouts F-06, tunnel-drop auto-reconnect 3×/5s F-13, SSO-expiry re-auth without tunnel teardown F-17, stop-workstation F-15, best-effort DCV F-16); menu rewired to the state machine +16 tests. Menu: current-state header + context action + connected actions (Copy Password/Reconnect/Stop/Disconnect) + legend, AM/PM expiry. Dev tooling: scripts/run.sh + Makefile. C6/B8 live + D10/E/F8 live-manual pending. Phase G (AppSettings persistence + settings UI + profile seeding) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -352,13 +352,13 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Goal**: The `ConnectionStateMachine` drives all 8 states end-to-end, using injected service protocols. Auto-connect on launch and auto-reconnect on tunnel drop work correctly.
 
 **Tasks**:
-- [ ] Task F1 — Implement `ConnectionStateMachine` as an `@Observable` class: holds current state, active profile, services (via protocol); exposes `connect()`, `disconnect()`, `reconnect()`, `stopWorkstation()` (spec §5)
-- [ ] Task F2 — Wire the full transition chain: Disconnected → Authenticating → Resolving → Starting/WaitingForSSM → Tunneling → Connected → Error, following the spec §5 state diagram exactly
-- [ ] Task F3 — Implement auto-connect on launch: if `AppSettings.autoConnect == true` and state is `disconnected`, trigger `connect()` on app launch (F-03)
-- [ ] Task F4 — Implement auto-reconnect: subscribe to `TunnelHandle.onDisconnect`; if auto-reconnect enabled, retry up to 3 times with 5s backoff, then Error (F-13)
-- [ ] Task F5 — Implement SSO expiry handling: catch `ExpiredTokenException` / `UnauthorizedAccessException` from any AWS service call, transition to `authenticating`, re-auth, then resume from the failed step WITHOUT tearing down an active tunnel (F-17)
-- [ ] Task F6 — Implement timeout enforcement per spec §5 timing budget: 5min SSO browser, 30s resolve, 5min start, 3min SSM wait, 30s tunnel
-- [ ] Task F7 — Unit tests with all mock services: full happy path (cached SSO → running instance → tunnel), cold path (stopped instance), error recovery (tunnel drop → auto-reconnect), SSO expiry mid-session, timeout on each stage
+- [x] Task F1 — Implement `ConnectionStateMachine` as an `@Observable` class: holds current state, active profile, services (via protocol); exposes `connect()`, `disconnect()`, `reconnect()`, `stopWorkstation()` (spec §5)
+- [x] Task F2 — Wire the full transition chain: Disconnected → Authenticating → Resolving → Starting/WaitingForSSM → Tunneling → Connected → Error, following the spec §5 state diagram exactly
+- [x] Task F3 — Implement auto-connect on launch: if `AppSettings.autoConnect == true` and state is `disconnected`, trigger `connect()` on app launch (F-03)
+- [x] Task F4 — Implement auto-reconnect: subscribe to `TunnelHandle.onDisconnect`; if auto-reconnect enabled, retry up to 3 times with 5s backoff, then Error (F-13)
+- [x] Task F5 — Implement SSO expiry handling: catch `ExpiredTokenException` / `UnauthorizedAccessException` from any AWS service call, transition to `authenticating`, re-auth, then resume from the failed step WITHOUT tearing down an active tunnel (F-17)
+- [x] Task F6 — Implement timeout enforcement per spec §5 timing budget: 5min SSO browser, 30s resolve, 5min start, 3min SSM wait, 30s tunnel
+- [x] Task F7 — Unit tests with all mock services: full happy path (cached SSO → running instance → tunnel), cold path (stopped instance), error recovery (tunnel drop → auto-reconnect), SSO expiry mid-session, timeout on each stage
 - [ ] Task F8 — Manual end-to-end test: launch app, complete full connection flow, verify DCV Viewer opens with tunnel
 
 **Depends on**: Phases B, C, D, E
