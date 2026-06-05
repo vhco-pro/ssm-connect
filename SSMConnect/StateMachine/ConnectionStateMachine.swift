@@ -36,8 +36,10 @@ final class ConnectionStateMachine {
     private let secrets: SecretsProviding
     private let dcv: DCVLaunching
     private let clipboard: ClipboardManager
-    private let profile: ConnectionProfile
-    private let settings: AppSettings
+    /// Active connection profile + global settings. Updatable via `apply(profile:settings:)`
+    /// while disconnected so an active-profile switch in Settings takes effect on next connect.
+    private(set) var profile: ConnectionProfile
+    private(set) var settings: AppSettings
     private let timeouts: ConnectionTimeouts
     private let isExpiredCredentials: @Sendable (Error) -> Bool
     private let maxReconnectAttempts: Int
@@ -86,6 +88,17 @@ final class ConnectionStateMachine {
     }
 
     // MARK: - Public API (F1)
+
+    /// Apply a new active profile / settings. Ignored while a connection is in flight so we
+    /// never swap the target out from under an active tunnel (takes effect on next connect).
+    func apply(profile: ConnectionProfile, settings: AppSettings) {
+        guard state == .disconnected else {
+            self.settings = settings // settings (e.g. auto-reconnect) are safe to update live
+            return
+        }
+        self.profile = profile
+        self.settings = settings
+    }
 
     /// Called once on app launch: sweep stale DCV files and auto-connect if configured (F-03).
     func onLaunch() {
@@ -394,7 +407,7 @@ final class ConnectionStateMachine {
     }
 
     /// Default heuristic for detecting expired/unauthorized SSO credentials across SDK services.
-    static func defaultExpiredCredentialsCheck(_ error: Error) -> Bool {
+    nonisolated static func defaultExpiredCredentialsCheck(_ error: Error) -> Bool {
         let description = String(reflecting: error)
         return description.contains("ExpiredToken")
             || description.contains("UnauthorizedAccess")

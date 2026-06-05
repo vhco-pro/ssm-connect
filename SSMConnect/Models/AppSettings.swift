@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Phase F uses the connection-relevant flags below; Phase G (Task G2) adds persistence
 /// (`UserDefaults`), the settings UI, and the clipboard auto-clear delay binding.
-struct AppSettings: Equatable, Sendable {
+struct AppSettings: Equatable, Codable, Sendable {
     /// Trigger `connect()` automatically on app launch (F-03).
     var autoConnect: Bool = false
     /// Retry the tunnel automatically if it drops unexpectedly (F-13).

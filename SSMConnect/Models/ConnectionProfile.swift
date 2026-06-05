@@ -37,6 +37,11 @@ struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
     var localPort: Int
     /// Remote port forwarded over the tunnel (DCV default 8443).
     var remotePort: Int
+
+    // MARK: Connect action (Phase E/G)
+
+    /// What to launch once the tunnel is up. v1 = DCV Viewer auto-login (F-18, §13).
+    var connectAction: ConnectAction = .dcvViewer
 }
 
 extension ConnectionProfile {
