@@ -30,6 +30,8 @@ targets:
         INFOPLIST_FILE: SSMConnect/Info.plist
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5"
+        # Task I3 / NF-04 — outbound-network entitlement, applied during code signing.
+        CODE_SIGN_ENTITLEMENTS: SSMConnect/SSMConnect.entitlements
     dependencies:
       # Task A2 — AWSSSOOIDC, AWSSSO, AWSEC2, AWSSSM, AWSSecretsManager
       - package: aws-sdk-swift
@@ -50,14 +52,35 @@ targets:
       - script: |
           set -e
           # Task A6 — Copy plugin binary to Contents/Helpers/ and LICENSE to Contents/Resources/ (ADR-7)
-          HELPERS_DIR="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Helpers"
-          RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Resources"
+          APP="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
+          HELPERS_DIR="${APP}/Contents/Helpers"
+          RESOURCES_DIR="${APP}/Contents/Resources"
           mkdir -p "${HELPERS_DIR}"
           cp "${SRCROOT}/.build/plugin/session-manager-plugin" "${HELPERS_DIR}/"
           chmod +x "${HELPERS_DIR}/session-manager-plugin"
           mkdir -p "${RESOURCES_DIR}"
           cp "${SRCROOT}/.build/plugin/LICENSE" "${RESOURCES_DIR}/session-manager-plugin-LICENSE"
-        name: "Embed session-manager-plugin"
+
+          # Task I2/I3 — Re-seal the bundle for distribution. Embedding a binary AFTER Xcode
+          # signed the app invalidates the outer signature, so we re-sign the plugin then the
+          # whole app (last, --deep to cover nested code). Gated to Release/archive: Debug builds
+          # run locally where the broken-from-embed seal is harmless, and a --deep re-sign of all
+          # PackageFrameworks on every incremental build would bloat the dev loop.
+          # Uses the build's own signing identity (ad-hoc "-" for the personal v1, NF-06).
+          if [ "${CONFIGURATION}" != "Release" ]; then
+            echo "Debug build — skipping distribution re-sign (Release-only)."
+            exit 0
+          fi
+          IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}"
+          { [ "${IDENTITY}" = "Sign to Run Locally" ] || [ -z "${IDENTITY}" ]; } && IDENTITY="-"
+          ENTITLEMENTS="${SRCROOT}/SSMConnect/SSMConnect.entitlements"
+          echo "Re-signing embedded plugin + app bundle with identity: ${IDENTITY}"
+          /usr/bin/codesign --force --sign "${IDENTITY}" --timestamp=none "${HELPERS_DIR}/session-manager-plugin"
+          /usr/bin/codesign --force --deep --sign "${IDENTITY}" --timestamp=none \
+            --entitlements "${ENTITLEMENTS}" \
+            "${APP}"
+          /usr/bin/codesign --verify --deep --strict "${APP}"
+        name: "Embed & re-sign session-manager-plugin"
 
   SSMConnectTests:
     type: bundle.unit-test

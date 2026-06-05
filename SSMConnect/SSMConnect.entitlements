@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Task I3 / NF-04 — outbound network for AWS SDK calls + the SSM tunnel. This is the only
+	     entitlement required for the personal ad-hoc v1. Hardened-runtime entitlements
+	     (allow-unsigned-executable-memory / disable-library-validation) are intentionally omitted:
+	     the plugin is exec'd as a child process, not loaded as a library, so they should not be
+	     needed. Add them only if a notarized build proves to require them (NF-04 upgrade path). -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>
