@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phases A & B COMPLETE — build + 19 tests green. Phase B: SSO auth (cache reuse / silent refresh / device-auth) implemented + unit-tested; B8 live sign-in pending. Phase C (EC2) next."
+status_description: "Phases A & B COMPLETE — build + 20 tests green. Phase B: SSO auth (cache reuse / silent refresh / device-auth) implemented + unit-tested; silent-refresh failures now fall back to browser device-auth (F-05). Menu redesigned: single current-state header + context action + 'All States' legend submenu; expiry shows AM/PM. Dev tooling: scripts/run.sh + Makefile. B8 live sign-in PASSED. Phase C (EC2) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -190,6 +190,20 @@ graph TD
     TP -.->|test| MT["MockTunnelProvider"]
 ```
 
+### Developer Tooling
+
+Local build/run/test is driven by `scripts/run.sh` (zsh) with a thin `Makefile` wrapper:
+
+| Command | Action |
+|---------|--------|
+| `make run` | Regenerate the Xcode project (XcodeGen), incremental build, launch the menu-bar app |
+| `make rebuild` | Wipe build products, full rebuild + launch (`run.sh --clean`) |
+| `make test` | Run the Swift Testing suite (`run.sh --test`) |
+| `make generate` | Regenerate `SSMConnect.xcodeproj` from `project.yml` only |
+| `make clean` | Remove build products (no rebuild) |
+
+All `xcodebuild` invocations pass `-destination 'platform=macOS,arch=arm64'`, `-derivedDataPath .build/DerivedData`, and the required `-skipPackagePluginValidation` (smithy-swift ships a SwiftPM build-tool plugin). The script `pkill`s any running instance before relaunch.
+
 ## Acceptance Criteria
 
 Every criterion traces to one or more spec requirement IDs. Criteria are independently testable.
@@ -229,7 +243,7 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Tasks**:
 - [x] Task A1 — Create `SSMConnect.xcodeproj` with SwiftUI App lifecycle, deployment target macOS 14, bundle id `pro.vhco.ssm-connect`, `LSUIElement=true` in Info.plist (F-01, NF-10, NF-11) — [ADR-P1]
 - [x] Task A2 — Add `aws-sdk-swift` SwiftPM dependencies: `AWSSSOOIDC`, `AWSSSO`, `AWSEC2`, `AWSSSM`, `AWSSecretsManager`, pinned `from: "1.7.13"` (spec §12.1)
-- [x] Task A3 — Implement `SSMConnectApp.swift` with `MenuBarExtra` showing a static placeholder menu with the 8 SF Symbol states (F-01, spec §5 icon table)
+- [x] Task A3 — Implement `SSMConnectApp.swift` with `MenuBarExtra`. Menu shows a single **current-state header** (icon + label) + a context-aware primary action (`Connect`/`Connecting…`/`Connected`/`Retry Connect`) + a secondary detail line (session expiry / error) + an expandable **"All States" legend submenu** (spec §5 icon table). The menu-bar icon mirrors the current state (F-01, F-12). _(Redesigned from the original static 8-state list; driven by `AuthViewModel` until Phase F's state machine.)_
 - [x] Task A4 — Define `ConnectionState` enum (8 states: `disconnected`, `authenticating`, `resolving`, `starting`, `waitingForSSM`, `tunneling`, `connected`, `error`) with SF Symbol + color mapping (spec §5)
 - [x] Task A5 — Write `scripts/fetch-plugin.sh`: download `session-manager-plugin` 1.2.814.0 macOS arm64 package from AWS CDN, verify SHA-256 checksum, extract binary to build products (ADR-7) — [ADR-P3]
 - [x] Task A6 — Add Xcode Run Script build phase to invoke `fetch-plugin.sh`, copy binary to `Contents/Helpers/`, copy Apache 2.0 LICENSE to `Contents/Resources/` (ADR-7)
@@ -253,10 +267,10 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 - [x] Task B2 — Implement `SSOCacheReader`: scan `~/.aws/sso/cache/*.json`, match by `startUrl` + `region`, return parsed token (accessToken, refreshToken, clientId, clientSecret, expiresAt, registrationExpiresAt) (F-05, spec §12.1 SSO token cache format)
 - [x] Task B3 — Implement `AWSAuthProvider` conforming to `AuthProviding`: (1) check cache via `SSOCacheReader`, (2) if valid `accessToken` → `SSO.GetRoleCredentials` → return, (3) if expired but `refreshToken` present → `SSOOIDC.CreateToken(grant_type=refresh_token)` → if success update cache → `SSO.GetRoleCredentials` → return, (4) else full device-auth: `RegisterClient` → `StartDeviceAuthorization` → open `verificationUriComplete` in browser → poll `CreateToken(grant_type=device_code)` → `GetRoleCredentials` (F-04, F-05)
 - [x] Task B4 — Region handling: all SSO-OIDC + SSO calls use the profile's **SSO region** (`eu-west-1`); EC2/SSM/Secrets use the profile's **resource region** (`eu-central-1`). Validate that `SSOOIDCClient` and `SSOClient` are initialized with the SSO region
-- [x] Task B5 — Wire a temporary "Sign In" menu item that calls `AWSAuthProvider.authenticate()` and displays the result (credentials obtained / error) in the menu
+- [x] Task B5 — Wire the menu's primary action to `AWSAuthProvider.authenticate()`, surfacing the result (connected + expiry / error) in the header + detail line. Silent-refresh failures (`InvalidGrantException`/`ExpiredTokenException` on `CreateToken grant_type=refresh_token`) are caught in `validAccessToken()` and fall through to the browser device-auth flow instead of failing sign-in (F-05). Expiry time renders as 12-hour `h:mm a` (AM/PM).
 - [x] Task B6 — Write `MockAuthProvider` conforming to `AuthProviding` (configurable success/failure/delay)
-- [x] Task B7 — Unit tests: `SSOCacheReader` with fixture JSON files (valid token, expired token, expired-with-refresh, no match, malformed); `AWSAuthProvider` orchestration with mocked SDK clients (happy path, refresh path, browser-auth path, failure)
-- [ ] Task B8 — Manual integration test: run app, trigger SSO login on a real AWS account, verify credentials obtained
+- [x] Task B7 — Unit tests: `SSOCacheReader` with fixture JSON files (valid token, expired token, expired-with-refresh, no match, malformed); `AWSAuthProvider` orchestration with mocked SDK clients (happy path, refresh path, browser-auth path, **refresh-failure → device-auth fallback**, failure)
+- [x] Task B8 — Manual integration test: ran app, triggered SSO login on the live account — credentials obtained, menu shows "Connected · expires <AM/PM>". (A stale cached refresh token correctly triggered the browser fallback before this fix.)
 
 **Depends on**: Phase A
 

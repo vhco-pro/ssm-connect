@@ -1,10 +1,7 @@
+./scripts/run.sh
 ==> Generating Xcode project from project.yml
 ⚙️  Generating plists...
 ⚙️  Generating project...
 ⚙️  Writing project...
 Created project at /Users/michielvh/code/one-b2c/ssm-connect/SSMConnect.xcodeproj
 ==> Building (first build compiles the AWS SDK — be patient)
-warning: Run script build phase 'Fetch session-manager-plugin' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'SSMConnect' from project 'SSMConnect')
-warning: Run script build phase 'Embed session-manager-plugin' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'SSMConnect' from project 'SSMConnect')
-==> Launching .build/DerivedData/Build/Products/Debug/SSMConnect.app
-==> Launched. Look for the monitor icon in the menu bar (top-right).
