@@ -69,14 +69,23 @@ final class AWSAuthProvider: AuthProviding {
         if !token.isExpired { return token.accessToken }
         guard token.canRefresh else { return nil }
 
-        let client = try makeOIDCClient(profile.ssoRegion)
-        let output = try await client.createToken(CreateTokenInput(
-            clientId: token.clientId,
-            clientSecret: token.clientSecret,
-            grantType: "refresh_token",
-            refreshToken: token.refreshToken
-        ))
+        // Silent refresh is best-effort: a rejected/expired refresh token (e.g.
+        // InvalidGrantException) must NOT fail the whole sign-in — fall back to the
+        // interactive device-auth flow by returning nil (F-05).
+        let output: CreateTokenOutput
+        do {
+            let client = try makeOIDCClient(profile.ssoRegion)
+            output = try await client.createToken(CreateTokenInput(
+                clientId: token.clientId,
+                clientSecret: token.clientSecret,
+                grantType: "refresh_token",
+                refreshToken: token.refreshToken
+            ))
+        } catch {
+            return nil
+        }
         guard let newAccessToken = output.accessToken, !newAccessToken.isEmpty else { return nil }
+
 
         // Persist the refreshed token back to its existing cache file (best-effort, NF-01).
         let refreshed = SSOToken(

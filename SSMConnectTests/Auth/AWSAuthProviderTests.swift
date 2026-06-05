@@ -87,6 +87,27 @@ struct AWSAuthProviderTests {
         #expect(sso.lastInput?.accessToken == "refreshed-access")
     }
 
+    @Test("Failed silent refresh falls back to device authorization, not an error")
+    func refreshFailureFallsBackToDeviceAuth() async throws {
+        let cache = MockSSOCache(stored: refreshableExpiredToken())
+        let oidc = MockOIDCClient()
+        // 1st createToken = refresh attempt (rejected); 2nd = device_code poll (success).
+        oidc.createTokenResults = [
+            .failure(InvalidGrantException()),
+            .success(CreateTokenOutput(accessToken: "access-token", expiresIn: 3600))
+        ]
+        let sso = MockSSOClient()
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+
+        let credentials = try await provider.authenticate(profile: profile)
+
+        #expect(oidc.registerCount == 1)        // fell back to device auth
+        #expect(oidc.deviceAuthCount == 1)
+        #expect(recorder.urls.count == 1)       // browser opened
+        #expect(credentials.sessionToken == "session")
+    }
+
     @Test("No cached token runs device authorization and opens the browser")
     func deviceAuthorization() async throws {
         let cache = MockSSOCache(stored: nil)
