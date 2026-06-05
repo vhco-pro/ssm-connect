@@ -51,7 +51,7 @@ extension ConnectionProfile {
         roleName: "AdministratorAccess",
         resourceRegion: "eu-central-1",
         instanceTagKey: "Name",
-        instanceTagValue: "factory-workstation",
+        instanceTagValue: "example-workstation",
         secretId: nil,
         localPort: 8443,
         remotePort: 8443

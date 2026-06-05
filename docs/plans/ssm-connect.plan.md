@@ -1,6 +1,6 @@
 ---
 status: in-progress
-status_description: "Phases A & B COMPLETE — build + 20 tests green. Phase B: SSO auth (cache reuse / silent refresh / device-auth) implemented + unit-tested; silent-refresh failures now fall back to browser device-auth (F-05). Menu redesigned: single current-state header + context action + 'All States' legend submenu; expiry shows AM/PM. Dev tooling: scripts/run.sh + Makefile. B8 live sign-in PASSED. Phase C (EC2) next."
+status_description: "Phases A, B & C COMPLETE — build + 28 tests green. A: scaffold+plugin. B: SSO auth (cache/refresh/device-auth, refresh-failure→browser fallback). C: EC2 service (resolve-by-tag, start/stop, poll-until-running) + 8 tests. Menu redesigned (current-state header + context action + legend, AM/PM expiry). Dev tooling: scripts/run.sh + Makefile. C6/B8 live tests pending. Phase D (SSM tunnel) next."
 description: "Implementation plan for the SSM Connect macOS menu-bar app — native Swift/SwiftUI, aws-sdk-swift, bundled session-manager-plugin"
 spec: docs/specs/ssm-connect.spec.md
 author: michielvha
@@ -285,11 +285,11 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Goal**: Resolve workstation instance by tag, start if stopped, poll until running — all testable via mocks and one live validation.
 
 **Tasks**:
-- [ ] Task C1 — Define `EC2Providing` protocol with methods: `resolveInstance(tagKey:tagValue:region:credentials:) async throws -> EC2Instance`, `startInstance(instanceId:region:credentials:) async throws`, `stopInstance(instanceId:region:credentials:) async throws`, `pollUntilRunning(instanceId:region:credentials:timeout:interval:) async throws`
-- [ ] Task C2 — Implement `EC2Service` conforming to `EC2Providing`: `DescribeInstances` with tag filter + state filter (`running`, `stopped`, `pending`), validate exactly one match (error on zero/multiple — spec §8), start + poll with configurable timeout (5min) and interval (5s) (F-06, F-07, F-15)
-- [ ] Task C3 — Handle edge cases: instance in `terminated`/`shutting-down` → specific error message; instance stuck in `pending` > 5min → error (spec §8)
-- [ ] Task C4 — Write `MockEC2Service` (configurable instance state, tag matches, failure injection)
-- [ ] Task C5 — Unit tests: zero matches, one match, multiple matches, stopped→running polling, timeout, terminated instance, pending timeout
+- [x] Task C1 — Define `EC2Providing` protocol with methods: `resolveInstance(tagKey:tagValue:region:credentials:) async throws -> EC2Instance`, `startInstance(instanceId:region:credentials:) async throws`, `stopInstance(instanceId:region:credentials:) async throws`, `pollUntilRunning(instanceId:region:credentials:timeout:interval:) async throws`
+- [x] Task C2 — Implement `EC2Service` conforming to `EC2Providing`: `DescribeInstances` with tag filter + state filter (`pending`, `running`, `stopping`, `stopped`), validate exactly one match (error on zero/multiple — spec §8), start + poll with configurable timeout (5min) and interval (5s) (F-06, F-07, F-15). Static SSO STS credentials wired via `StaticAWSCredentialIdentityResolver` (`EC2ClientFactory`); SDK seam `EC2Clienting` for testability. Domain model `EC2Instance` keeps the SDK out of the rest of the app.
+- [x] Task C3 — Handle edge cases: instance in `terminated`/`shutting-down` → `instanceTerminated`; stuck in `pending` past timeout → `pendingStuck`; otherwise `startTimedOut` (spec §8)
+- [x] Task C4 — Write `MockEC2Service` (configurable resolve/start/stop/poll outcomes, call counts, `EC2Instance.stub` fixture)
+- [x] Task C5 — Unit tests (8): zero matches, one match, multiple matches, start passes id, stop passes id, stopped→running polling, terminated mid-poll, pending timeout
 - [ ] Task C6 — Manual integration test: resolve live instance by tag, start a stopped instance
 
 **Depends on**: Phase A (project), Phase B (credentials — needed for live tests; mocks work without)
