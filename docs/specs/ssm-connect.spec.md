@@ -11,8 +11,8 @@
 | Design intent | General-purpose, config-driven SSM-tunnel connector — the factory workstation is just the default profile, nothing is hardcoded |
 | Author      | michielvha                                                 |
 | Date        | 2026-06-05                                                 |
-| Companion   | `ec2-cloud-workstation-dcv.spec.md` (server-side spec, in `one-b2c` repo) |
-| Runbook     | `workstation-client-setup.md` (manual flow being replaced, in `one-b2c` repo) |
+| Companion   | `ec2-cloud-workstation-dcv.spec.md` (server-side spec, in the `one-b2c` workspace) |
+| Runbook     | `workstation-client-setup.md` (manual flow being replaced, in the `one-b2c` workspace) |
 
 ---
 
@@ -464,11 +464,11 @@ Confirmed on the author's machine to de-risk planning:
 | Finding | Value / Implication |
 |---------|---------------------|
 | Toolchain | Swift 6.3.2, Xcode 26.5, macOS 26.4 (arm64) — fully supports the chosen stack; min target macOS 14 is comfortable |
-| `session-manager-plugin` | Already installed via Homebrew at `1.2.814.0` — confirms an official macOS arm64 binary exists to bundle (ADR-7) |
+| `session-manager-plugin` | Already installed via Homebrew at `1.2.814.0` — confirms an official macOS arm64 binary exists to bundle (ADR-7). **Latest upstream release** (aws/session-manager-plugin, 2026-04-23) as of 2026-06-05 |
 | **SSO region ≠ resource region** | `~/.aws/config` uses an `[sso-session]` block: `sso_start_url=https://d-0123456789.awsapps.com/start`, **`sso_region=eu-west-1`**, scopes `sso:account:access`; profile `workstation-prd` → account `111122223333`, role `AdministratorAccess`, **resource region `eu-central-1`**. The app MUST treat these as separate config fields (drove F-04/F-05/F-18) |
 | SSO token cache | `~/.aws/sso/cache/*.json` contains `accessToken`, `refreshToken`, `clientId`, `clientSecret`, `expiresAt`, `registrationExpiresAt`, `region`, `startUrl` — enables **silent refresh** via `CreateToken grant_type=refresh_token` before any browser prompt (drove F-05) |
 | Newer SSO config format | Profile uses the `sso-session` block form (not inline `sso_start_url` on the profile). The first-launch config seeder must parse `[sso-session NAME]` blocks referenced by `sso_session=NAME`, not just `[profile]` keys |
-| **`aws-sdk-swift` API surface — CONFIRMED** | A SwiftPM spike (`swift build`, **Build complete! 101 s**) compiled and linked against **`aws-sdk-swift` 1.7.13** using `AWSSSOOIDC` (`RegisterClientInput`, `StartDeviceAuthorizationInput`, `CreateTokenInput` with both `device_code` and `refresh_token` grants), `AWSSSO` (`GetRoleCredentialsInput`), `AWSEC2` (`DescribeInstancesInput`, `StartInstancesInput`), `AWSSSM` (`DescribeInstanceInformationInput`, `StartSessionInput`), and `AWSSecretsManager` (`GetSecretValueInput`). The full device-auth + silent-refresh + EC2/SSM/Secrets surface is GA on Swift 6.3 — **Open Question C resolved** |
+| **`aws-sdk-swift` API surface — CONFIRMED** | A SwiftPM spike (`swift build`, **Build complete! 101 s**) compiled and linked against **`aws-sdk-swift` 1.7.13** (the **latest upstream release**, awslabs/aws-sdk-swift, published 2026-06-04) using `AWSSSOOIDC` (`RegisterClientInput`, `StartDeviceAuthorizationInput`, `CreateTokenInput` with both `device_code` and `refresh_token` grants), `AWSSSO` (`GetRoleCredentialsInput`), `AWSEC2` (`DescribeInstancesInput`, `StartInstancesInput`), `AWSSSM` (`DescribeInstanceInformationInput`, `StartSessionInput`), and `AWSSecretsManager` (`GetSecretValueInput`). The full device-auth + silent-refresh + EC2/SSM/Secrets surface is GA on Swift 6.3 — **Open Question C resolved** |
 
 ### 12.2 Dependencies to Resolve First
 
