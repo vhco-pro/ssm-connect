@@ -1,0 +1,71 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+#
+# On a `vX.Y.Z` tag (pushed by tag.yml): build the signed Release .app on a macOS runner, publish
+# a GitHub Release with the zip asset, and bump the Homebrew cask (version + sha256) in
+# vhco-pro/homebrew-tap. Ad-hoc signed (not notarized) — see README for the notarization path.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: macos-14
+    permissions:
+      contents: write # create the GitHub Release on this repo
+    steps:
+      - name: Mint tap token (to bump the cask in homebrew-tap)
+        id: tap-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: vhco-pro
+          repositories: homebrew-tap
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Stamp version from the tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" SSMConnect/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" SSMConnect/Info.plist
+
+      - name: Build + package the signed .app
+        run: ./scripts/release.sh
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "SSM Connect ${VERSION}" \
+            --generate-notes \
+            "dist/SSMConnect-${VERSION}.zip"
+
+      - name: Bump the Homebrew cask
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA="$(cut -d' ' -f1 "dist/SSMConnect-${VERSION}.zip.sha256")"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/vhco-pro/homebrew-tap.git" tap
+          cd tap
+          sed -i '' -E "s/  version \".*\"/  version \"${VERSION}\"/" Casks/ssm-connect.rb
+          sed -i '' -E "s/  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/ssm-connect.rb
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git commit -am "ssm-connect ${VERSION}"
+          git push

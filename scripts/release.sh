@@ -29,12 +29,14 @@ echo "==> Generating Xcode project"
 xcodegen generate
 
 echo "==> Clean Release build (signed + re-sealed by the Embed & re-sign phase)"
+# Force ad-hoc signing (no Apple team required — works the same locally and on CI runners).
 xcodebuild build \
   -project "$PROJECT" -scheme "$SCHEME" \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED" \
   -skipPackagePluginValidation \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   -quiet
 
 echo "==> Verifying signature"

@@ -1,0 +1,48 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+#
+# On every push to main, compute the next version from conventional-commit messages with
+# GitVersion and push a `vX.Y.Z` tag. The tag (pushed by the release-bot app, not GITHUB_TOKEN)
+# triggers release.yml. Requires the RELEASE_BOT GitHub App installed on this repo + the
+# RELEASE_BOT_APP_ID / RELEASE_BOT_PRIVATE_KEY org secrets.
+
+name: GitVersion Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '.gitignore'
+      - 'README.md'
+      - 'LICENSE'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions: {}
+
+    steps:
+      - name: Mint release-bot installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: vhco-pro
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Tag with GitVersion
+        uses: michielvha/gitversion-tag-action@71eb5b08849c8867ee613dc9c929af41d145d91d # main snapshot 2026-05-23
+        with:
+          configFilePath: 'gitversion.yml'
+          prefix: 'v'
