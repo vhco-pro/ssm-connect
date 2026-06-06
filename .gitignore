@@ -35,3 +35,6 @@ secrets/
 # Editor
 .vscode/
 .idea/
+
+# Release artifacts
+dist/
