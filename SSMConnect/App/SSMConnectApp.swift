@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Task A1, A3 — SwiftUI App lifecycle, MenuBarExtra (F-01, NF-10, NF-11)
@@ -21,6 +22,14 @@ struct SSMConnectApp: App {
         _store = State(initialValue: store)
         _machine = State(initialValue: machine)
         machine.onLaunch()
+
+        // Recover a zombie tunnel after the Mac wakes from sleep (F-13): re-check the connection
+        // and reconnect + re-launch DCV if it's actually dead.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in await machine.handleSystemWake() }
+        }
     }
 
     var body: some Scene {

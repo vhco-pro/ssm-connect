@@ -237,6 +237,46 @@ struct ConnectionStateMachineTests {
         #expect(provider.startCount == 1)
     }
 
+    // MARK: System wake (zombie-tunnel recovery, F-13)
+
+    @Test("wake from sleep with a dead tunnel reconnects and re-launches DCV")
+    func wakeDeadTunnelReconnects() async {
+        let probe = StubReadinessProbe(ready: true)
+        let tunnel = RecordingTunnelProvider(handles: [MockTunnelHandle(), MockTunnelHandle()])
+        let dcv = MockDCVLauncher()
+        let machine = makeMachine(ec2: runningEC2(), tunnel: tunnel, dcv: dcv, readiness: probe)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+        #expect(machine.state == .connected)
+        #expect(tunnel.startCount == 1)
+        #expect(dcv.launchCount == 1)
+
+        probe.ready = false // tunnel went dead while the Mac slept
+        await machine.handleSystemWake()
+        await machine.awaitInFlightTask()
+        await waitUntil { tunnel.startCount == 2 }
+
+        #expect(tunnel.startCount == 2)       // re-established the tunnel
+        #expect(dcv.launchCount == 2)         // re-staged DCV automatically
+        #expect(machine.state == .connected)
+    }
+
+    @Test("wake from sleep with a healthy tunnel does nothing")
+    func wakeHealthyTunnelNoop() async {
+        let probe = StubReadinessProbe(ready: true)
+        let tunnel = RecordingTunnelProvider(handles: [MockTunnelHandle()])
+        let machine = makeMachine(ec2: runningEC2(), tunnel: tunnel, readiness: probe)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+        #expect(tunnel.startCount == 1)
+
+        await machine.handleSystemWake()
+        #expect(tunnel.startCount == 1)
+        #expect(machine.state == .connected)
+    }
+
     // MARK: Disconnect / stop
 
     @Test("disconnect tears down and returns to disconnected")

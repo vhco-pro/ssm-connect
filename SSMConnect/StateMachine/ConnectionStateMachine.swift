@@ -145,6 +145,19 @@ final class ConnectionStateMachine {
         }
     }
 
+    /// Called when the machine wakes from system sleep. An apparently-`Connected` tunnel can be a
+    /// zombie — the `session-manager-plugin` process survives sleep but its data channel (and the
+    /// DCV session) is dead, so the app still shows "Connected" while DCV Viewer drops to its
+    /// connect screen. Health-check the forwarded port; if it isn't really responding, reconnect
+    /// (re-establishes the tunnel and re-launches DCV auto-login) (F-13).
+    func handleSystemWake() async {
+        guard state == .connected, let port = localPort else { return }
+        let healthy = await readiness.waitUntilReady(port: port, timeout: .seconds(8), interval: .seconds(2))
+        guard !healthy else { return }
+        log.log(.tunnel, "Workstation not responding after wake from sleep; reconnecting…")
+        reconnect()
+    }
+
     /// Run the full connection flow. No-op if already connecting/connected.
     func connect() {
         guard connectTask == nil, state != .connected else { return }
