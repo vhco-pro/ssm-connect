@@ -446,7 +446,7 @@ Every criterion traces to one or more spec requirement IDs. Criteria are indepen
 **Tasks**:
 - [x] Task J1 — `gitversion.yml` (GitHubFlow, **`v` tag prefix**): conventional-commit bumps (`feat:`→minor, `fix`/`perf`/`refactor`→patch, `BREAKING CHANGE`/`!:`→major, `chore`/`docs`/`ci`→no bump); `main` = ContinuousDeployment.
 - [x] Task J2 — `.github/workflows/release.yml` — **single self-contained workflow, no GitHub App** (only the built-in `GITHUB_TOKEN`). On every push to `main`: compute the version with GitVersion; if `v$VERSION` isn't already tagged, stamp `Info.plist`, build the ad-hoc-signed `.app` via `scripts/release.sh`, and `gh release create v$VERSION` (creates the tag + Release with the zip asset). No-bump pushes resolve to the existing version → skipped.
-- [x] Task J3 — Cask bump in `release.yml`: auto-bump `vhco-pro/homebrew-tap` (`version`+`sha256`) **if** an optional `TAP_TOKEN` secret (contents:write on the tap) is set; otherwise print the version+sha for a one-line manual bump.
+- [x] Task J3 — Cask auto-bump via a **`sync-cask` workflow in `vhco-pro/homebrew-tap`** (schedule every 30 min + `workflow_dispatch`): it reads this repo's latest release, downloads the asset, and rewrites its own cask (`version`+`sha256`) with the tap's own `GITHUB_TOKEN` — no cross-repo App/PAT/deploy-key. Verified by a stale-version round-trip.
 - [x] Task J4 — `scripts/release.sh` forces ad-hoc signing (`CODE_SIGN_IDENTITY=-`) so the Release build needs no Apple team locally or on CI.
 
 **Depends on**: Phase I (release.sh, cask, tap).
