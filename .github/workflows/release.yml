@@ -1,15 +1,24 @@
 # Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
 #
-# On a `vX.Y.Z` tag (pushed by tag.yml): build the signed Release .app on a macOS runner, publish
-# a GitHub Release with the zip asset, and bump the Homebrew cask (version + sha256) in
-# vhco-pro/homebrew-tap. Ad-hoc signed (not notarized) — see README for the notarization path.
+# Self-contained release pipeline — no GitHub App / bot required, just the built-in GITHUB_TOKEN.
+# On every push to main: GitVersion computes the next version from conventional-commit messages.
+# If that version isn't already tagged (i.e. a feat:/fix:/etc. landed), build the ad-hoc-signed
+# .app on a macOS runner and publish a `vX.Y.Z` GitHub Release with the zip asset. If a
+# fine-grained TAP_TOKEN secret (contents:write on vhco-pro/homebrew-tap) is present, the Homebrew
+# cask is bumped automatically; otherwise the version + sha256 are printed for a manual bump.
 
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
+    paths-ignore:
+      - '.gitignore'
+      - 'README.md'
+      - 'LICENSE'
+      - 'docs/**'
+  workflow_dispatch:
 
 permissions: {}
 
@@ -17,55 +26,67 @@ jobs:
   release:
     runs-on: macos-14
     permissions:
-      contents: write # create the GitHub Release on this repo
+      contents: write # create the tag + GitHub Release on this repo
     steps:
-      - name: Mint tap token (to bump the cask in homebrew-tap)
-        id: tap-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          owner: vhco-pro
-          repositories: homebrew-tap
-
-      - name: Checkout code
+      - name: Checkout (full history for GitVersion)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install tools
+        run: brew install gitversion xcodegen
 
-      - name: Stamp version from the tag
+      - name: Compute version
+        id: ver
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" SSMConnect/Info.plist
+          git fetch --tags --force
+          VERSION="$(gitversion /config gitversion.yml /showvariable MajorMinorPatch)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION already released — no version-bumping commits since. Skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$VERSION"
+          fi
+
+      - name: Stamp version from GitVersion
+        if: steps.ver.outputs.exists == 'false'
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.version }}" SSMConnect/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" SSMConnect/Info.plist
 
       - name: Build + package the signed .app
+        if: steps.ver.outputs.exists == 'false'
         run: ./scripts/release.sh
 
-      - name: Publish GitHub Release
+      - name: Publish GitHub Release (creates the v tag)
+        if: steps.ver.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "v${VERSION}" \
             --title "SSM Connect ${VERSION}" \
             --generate-notes \
             "dist/SSMConnect-${VERSION}.zip"
 
       - name: Bump the Homebrew cask
+        if: steps.ver.outputs.exists == 'false'
         env:
-          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           SHA="$(cut -d' ' -f1 "dist/SSMConnect-${VERSION}.zip.sha256")"
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/vhco-pro/homebrew-tap.git" tap
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::notice::TAP_TOKEN not set — bump the cask manually: version \"${VERSION}\", sha256 \"${SHA}\""
+            exit 0
+          fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/vhco-pro/homebrew-tap.git" tap
           cd tap
           sed -i '' -E "s/  version \".*\"/  version \"${VERSION}\"/" Casks/ssm-connect.rb
           sed -i '' -E "s/  sha256 \".*\"/  sha256 \"${SHA}\"/" Casks/ssm-connect.rb
-          git config user.name "release-bot"
-          git config user.email "release-bot@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -am "ssm-connect ${VERSION}"
           git push

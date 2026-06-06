@@ -493,12 +493,12 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 
 **Context:** v1 shipped its first artifact by hand (build → zip → GitHub release → cask edit). That is error-prone and doesn't scale to repeated releases. The author already runs a standard release pipeline across the `stackweaver` repos (GitVersion + a release bot).
 
-**Decision:** Adopt the same pattern, adapted for a macOS app:
+**Decision:** Adopt GitVersion, but as a **single self-contained workflow that needs no GitHub App / bot** — just the built-in `GITHUB_TOKEN` (the stackweaver repos use a release-bot App to chain tag→release across workflows; here one workflow does it all, so that machinery isn't needed):
 - `gitversion.yml` (GitHubFlow, **`v` tag prefix**) derives the next semantic version from conventional-commit messages (`feat:` → minor, `fix:`/`perf:`/`refactor:` → patch, `BREAKING CHANGE`/`!:` → major, `chore`/`docs`/`ci`/etc → no bump).
-- `.github/workflows/tag.yml` — on push to `main`, a GitHub App (`RELEASE_BOT`) token runs `michielvha/gitversion-tag-action` to compute and push a `vX.Y.Z` tag. Using the App token (not `GITHUB_TOKEN`) lets the tag trigger the release workflow.
-- `.github/workflows/release.yml` — on a `vX.Y.Z` tag, a `macos-14` runner stamps the version into `Info.plist`, builds the ad-hoc-signed `.app` via `scripts/release.sh`, publishes a GitHub Release with the zip asset, and bumps the cask (`version` + `sha256`) in `vhco-pro/homebrew-tap`.
+- `.github/workflows/release.yml` — on every push to `main`, a `macos-14` runner runs GitVersion to compute the version; **if that version isn't already tagged** (i.e. a bump-worthy commit landed), it stamps `Info.plist`, builds the ad-hoc-signed `.app` via `scripts/release.sh`, and `gh release create v$VERSION` (which creates the tag + Release with the zip asset, using `GITHUB_TOKEN`). A no-bump push (chore/docs/ci) resolves to the existing version → skipped.
+- The Homebrew cask (`version` + `sha256`) in `vhco-pro/homebrew-tap` is bumped automatically **if** an optional fine-grained `TAP_TOKEN` secret (contents:write on the tap) is present; otherwise the workflow prints the version + sha256 for a one-line manual bump.
 
-**Consequences:** Releases are cut by merging conventional commits to `main` — no manual version picking, tagging, artifact upload, or cask edit. Requires the `RELEASE_BOT` GitHub App installed on `vhco-pro/ssm-connect` **and** `vhco-pro/homebrew-tap`, with `RELEASE_BOT_APP_ID` / `RELEASE_BOT_PRIVATE_KEY` available as secrets. The macOS artifact is ad-hoc signed; the notarization upgrade path (ADR-4) plugs into the same `release.yml` when pursued.
+**Consequences:** Releases are cut by merging conventional commits to `main` — no manual version picking, tagging, or artifact upload, and **no App/secret required for the core release** (only the cross-repo cask bump optionally uses `TAP_TOKEN`). The macOS artifact is ad-hoc signed; the notarization upgrade path (ADR-4) plugs into the same `release.yml` when pursued.
 
 ## 11. Resolved Decisions & Remaining Open Questions
 
