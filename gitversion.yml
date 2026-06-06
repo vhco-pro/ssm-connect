@@ -19,8 +19,8 @@ strategies:
 branches:
   main:
     regex: ^master$|^main$
-    increment: Patch
-    prevent-increment:
-      of-merged-branch: true
     is-main-branch: true
-    mode: ContinuousDeployment
+    # increment: None + ContinuousDelivery -> the version only bumps when a conventional-commit
+    # message dictates it (feat:/fix:/etc.); chore/docs/ci/style/test do NOT cut a release.
+    increment: None
+    mode: ContinuousDelivery
