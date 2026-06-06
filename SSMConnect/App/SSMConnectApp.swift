@@ -12,6 +12,7 @@ struct SSMConnectApp: App {
     @State private var store: ProfileStore
     // Task F1 — the full connection state machine drives the menu + menu-bar icon.
     @State private var machine: ConnectionStateMachine
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let loginItem: LoginItemControlling = SMAppServiceLoginItem()
 
     init() {

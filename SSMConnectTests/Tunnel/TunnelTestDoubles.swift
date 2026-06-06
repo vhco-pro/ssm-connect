@@ -69,3 +69,12 @@ struct StubPortProbe: PortProbing {
     var occupantToReturn: PortOccupant?
     func occupant(of port: Int) -> PortOccupant? { occupantToReturn }
 }
+
+/// Port probe whose occupant can change (e.g. cleared when a stale plugin is killed) so the
+/// reclaim path (spec §8) is testable.
+final class ReclaimablePortProbe: PortProbing, @unchecked Sendable {
+    var occupant: PortOccupant?
+    var killed: Int32?
+    init(occupant: PortOccupant?) { self.occupant = occupant }
+    func occupant(of port: Int) -> PortOccupant? { occupant }
+}

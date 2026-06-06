@@ -83,6 +83,26 @@ struct BundledPluginTunnelTests {
         }
     }
 
+    @Test("startTunnel reclaims a stale own plugin holding the port, then starts (spec §8)")
+    func startReclaimsOwnPlugin() async throws {
+        let path = try TempFile.make(executable: true)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let probe = ReclaimablePortProbe(occupant: PortOccupant(pid: 28903, processName: "session-manager-plugin"))
+        let tunnel = BundledPluginTunnel(
+            pluginPath: { path },
+            spawner: FakePluginSpawner(process: FakePluginProcess(pid: 5555)),
+            portProbe: probe,
+            killProcess: { pid in probe.killed = pid; probe.occupant = nil } // simulate the port freeing
+        )
+
+        let handle = try await tunnel.startTunnel(
+            session: session, region: "eu-central-1", instanceId: "i-abc", localPort: 8443, remotePort: 8443
+        )
+
+        #expect(probe.killed == 28903)
+        #expect(handle.processIdentifier == 5555)
+    }
+
     @Test("startTunnel spawns the plugin and returns an active handle")
     func startSucceeds() async throws {
         let path = try TempFile.make(executable: true)

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// `TunnelProvider` that shells out to the bundled AWS `session-manager-plugin` (D4, ADR-1).
@@ -8,6 +9,7 @@ final class BundledPluginTunnel: TunnelProvider {
     private let pluginPath: @Sendable () -> String?
     private let spawner: PluginSpawning
     private let portProbe: PortProbing
+    private let killProcess: @Sendable (Int32) -> Void
     private let terminationGracePeriod: Duration
     private let terminationPollInterval: Duration
 
@@ -15,12 +17,14 @@ final class BundledPluginTunnel: TunnelProvider {
         pluginPath: @escaping @Sendable () -> String? = { BundledPluginTunnel.defaultPluginPath() },
         spawner: PluginSpawning = ProcessPluginSpawner(),
         portProbe: PortProbing = SystemPortProbe(),
+        killProcess: @escaping @Sendable (Int32) -> Void = { kill($0, SIGKILL) },
         terminationGracePeriod: Duration = .seconds(5),
         terminationPollInterval: Duration = .milliseconds(100)
     ) {
         self.pluginPath = pluginPath
         self.spawner = spawner
         self.portProbe = portProbe
+        self.killProcess = killProcess
         self.terminationGracePeriod = terminationGracePeriod
         self.terminationPollInterval = terminationPollInterval
     }
@@ -60,9 +64,20 @@ final class BundledPluginTunnel: TunnelProvider {
         }
         guard let path = pluginPath() else { throw TunnelError.pluginMissing(path: "<unknown>") }
 
-        // D6: refuse to start if the local port is already taken.
+        // D6 / spec §8: if the local port is taken by a STALE copy of our own plugin (orphaned by a
+        // previous crash or a quit that didn't clean up), reclaim it; otherwise refuse to start.
         if let occupant = portProbe.occupant(of: localPort) {
-            throw TunnelError.localPortInUse(port: localPort, pid: occupant.pid, processName: occupant.processName)
+            let isOwnPlugin = occupant.processName?.contains("session-manager-plugin") ?? false
+            if isOwnPlugin, let pid = occupant.pid {
+                killProcess(pid)
+                let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+                while portProbe.occupant(of: localPort) != nil, ContinuousClock.now < deadline {
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+            }
+            if let blocker = portProbe.occupant(of: localPort) {
+                throw TunnelError.localPortInUse(port: localPort, pid: blocker.pid, processName: blocker.processName)
+            }
         }
 
         let arguments = try Self.pluginArguments(

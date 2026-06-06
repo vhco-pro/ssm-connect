@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 
@@ -106,6 +107,18 @@ final class ConnectionStateMachine {
         self.reconnectBackoff = reconnectBackoff
         self.reconnectSleep = reconnectSleep
         clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
+        // Kill the plugin child on app quit so it isn't orphaned holding the local port (F-13).
+        AppQuitHandler.shared.register { [weak self] in self?.terminateTunnelForQuit() }
+    }
+
+    /// Synchronous best-effort plugin teardown for app termination (F-13). `applicationWillTerminate`
+    /// can't await `terminate()`, so signal the child process directly (SIGTERM, then SIGKILL).
+    func terminateTunnelForQuit() {
+        monitorTask?.cancel()
+        guard let pid = tunnelPID, pid > 0 else { return }
+        kill(pid, SIGTERM)
+        usleep(300_000) // 0.3s grace
+        kill(pid, SIGKILL)
     }
 
     // MARK: - Public API (F1)
