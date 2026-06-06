@@ -20,7 +20,9 @@ branches:
   main:
     regex: ^master$|^main$
     is-main-branch: true
-    # increment: None + ContinuousDelivery -> the version only bumps when a conventional-commit
-    # message dictates it (feat:/fix:/etc.); chore/docs/ci/style/test do NOT cut a release.
+    # increment: None -> the version only bumps when a conventional-commit message dictates it
+    # (feat:/fix:/etc.); chore/docs/ci/style/test do NOT bump. ContinuousDeployment keeps SemVer
+    # clean (0.1.2, not 0.1.1-1) between tags, so the reusable tag action emits clean `v` tags and
+    # a no-bump commit resolves to the existing version (already tagged -> release skipped).
     increment: None
-    mode: ContinuousDelivery
+    mode: ContinuousDeployment
