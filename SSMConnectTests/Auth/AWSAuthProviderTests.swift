@@ -10,7 +10,7 @@ import Testing
 @Suite("AWSAuthProvider")
 struct AWSAuthProviderTests {
 
-    private let profile = ConnectionProfile.factoryDefault
+    private let profile = ConnectionProfile.example
 
     private func validToken() -> SSOToken {
         SSOToken(

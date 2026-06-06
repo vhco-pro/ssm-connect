@@ -81,6 +81,7 @@ private struct ProfilesSettingsTab: View {
     @State private var selection: UUID?
     @State private var editingProfile: ConnectionProfile?
     @State private var isAdding = false
+    @State private var importable: [ConnectionProfile] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -111,7 +112,21 @@ private struct ProfilesSettingsTab: View {
 
             HStack {
                 Button { startAdd() } label: { Image(systemName: "plus") }
-                    .help("Add a profile")
+                    .help("Add a blank profile")
+                Menu {
+                    if importable.isEmpty {
+                        Text("No SSO profiles found in ~/.aws/config")
+                    } else {
+                        ForEach(importable) { profile in
+                            Button(profile.name) { startImport(profile) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help("Import a profile from ~/.aws/config")
+                .menuIndicator(.hidden)
+                .frame(width: 44)
                 Button { if let id = selection { store.duplicateProfile(id) } } label: { Image(systemName: "doc.on.doc") }
                     .help("Duplicate the selected profile")
                     .disabled(selection == nil)
@@ -135,13 +150,17 @@ private struct ProfilesSettingsTab: View {
                 }
             }
         }
+        .onAppear { importable = store.importableProfiles() }
     }
 
     private func startAdd() {
         isAdding = true
-        var blank = ConnectionProfile.factoryDefault
-        blank.id = UUID()
-        blank.name = "New Profile"
-        editingProfile = blank
+        editingProfile = ConnectionProfile.template
+    }
+
+    /// Open the editor pre-filled from a `~/.aws/config` entry so the user adds the tag + secret.
+    private func startImport(_ profile: ConnectionProfile) {
+        isAdding = true
+        editingProfile = profile
     }
 }

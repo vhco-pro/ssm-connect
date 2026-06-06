@@ -97,4 +97,31 @@ struct AWSConfigParserTests {
         let parser = AWSConfigParser(contents: "[default]\nregion = eu-west-1")
         #expect(parser.resolvedProfile(named: "default")?.resourceRegion == "eu-west-1")
     }
+
+    @Test("resolvedProfiles lists only SSO profiles, sorted, for the import picker")
+    func listsSSOProfiles() {
+        let config = """
+        [sso-session sess]
+        sso_start_url = https://x.awsapps.com/start
+        sso_region = eu-west-1
+
+        [profile zeta]
+        sso_session = sess
+        sso_account_id = 111
+        region = eu-central-1
+
+        [profile alpha]
+        sso_session = sess
+        sso_account_id = 222
+        region = eu-west-1
+
+        [profile no-sso]
+        region = us-east-1
+        """
+        let parser = AWSConfigParser(contents: config)
+        let names = parser.resolvedProfiles().map(\.name)
+
+        // Sorted, and the SSO-less profile is excluded.
+        #expect(names == ["alpha", "zeta"])
+    }
 }

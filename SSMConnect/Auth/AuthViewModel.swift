@@ -62,7 +62,7 @@ final class AuthViewModel {
     private let provider: AuthProviding
     private let profile: ConnectionProfile
 
-    init(provider: AuthProviding = AWSAuthProvider(), profile: ConnectionProfile = .factoryDefault) {
+    init(provider: AuthProviding = AWSAuthProvider(), profile: ConnectionProfile = .template) {
         self.provider = provider
         self.profile = profile
     }

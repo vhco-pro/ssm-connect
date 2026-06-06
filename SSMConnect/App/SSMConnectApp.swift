@@ -7,7 +7,8 @@ import SwiftUI
 // ProfileStore (Phase G) supplies the active profile + global settings.
 @main
 struct SSMConnectApp: App {
-    // Phase G — persisted profiles + settings, seeded from ~/.aws/config on first launch.
+    // Phase G — persisted profiles + settings. No profile is baked in; first launch starts
+    // empty and the menu/Settings guide the user to import one from ~/.aws/config (F-18).
     @State private var store: ProfileStore
     // Task F1 — the full connection state machine drives the menu + menu-bar icon.
     @State private var machine: ConnectionStateMachine
@@ -15,7 +16,6 @@ struct SSMConnectApp: App {
 
     init() {
         let store = ProfileStore()
-        store.seedIfEmpty()
         let machine = ConnectionStateMachine(profile: store.activeProfile, settings: store.settings)
         _store = State(initialValue: store)
         _machine = State(initialValue: machine)

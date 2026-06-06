@@ -14,8 +14,17 @@ struct ProfileStoreTests {
         return defaults
     }
 
-    @Test("seedIfEmpty seeds one profile from a parsed config and marks it active")
-    func seedFromConfig() {
+    @Test("a fresh store has no profiles — nothing about an AWS env is baked in")
+    func startsEmpty() {
+        let store = ProfileStore(defaults: makeDefaults())
+        #expect(store.profiles.isEmpty)
+        #expect(store.hasProfiles == false)
+        // activeProfile falls back to a blank template (not connectable).
+        #expect(store.activeProfile.isConfigured == false)
+    }
+
+    @Test("importableProfiles maps ~/.aws/config SSO profiles, leaving tag + secret blank")
+    func importFromConfig() {
         let store = ProfileStore(defaults: makeDefaults())
         let parser = AWSConfigParser(contents: """
         [profile workstation-prd]
@@ -28,37 +37,31 @@ struct ProfileStoreTests {
         sso_region = eu-west-1
         """)
 
-        store.seedIfEmpty(parser: parser)
+        let importable = store.importableProfiles(parser: parser)
 
-        #expect(store.profiles.count == 1)
-        let seeded = store.activeProfile
-        #expect(seeded.ssoStartUrl == "https://example.awsapps.com/start")
-        #expect(seeded.ssoRegion == "eu-west-1")
-        #expect(seeded.resourceRegion == "eu-central-1")
-        #expect(store.activeProfileID == seeded.id)
+        #expect(importable.count == 1)
+        let p = importable[0]
+        #expect(p.name == "workstation-prd")
+        #expect(p.ssoStartUrl == "https://example.awsapps.com/start")
+        #expect(p.ssoRegion == "eu-west-1")
+        #expect(p.accountId == "111122223333")
+        #expect(p.resourceRegion == "eu-central-1")
+        // Config doesn't carry these — left for the user.
+        #expect(p.instanceTagValue.isEmpty)
+        #expect(p.secretId == nil)
+        #expect(p.isConfigured == false)
     }
 
-    @Test("seedIfEmpty falls back to the factory default when no config is available")
-    func seedFallback() {
+    @Test("importableProfiles is empty when no config is available")
+    func importNoConfig() {
         let store = ProfileStore(defaults: makeDefaults())
-        store.seedIfEmpty(parser: nil)
-
-        #expect(store.profiles.count == 1)
-        #expect(store.activeProfile.instanceTagValue == ConnectionProfile.factoryDefault.instanceTagValue)
-    }
-
-    @Test("seedIfEmpty is a no-op when profiles already exist")
-    func seedNoOp() {
-        let store = ProfileStore(defaults: makeDefaults())
-        store.addProfile(.factoryDefault)
-        store.seedIfEmpty(parser: nil)
-        #expect(store.profiles.count == 1)
+        #expect(store.importableProfiles(parser: nil).isEmpty)
     }
 
     @Test("add/update/duplicate/delete behave correctly")
     func crud() {
         let store = ProfileStore(defaults: makeDefaults())
-        var p = ConnectionProfile.factoryDefault
+        var p = ConnectionProfile.example
         p.id = UUID()
         store.addProfile(p)
         #expect(store.activeProfileID == p.id) // first add becomes active
@@ -81,7 +84,7 @@ struct ProfileStoreTests {
     func persistence() {
         let defaults = makeDefaults()
         let store = ProfileStore(defaults: defaults)
-        var p = ConnectionProfile.factoryDefault
+        var p = ConnectionProfile.example
         p.id = UUID()
         p.name = "Persisted"
         store.addProfile(p)
@@ -95,15 +98,15 @@ struct ProfileStoreTests {
         #expect(reloaded.settings.clipboardAutoClearSeconds == 90)
     }
 
-    @Test("the last profile cannot be deleted out from under the active selection silently")
+    @Test("deleting the last profile leaves a safe blank-template fallback rather than crashing")
     func deleteLeavesActiveValid() {
         let store = ProfileStore(defaults: makeDefaults())
-        store.seedIfEmpty(parser: nil)
+        store.addProfile(.example)
         let onlyID = store.profiles[0].id
         store.deleteProfile(onlyID)
         #expect(store.profiles.isEmpty)
-        // activeProfile falls back to the factory default rather than crashing.
-        #expect(store.activeProfile.name == ConnectionProfile.factoryDefault.name)
+        // activeProfile falls back to the blank template rather than crashing.
+        #expect(store.activeProfile.name == ConnectionProfile.template.name)
     }
 }
 
@@ -111,7 +114,7 @@ struct ProfileStoreTests {
 struct ConnectionProfileCodableTests {
     @Test("round-trips through JSON including the connect action")
     func roundTrip() throws {
-        let original = ConnectionProfile.factoryDefault
+        let original = ConnectionProfile.example
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(ConnectionProfile.self, from: data)
         #expect(decoded == original)

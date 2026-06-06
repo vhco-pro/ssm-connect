@@ -77,6 +77,16 @@ struct AWSConfigParser {
         )
     }
 
+    /// All profiles that reference SSO (have a resolvable start URL), each fully resolved and
+    /// sorted by name — for the first-launch "import from ~/.aws/config" picker (F-18).
+    func resolvedProfiles() -> [(name: String, resolved: ResolvedProfile)] {
+        profiles.keys.sorted().compactMap { name in
+            guard let resolved = resolvedProfile(named: name),
+                  let startUrl = resolved.startUrl, !startUrl.isEmpty else { return nil }
+            return (name, resolved)
+        }
+    }
+
     // MARK: - Parsing helpers
 
     private mutating func apply(key: String, value: String, to section: (kind: String, name: String)) {

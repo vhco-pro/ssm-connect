@@ -20,6 +20,7 @@ struct ConnectionStateMachineTests {
         readiness: WorkstationReadinessProbing = StubReadinessProbe(),
         clipboard: ClipboardManager = ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
         notifier: Notifying = MockNotifier(),
+        profile: ConnectionProfile = .example,
         settings: AppSettings = .default,
         isExpired: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck
     ) -> ConnectionStateMachine {
@@ -33,6 +34,7 @@ struct ConnectionStateMachineTests {
             readiness: readiness,
             clipboard: clipboard,
             notifier: notifier,
+            profile: profile,
             settings: settings,
             isExpiredCredentials: isExpired,
             maxReconnectAttempts: 3,
@@ -76,7 +78,7 @@ struct ConnectionStateMachineTests {
         #expect(machine.state == .connected)
         #expect(machine.instanceId == "i-warm")
         #expect(machine.tunnelPID == 4242)
-        #expect(machine.localPort == ConnectionProfile.factoryDefault.localPort)
+        #expect(machine.localPort == ConnectionProfile.template.localPort)
         #expect(machine.password == "s3cr3t")
         #expect(pb.currentString() == "s3cr3t")
         #expect(dcv.launchCount == 1)

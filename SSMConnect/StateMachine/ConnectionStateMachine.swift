@@ -80,7 +80,7 @@ final class ConnectionStateMachine {
         clipboard: ClipboardManager = ClipboardManager(),
         log: ConnectionLog? = nil,
         notifier: Notifying = UserNotificationService(),
-        profile: ConnectionProfile = .factoryDefault,
+        profile: ConnectionProfile = .template,
         settings: AppSettings = .default,
         timeouts: ConnectionTimeouts = .default,
         isExpiredCredentials: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck,
@@ -126,7 +126,8 @@ final class ConnectionStateMachine {
     func onLaunch() {
         dcv.sweepOrphanedFiles()
         Task { await notifier.requestAuthorization() }
-        if settings.autoConnect, state == .disconnected {
+        // Only auto-connect a fully configured profile — a fresh install has none yet (F-03/F-18).
+        if settings.autoConnect, state == .disconnected, profile.isConfigured {
             connect()
         }
     }

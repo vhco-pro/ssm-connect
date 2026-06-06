@@ -42,23 +42,51 @@ struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
 
     /// What to launch once the tunnel is up. v1 = DCV Viewer auto-login (F-18, §13).
     var connectAction: ConnectAction = .dcvViewer
+
+    /// Whether the profile has the minimum fields needed to attempt a connection. Used to gate
+    /// auto-connect and guide first-launch users (the app ships with NO profile baked in).
+    var isConfigured: Bool {
+        !ssoStartUrl.isEmpty && !ssoRegion.isEmpty && !accountId.isEmpty
+            && !roleName.isEmpty && !resourceRegion.isEmpty
+            && !instanceTagKey.isEmpty && !instanceTagValue.isEmpty
+    }
 }
 
 extension ConnectionProfile {
-    /// Built-in default profile for the factory workstation (spec header / `~/.aws/config`).
-    /// Phase G replaces this with `~/.aws/config` seeding; used now so the temporary
-    /// "Sign In" menu item (B5) and live integration test (B8) have a working profile.
-    static let factoryDefault = ConnectionProfile(
-        name: "Example Workstation",
-        ssoStartUrl: "https://d-0123456789.awsapps.com/start",
-        ssoRegion: "eu-west-1",
-        accountId: "111122223333",
-        roleName: "AdministratorAccess",
-        resourceRegion: "eu-central-1",
-        instanceTagKey: "Name",
-        instanceTagValue: "example-workstation",
-        secretId: "ec2/workstation-dcv-password",
-        localPort: 8443,
-        remotePort: 8443
-    )
+    /// A neutral, empty profile the user fills in (nothing about any AWS environment is hardcoded
+    /// in the app — F-18, ADR-5). Ports default to DCV's 8443. The instance tag value and secret
+    /// id are blank because `~/.aws/config` doesn't carry them; the user supplies them in Settings.
+    static var template: ConnectionProfile {
+        ConnectionProfile(
+            name: "New Workstation",
+            ssoStartUrl: "",
+            ssoRegion: "",
+            accountId: "",
+            roleName: "",
+            resourceRegion: "",
+            instanceTagKey: "Name",
+            instanceTagValue: "",
+            secretId: nil,
+            localPort: 8443,
+            remotePort: 8443
+        )
+    }
+
+    /// Build a profile from a resolved `~/.aws/config` entry (G4/G5). SSO facts come from config;
+    /// the instance tag value + DCV secret id are left for the user to fill (config has no such concept).
+    init(name: String, awsConfig resolved: AWSConfigParser.ResolvedProfile) {
+        self.init(
+            name: name,
+            ssoStartUrl: resolved.startUrl ?? "",
+            ssoRegion: resolved.ssoRegion ?? "",
+            accountId: resolved.accountId ?? "",
+            roleName: resolved.roleName ?? "",
+            resourceRegion: resolved.resourceRegion ?? "",
+            instanceTagKey: "Name",
+            instanceTagValue: "",
+            secretId: nil,
+            localPort: 8443,
+            remotePort: 8443
+        )
+    }
 }

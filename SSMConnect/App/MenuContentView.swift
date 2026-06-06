@@ -41,11 +41,20 @@ struct MenuContentView: View {
 
             Divider()
 
-            // Context-aware primary action (Connect / Connecting… / Connected / Retry).
-            Button(machine.actionTitle) {
-                machine.primaryAction()
+            if !store.hasProfiles {
+                // First launch: nothing is configured. Guide the user to set up a profile.
+                Text("No workstation configured.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                SettingsLink { Text("Set Up a Workstation…") }
+                    .keyboardShortcut(",")
+            } else {
+                // Context-aware primary action (Connect / Connecting… / Connected / Retry).
+                Button(machine.actionTitle) {
+                    machine.primaryAction()
+                }
+                .disabled(!machine.actionEnabled)
             }
-            .disabled(!machine.actionEnabled)
 
             // Connected-only actions (F-11/F-14/F-15).
             if machine.state == .connected {

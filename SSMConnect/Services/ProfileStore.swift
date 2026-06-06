@@ -4,8 +4,9 @@ import Observation
 /// Persists connection profiles + global settings to `UserDefaults` (G3, F-18, NF-01).
 ///
 /// **No secrets are ever stored** — only the Secrets Manager *id*, never a password.
-/// On first launch (`seedIfEmpty`) the store bootstraps a single default profile from
-/// `~/.aws/config` (G5). The active profile drives the `ConnectionStateMachine`.
+/// Nothing about any AWS environment is baked into the app: there are no profiles until the
+/// user creates one (the menu/Settings guide first-launch users to import from `~/.aws/config`).
+/// The active profile drives the `ConnectionStateMachine`.
 @MainActor
 @Observable
 final class ProfileStore {
@@ -31,13 +32,17 @@ final class ProfileStore {
 
     // MARK: Active profile
 
-    /// The active profile, falling back to the first stored profile or the factory default.
+    /// The active profile, falling back to the first stored profile or a blank template
+    /// (when no profile has been configured yet).
     var activeProfile: ConnectionProfile {
         if let id = activeProfileID, let match = profiles.first(where: { $0.id == id }) {
             return match
         }
-        return profiles.first ?? .factoryDefault
+        return profiles.first ?? .template
     }
+
+    /// Whether the user has configured at least one profile (drives first-launch guidance).
+    var hasProfiles: Bool { !profiles.isEmpty }
 
     func setActiveProfile(_ id: UUID) {
         guard profiles.contains(where: { $0.id == id }) else { return }
@@ -80,23 +85,14 @@ final class ProfileStore {
         save()
     }
 
-    // MARK: First-launch seeding (G5)
+    // MARK: Import from ~/.aws/config (F-18)
 
-    /// If no profiles exist yet, seed a single default profile. SSO start URL + regions are
-    /// taken from `~/.aws/config` when available (G4), falling back to the factory defaults.
-    func seedIfEmpty(parser: AWSConfigParser? = AWSConfigParser.loadDefault(), awsProfileName: String = "workstation-prd") {
-        guard profiles.isEmpty else { return }
-
-        var seed = ConnectionProfile.factoryDefault
-        if let resolved = parser?.resolvedProfile(named: awsProfileName) {
-            if let url = resolved.startUrl, !url.isEmpty { seed.ssoStartUrl = url }
-            if let region = resolved.ssoRegion, !region.isEmpty { seed.ssoRegion = region }
-            if let account = resolved.accountId, !account.isEmpty { seed.accountId = account }
-            if let role = resolved.roleName, !role.isEmpty { seed.roleName = role }
-            if let resource = resolved.resourceRegion, !resource.isEmpty { seed.resourceRegion = resource }
-        }
-        addProfile(seed)
-        setActiveProfile(seed.id)
+    /// Profiles available to import from `~/.aws/config` (SSO start URL + regions/account/role
+    /// pre-filled; instance tag value + secret left for the user). Nothing is auto-seeded — the
+    /// user explicitly picks one. Returns an empty list if there's no usable config.
+    func importableProfiles(parser: AWSConfigParser? = AWSConfigParser.loadDefault()) -> [ConnectionProfile] {
+        guard let parser else { return [] }
+        return parser.resolvedProfiles().map { ConnectionProfile(name: $0.name, awsConfig: $0.resolved) }
     }
 
     // MARK: Persistence
