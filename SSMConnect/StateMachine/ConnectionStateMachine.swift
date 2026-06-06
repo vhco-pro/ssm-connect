@@ -42,6 +42,7 @@ final class ConnectionStateMachine {
     private let tunnel: TunnelProvider
     private let secrets: SecretsProviding
     private let dcv: DCVLaunching
+    private let readiness: WorkstationReadinessProbing
     private let clipboard: ClipboardManager
     /// In-memory connection log (F-19) + Apple Unified Logging (NF-14). Exposed for the log window.
     let log: ConnectionLog
@@ -75,6 +76,7 @@ final class ConnectionStateMachine {
         tunnel: TunnelProvider = BundledPluginTunnel(),
         secrets: SecretsProviding = SecretsService(),
         dcv: DCVLaunching = DCVLauncher(),
+        readiness: WorkstationReadinessProbing = HTTPSReadinessProbe(),
         clipboard: ClipboardManager = ClipboardManager(),
         log: ConnectionLog? = nil,
         notifier: Notifying = UserNotificationService(),
@@ -92,6 +94,7 @@ final class ConnectionStateMachine {
         self.tunnel = tunnel
         self.secrets = secrets
         self.dcv = dcv
+        self.readiness = readiness
         self.clipboard = clipboard
         self.log = log ?? ConnectionLog()
         self.notifier = notifier
@@ -338,6 +341,16 @@ final class ConnectionStateMachine {
             guard dcv.isViewerInstalled() else {
                 warningMessage = DCVError.viewerNotInstalled.errorDescription
                 return
+            }
+            // Wait for the in-VM DCV server to accept connections before launching the viewer —
+            // SSM-agent-Online doesn't imply the server is listening yet (F-16, "endpoint unreachable").
+            let ready = await readiness.waitUntilReady(
+                port: profile.localPort,
+                timeout: timeouts.dcvReady,
+                interval: timeouts.dcvReadyPollInterval
+            )
+            if !ready {
+                log.log(.tunnel, "DCV server not reachable on localhost:\(profile.localPort) yet; launching viewer anyway.")
             }
             let file = DCVConnectionFile(port: profile.localPort, password: pw)
             try await dcv.launch(connectionFile: file)

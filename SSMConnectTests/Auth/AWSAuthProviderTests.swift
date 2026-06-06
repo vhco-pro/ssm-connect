@@ -144,6 +144,31 @@ struct AWSAuthProviderTests {
         #expect(credentials.sessionToken == "session")
     }
 
+    @Test("Device authorization persists the new token to the cache for later reuse (F-05)")
+    func deviceAuthPersistsToken() async throws {
+        let cache = MockSSOCache(stored: nil)
+        let oidc = MockOIDCClient()
+        oidc.registerOutput = RegisterClientOutput(
+            clientId: "new-client-id", clientSecret: "new-client-secret", clientSecretExpiresAt: 4_102_444_800
+        )
+        oidc.createTokenResults = [
+            .success(CreateTokenOutput(accessToken: "fresh-access", expiresIn: 3600, refreshToken: "fresh-refresh"))
+        ]
+        let sso = MockSSOClient()
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+
+        _ = try await provider.authenticate(profile: profile)
+
+        // The device-auth result was written back so the next connect can reuse / refresh it.
+        #expect(cache.updatedToken?.accessToken == "fresh-access")
+        #expect(cache.updatedToken?.refreshToken == "fresh-refresh")
+        #expect(cache.updatedToken?.clientId == "new-client-id")
+        #expect(cache.updatedToken?.clientSecret == "new-client-secret")
+        #expect(cache.updatedToken?.startUrl == profile.ssoStartUrl)
+        #expect(cache.updatedToken?.canRefresh == true)
+    }
+
     @Test("refreshIfNeeded throws signInRequired with no cached token and never opens a browser")
     func refreshIfNeededRequiresSignIn() async throws {
         let cache = MockSSOCache(stored: nil)

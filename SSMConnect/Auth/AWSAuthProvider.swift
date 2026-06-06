@@ -141,6 +141,15 @@ final class AWSAuthProvider: AuthProviding {
                     grantType: "urn:ietf:params:oauth:grant-type:device_code"
                 ))
                 if let accessToken = token.accessToken, !accessToken.isEmpty {
+                    // Persist to the SSO cache so the *next* connect reuses/refreshes this token
+                    // instead of opening the browser again (F-05). Best-effort.
+                    cacheDeviceToken(
+                        profile: profile,
+                        clientId: clientId,
+                        clientSecret: clientSecret,
+                        registrationExpiresAt: registration.clientSecretExpiresAt,
+                        output: token
+                    )
                     return accessToken
                 }
                 // Success but no token yet — back off before polling again so we never busy-spin.
@@ -152,6 +161,31 @@ final class AWSAuthProvider: AuthProviding {
             }
         }
         throw AuthError.deviceAuthTimedOut
+    }
+
+    /// Persist a freshly device-authorized token to the SSO cache (best-effort) so a later
+    /// connect can reuse it (or silently refresh) without re-opening the browser (F-05).
+    private func cacheDeviceToken(
+        profile: ConnectionProfile,
+        clientId: String,
+        clientSecret: String,
+        registrationExpiresAt: Int,
+        output: CreateTokenOutput
+    ) {
+        guard let accessToken = output.accessToken, !accessToken.isEmpty else { return }
+        let token = SSOToken(
+            startUrl: profile.ssoStartUrl,
+            region: profile.ssoRegion,
+            accessToken: accessToken,
+            expiresAt: Date().addingTimeInterval(TimeInterval(output.expiresIn)),
+            clientId: clientId,
+            clientSecret: clientSecret,
+            refreshToken: output.refreshToken,
+            registrationExpiresAt: registrationExpiresAt > 0
+                ? Date(timeIntervalSince1970: TimeInterval(registrationExpiresAt))
+                : nil
+        )
+        try? cache.update(token)
     }
 
     /// Exchanges an SSO `accessToken` for temporary STS credentials (F-04).

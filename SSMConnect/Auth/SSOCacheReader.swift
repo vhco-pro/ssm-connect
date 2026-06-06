@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Reads (and silently updates) the AWS SSO token cache (F-05, B2).
@@ -8,8 +9,10 @@ protocol SSOCacheReading: Sendable {
     /// Returns the cached token matching `startUrl` + `region`, or `nil` if none exists.
     func token(startUrl: String, region: String) throws -> SSOToken?
 
-    /// Writes a refreshed token back to its existing cache file, preserving any other
-    /// fields. Best-effort: the app never creates *additional* token files (NF-01).
+    /// Persists a token to the standard SSO cache so subsequent connects can reuse / silently
+    /// refresh it (the same `~/.aws/sso/cache/` that `aws sso login` writes — NF-01). Overwrites
+    /// the existing file matching `startUrl` + `region`, preserving any unmodelled fields, or
+    /// creates a `0600` file if none exists yet.
     func update(_ token: SSOToken) throws
 }
 
@@ -30,15 +33,40 @@ struct SSOCacheReader: SSOCacheReading {
     }
 
     func update(_ token: SSOToken) throws {
-        guard let match = try matchingFile(startUrl: token.startUrl, region: token.region) else { return }
-        // Re-read as a mutable JSON object so we preserve fields we don't model.
-        let data = try Data(contentsOf: match.url)
-        var object = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        // Overwrite the existing matching file (preserving unmodelled fields) or create a new
+        // 0600 cache file named like the AWS CLI (sha1 of the start URL).
+        let url: URL
+        var object: [String: Any]
+        if let match = try matchingFile(startUrl: token.startUrl, region: token.region) {
+            url = match.url
+            let data = try Data(contentsOf: url)
+            object = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        } else {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            url = directory.appendingPathComponent("\(Self.cacheKey(for: token.startUrl)).json")
+            object = [:]
+        }
+        object["startUrl"] = token.startUrl
+        object["region"] = token.region
         object["accessToken"] = token.accessToken
         object["expiresAt"] = Self.isoString(from: token.expiresAt)
+        // clientId/secret/refreshToken/registration must travel together — a device-auth login
+        // re-registers the client, so persist all of them or a later refresh would mismatch.
+        if let clientId = token.clientId { object["clientId"] = clientId }
+        if let clientSecret = token.clientSecret { object["clientSecret"] = clientSecret }
         if let refreshToken = token.refreshToken { object["refreshToken"] = refreshToken }
+        if let registration = token.registrationExpiresAt {
+            object["registrationExpiresAt"] = Self.isoString(from: registration)
+        }
         let updated = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-        try updated.write(to: match.url, options: .atomic)
+        try updated.write(to: url, options: .atomic)
+        // SSO cache files hold tokens — keep them owner-only (matches the AWS CLI).
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    /// AWS CLI cache filename stem: lowercase hex sha1 of the start URL.
+    static func cacheKey(for startUrl: String) -> String {
+        Insecure.SHA1.hash(data: Data(startUrl.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - Private

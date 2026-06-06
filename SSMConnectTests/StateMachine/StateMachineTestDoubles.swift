@@ -101,6 +101,17 @@ final class SequencedEC2Service: EC2Providing, @unchecked Sendable {
     }
 }
 
+/// Readiness probe double — returns a fixed result immediately (no network).
+final class StubReadinessProbe: WorkstationReadinessProbing, @unchecked Sendable {
+    var ready: Bool
+    private(set) var calls = 0
+    init(ready: Bool = true) { self.ready = ready }
+    func waitUntilReady(port: Int, timeout: Duration, interval: Duration) async -> Bool {
+        calls += 1
+        return ready
+    }
+}
+
 /// Sentinel error treated as "credentials expired" by an injected predicate.
 struct StubExpiredError: Error {}
 

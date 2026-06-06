@@ -9,6 +9,10 @@ struct ConnectionTimeouts: Sendable {
     var ssm: Duration = .seconds(180)            // 3 min SSM registration
     var ssmPollInterval: Duration = .seconds(5)
     var tunnel: Duration = .seconds(30)
+    /// Wait for the in-VM DCV server to start accepting connections after the tunnel is up
+    /// (SSM-agent-Online ≠ DCV-server-ready).
+    var dcvReady: Duration = .seconds(30)
+    var dcvReadyPollInterval: Duration = .seconds(1)
 
     static let `default` = ConnectionTimeouts()
 }
