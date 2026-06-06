@@ -36,6 +36,13 @@ jobs:
       - name: Install tools
         run: brew install gitversion xcodegen
 
+      - name: Select the newest installed Xcode
+        # XcodeGen emits a recent project format (objectVersion 77) the runner's default Xcode
+        # can be too old to read; pick the newest Xcode on the image.
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          xcodebuild -version
+
       - name: Compute version
         id: ver
         run: |
