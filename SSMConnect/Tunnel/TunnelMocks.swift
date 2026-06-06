@@ -87,8 +87,8 @@ final class MockTunnelHandle: TunnelHandle, @unchecked Sendable {
 
 extension SSMSessionResponse {
     static func stub(
-        sessionId: String = "workstation-prd-0abc1234",
-        streamUrl: String = "wss://ssmmessages.eu-central-1.amazonaws.com/v1/data-channel/workstation-prd-0abc1234?role=publish_subscribe",
+        sessionId: String = "example-session-0abc1234",
+        streamUrl: String = "wss://ssmmessages.us-east-1.amazonaws.com/v1/data-channel/example-session-0abc1234?role=publish_subscribe",
         tokenValue: String = "AAEAAfEXAMPLE"
     ) -> SSMSessionResponse {
         SSMSessionResponse(sessionId: sessionId, streamUrl: streamUrl, tokenValue: tokenValue)
