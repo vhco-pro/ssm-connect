@@ -1,11 +1,13 @@
 # Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
 #
-# Self-contained release pipeline — no GitHub App / bot / cross-repo secret, just GITHUB_TOKEN.
-# On every push to main: GitVersion computes the next version from conventional-commit messages.
-# If that version isn't already tagged (i.e. a feat:/fix:/etc. landed), build the ad-hoc-signed
-# .app on a macOS runner and publish a `vX.Y.Z` GitHub Release with the zip asset.
-# The Homebrew cask is bumped automatically by a workflow in vhco-pro/homebrew-tap that watches
-# this repo's releases (it writes its own cask with its own token — no cross-repo auth needed).
+# Single-job release on push to main — no GitHub App / bot, just the repo's GITHUB_TOKEN
+# (GitVersion only needs a token with contents:write to push the tag; the App is only required
+# when a *separate* release workflow must be triggered by the tag — not the case here).
+#
+# GitVersion computes the next version from conventional-commit messages. Only when it's a NEW
+# version (i.e. a feat:/fix:/etc. landed) do we tag it with the reusable michielvha/gitversion-tag-action,
+# build the ad-hoc-signed .app on macOS, and publish a vX.Y.Z GitHub Release with the zip asset.
+# The Homebrew cask is bumped by vhco-pro/homebrew-tap's own sync-cask workflow.
 
 name: Release
 
@@ -26,17 +28,52 @@ jobs:
   release:
     runs-on: macos-14
     permissions:
-      contents: write # create the tag + GitHub Release on this repo
+      contents: write # tag + create the GitHub Release
     steps:
       - name: Checkout (full history for GitVersion)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      - name: Install tools
-        run: brew install gitversion xcodegen
+      - name: Setup GitVersion
+        uses: gittools/actions/gitversion/setup@v0
+        with:
+          versionSpec: '6.0.0'
+
+      - name: Compute version
+        id: gv
+        uses: gittools/actions/gitversion/execute@v0
+        with:
+          useConfigFile: true
+          configFilePath: gitversion.yml
+
+      - name: Gate on a version bump
+        id: ver
+        run: |
+          VERSION="${{ steps.gv.outputs.semVer }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          git fetch --tags --force
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No version bump (v$VERSION already released) — skipping."
+          else
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$VERSION"
+          fi
+
+      - name: Tag with GitVersion (reusable action)
+        if: steps.ver.outputs.bump == 'true'
+        uses: michielvha/gitversion-tag-action@71eb5b08849c8867ee613dc9c929af41d145d91d # main snapshot 2026-05-23
+        with:
+          configFilePath: gitversion.yml
+          prefix: 'v'
+
+      - name: Install XcodeGen
+        if: steps.ver.outputs.bump == 'true'
+        run: brew install xcodegen
 
       - name: Select the newest installed Xcode
+        if: steps.ver.outputs.bump == 'true'
         id: xcode
         # XcodeGen emits a recent project format (objectVersion 77) the runner's default Xcode
         # can be too old to read; pick the newest Xcode on the image.
@@ -46,8 +83,7 @@ jobs:
           echo "version=$(xcodebuild -version | head -1 | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM + build products
-        # Warms after the first real build; cuts the cold aws-sdk-swift Release compile from
-        # ~20 min to a few minutes. Keyed on the deps (project.yml) + Xcode version.
+        if: steps.ver.outputs.bump == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -59,32 +95,18 @@ jobs:
             spm-${{ runner.os }}-xc${{ steps.xcode.outputs.version }}-
             spm-${{ runner.os }}-
 
-      - name: Compute version
-        id: ver
-        run: |
-          git fetch --tags --force
-          VERSION="$(gitversion /config gitversion.yml /showvariable MajorMinorPatch)"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$VERSION already released — no version-bumping commits since. Skipping."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Releasing v$VERSION"
-          fi
-
-      - name: Stamp version from GitVersion
-        if: steps.ver.outputs.exists == 'false'
+      - name: Stamp version
+        if: steps.ver.outputs.bump == 'true'
         run: |
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.version }}" SSMConnect/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" SSMConnect/Info.plist
 
       - name: Build + package the signed .app
-        if: steps.ver.outputs.exists == 'false'
+        if: steps.ver.outputs.bump == 'true'
         run: ./scripts/release.sh
 
-      - name: Publish GitHub Release (creates the v tag)
-        if: steps.ver.outputs.exists == 'false'
+      - name: Publish GitHub Release
+        if: steps.ver.outputs.bump == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
@@ -94,9 +116,6 @@ jobs:
             --generate-notes \
             "dist/SSMConnect-${VERSION}.zip"
 
-      # The Homebrew cask is bumped by vhco-pro/homebrew-tap's own `sync-cask` workflow, which
-      # watches this repo's releases and updates its cask with its own GITHUB_TOKEN — so no
-      # cross-repo token/app/deploy-key is needed here.
       - name: Note cask sync
-        if: steps.ver.outputs.exists == 'false'
-        run: echo "::notice::Release v${{ steps.ver.outputs.version }} published — homebrew-tap will sync the cask within ~30 min (or trigger its sync-cask workflow to update now)."
+        if: steps.ver.outputs.bump == 'true'
+        run: echo "::notice::Release v${{ steps.ver.outputs.version }} published — homebrew-tap's sync-cask will bump the cask."
