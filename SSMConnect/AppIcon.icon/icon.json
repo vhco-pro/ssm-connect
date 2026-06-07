@@ -1,0 +1,7 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    { "layers" : [ { "image-name" : "Logo.png", "name" : "VH" } ] }
+  ],
+  "supported-platforms" : { "squares" : "shared" }
+}
