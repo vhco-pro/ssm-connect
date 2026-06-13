@@ -43,6 +43,21 @@ struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
     /// What to launch once the tunnel is up. v1 = DCV Viewer auto-login (F-18, §13).
     var connectAction: ConnectAction = .dcvViewer
 
+    // MARK: Multi-user (Phase F)
+
+    /// Connect mode. `nil` (legacy profiles / default) is treated as `.singleUser`, so existing
+    /// profiles and stored data are unaffected. `.multiUser` switches to per-user virtual sessions
+    /// authenticated by a presigned-identity token (no password) — see spec MU-00a / CL-04.
+    var connectMode: ConnectMode? = nil
+    /// Port the on-box agent listens on (`/ensure-session` + token verifier), forwarded over a second
+    /// SSM tunnel in multi-user mode. `nil` → 8444.
+    var agentRemotePort: Int? = nil
+
+    /// Resolved connect mode — legacy/`nil` maps to `.singleUser` (vanilla, the default).
+    var resolvedConnectMode: ConnectMode { connectMode ?? .singleUser }
+    /// Resolved agent port (`nil` → 8444).
+    var resolvedAgentRemotePort: Int { agentRemotePort ?? 8444 }
+
     /// Whether the profile has the minimum fields needed to attempt a connection. Used to gate
     /// auto-connect and guide first-launch users (the app ships with NO profile baked in).
     var isConfigured: Bool {

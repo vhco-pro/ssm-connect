@@ -307,8 +307,13 @@ final class ConnectionStateMachine {
             let handle = try await establishTunnel(instanceId: instance.id)
             try Task.checkCancellation()
 
-            // 6. Fetch the password, copy it, and auto-login DCV (F-10/F-11, best-effort F-16)
-            await fetchSecretAndLaunchDCV()
+            // 6. Auto-login DCV — vanilla password (single-user) or identity token (multi-user).
+            switch profile.resolvedConnectMode {
+            case .singleUser:
+                await fetchSecretAndLaunchDCV()
+            case .multiUser:
+                await ensureSessionAndLaunchMultiUser(instanceId: instance.id)
+            }
 
             // 7. Connected
             state = .connected
@@ -383,6 +388,120 @@ final class ConnectionStateMachine {
             try await dcv.launch(connectionFile: file)
         } catch {
             warningMessage = describe(error)
+        }
+    }
+
+    // MARK: - Multi-user connect (Phase F, CL-01..05)
+
+    /// Multi-user auto-login: derive the caller's identity, ask the on-box agent to ensure that
+    /// user's virtual session (over a transient second tunnel), then launch DCV with a
+    /// presigned-identity token instead of a password.
+    ///
+    /// A multi-user host is **identity-only** (spec MU-00a): there is no `ec2-user`/shared
+    /// fallback. Failures here are surfaced as a warning and keep the tunnel up, like the
+    /// single-user path, but never silently downgrade the connection.
+    private func ensureSessionAndLaunchMultiUser(instanceId: String) async {
+        do {
+            guard let creds = credentials else { throw AuthError.signInRequired }
+            let presigner = STSPresigner(region: profile.resourceRegion)
+
+            // 1. Resolve our own AWS identity -> Linux username (CL-01).
+            let resolver = STSIdentityResolver(presigner: presigner)
+            let (_, username) = try await resolver.resolve(credentials: creds)
+            log.log(.auth, "Multi-user identity resolved to '\(username)'.")
+
+            // 2. Ensure our virtual session exists, via the agent over a transient tunnel (R1/CL-02b).
+            //    The agent tunnel is only needed for this one-shot call — DCV reaches its verifier
+            //    locally on the box, not through the client — so we close it right after.
+            let agentPort = profile.resolvedAgentRemotePort
+            let agentHandle = try await openAgentTunnel(instanceId: instanceId, port: agentPort)
+            let agent = WorkstationAgentClient(baseURL: URL(string: "http://127.0.0.1:\(agentPort)")!)
+            let provisioned: WorkstationAgentClient.EnsureSessionResult
+            do {
+                provisioned = try await ensureSessionWithRetry(agent: agent, presigner: presigner, credentials: creds)
+            } catch {
+                // Always tear down the transient agent tunnel — otherwise a failed
+                // ensure-session leaks the session-manager-plugin holding the agent port.
+                await agentHandle.terminate()
+                throw error
+            }
+            await agentHandle.terminate()
+            log.log(.tunnel, "Agent ensured session '\(provisioned.sessionId)' for '\(provisioned.user)'.")
+
+            // 3. Wait for the DCV server, mint a FRESH token, and auto-login with sessionid+authtoken (CL-03).
+            guard dcv.isViewerInstalled() else {
+                warningMessage = DCVError.viewerNotInstalled.errorDescription
+                return
+            }
+            let ready = await readiness.waitUntilReady(
+                port: profile.localPort,
+                timeout: timeouts.dcvReady,
+                interval: timeouts.dcvReadyPollInterval
+            )
+            if !ready {
+                log.log(.tunnel, "DCV server not reachable on localhost:\(profile.localPort) yet; launching viewer anyway.")
+            }
+            let freshToken = presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
+            let file = DCVConnectionFile.multiUser(
+                port: profile.localPort,
+                user: provisioned.user,
+                sessionId: provisioned.sessionId,
+                authToken: freshToken
+            )
+            try await dcv.launch(connectionFile: file)
+        } catch {
+            warningMessage = describe(error)
+            log.log(.tunnel, "Multi-user connect issue: \(describe(error))")
+        }
+    }
+
+    /// Call `/ensure-session`, retrying transient connection failures while the freshly-opened
+    /// agent tunnel becomes ready (the port-forward isn't listening the instant the handle returns).
+    /// `ensureSession` is idempotent, so retrying is safe. A real agent response (401/5xx) is *not*
+    /// transient and propagates immediately. A fresh token is minted per attempt to avoid expiry.
+    private func ensureSessionWithRetry(
+        agent: WorkstationAgentClient,
+        presigner: STSPresigner,
+        credentials: AWSCredentials,
+        attempts: Int = 15
+    ) async throws -> WorkstationAgentClient.EnsureSessionResult {
+        var lastError: Error = AuthError.signInRequired
+        for _ in 1...attempts {
+            do {
+                let token = presigner.presignedGetCallerIdentityURL(credentials: credentials, now: Date())
+                return try await agent.ensureSession(authToken: token)
+            } catch let agentError as WorkstationAgentClient.AgentError {
+                throw agentError // the agent responded — not transient
+            } catch {
+                lastError = error
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        throw lastError
+    }
+
+    /// Open a transient SSM tunnel to the on-box agent (`port`→`port`). Not stored as the
+    /// monitored handle — the caller terminates it once `/ensure-session` returns.
+    private func openAgentTunnel(instanceId: String, port: Int) async throws -> TunnelHandle {
+        let session = try await withReauth { [ssm, profile] creds in
+            try await ssm.startSession(
+                instanceId: instanceId,
+                region: profile.resourceRegion,
+                credentials: creds,
+                localPort: port,
+                remotePort: port
+            )
+        }
+        let tunnel = self.tunnel
+        let profile = self.profile
+        return try await withStageTimeout("Opening agent tunnel", timeouts.tunnel) {
+            try await tunnel.startTunnel(
+                session: session,
+                region: profile.resourceRegion,
+                instanceId: instanceId,
+                localPort: port,
+                remotePort: port
+            )
         }
     }
 

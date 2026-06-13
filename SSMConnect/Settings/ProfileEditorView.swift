@@ -38,6 +38,25 @@ struct ProfileEditorView: View {
                     portField("Remote port", value: $draft.remotePort)
                     LabeledContent("Connect action", value: draft.connectAction.displayName)
                 }
+
+                Section("Connect mode") {
+                    Picker("Mode", selection: connectModeBinding) {
+                        ForEach(ConnectMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    if draft.resolvedConnectMode == .multiUser {
+                        portField("Agent port", value: agentPortBinding)
+                        Text("You log in with your own AWS SSO identity into your own desktop. "
+                            + "Requires a workstation deployed in multi-user mode (on-box agent + virtual sessions). "
+                            + "No password is used.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("Vanilla ec2-user + Secrets-Manager password — the default. "
+                            + "Works against a standard single-user workstation.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .formStyle(.grouped)
 
@@ -83,6 +102,22 @@ struct ProfileEditorView: View {
         Binding(
             get: { draft.secretId ?? "" },
             set: { draft.secretId = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    /// Bridges the optional `connectMode` to a non-optional picker selection (nil == singleUser).
+    private var connectModeBinding: Binding<ConnectMode> {
+        Binding(
+            get: { draft.resolvedConnectMode },
+            set: { draft.connectMode = $0 }
+        )
+    }
+
+    /// Bridges the optional `agentRemotePort` to a non-optional port field (nil == 8444).
+    private var agentPortBinding: Binding<Int> {
+        Binding(
+            get: { draft.resolvedAgentRemotePort },
+            set: { draft.agentRemotePort = $0 }
         )
     }
 

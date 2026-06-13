@@ -28,6 +28,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: pro.vhco.ssm-connect
         PRODUCT_MODULE_NAME: SSMConnect
         INFOPLIST_FILE: SSMConnect/Info.plist
+        # VH (vhco) brand icon — Assets.xcassets/AppIcon.appiconset. The app is menu-bar only
+        # (LSUIElement, no Dock icon) but this drives the Finder/Launchpad/Spotlight/About icon.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5"
         # Task I3 / NF-04 — outbound-network entitlement, applied during code signing.
