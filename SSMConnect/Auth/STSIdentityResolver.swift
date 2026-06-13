@@ -14,17 +14,28 @@ struct STSIdentityResolver {
     let presigner: STSPresigner
     var now: @Sendable () -> Date = { Date() }
     var fetch: Fetch = { url in
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Ephemeral session: the token-bearing URL must never land in the shared URL cache.
+        let (data, response) = try await Self.ephemeralSession.data(from: url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw IdentityResolveError.stsRejected
         }
         return data
     }
 
-    enum IdentityResolveError: Error, Equatable {
+    private static let ephemeralSession = URLSession(configuration: .ephemeral)
+
+    enum IdentityResolveError: Error, Equatable, LocalizedError {
         case badURL
         case stsRejected
         case noArn
+
+        var errorDescription: String? {
+            switch self {
+            case .badURL: "Couldn't build the identity request."
+            case .stsRejected: "AWS rejected the identity request — your session may have expired."
+            case .noArn: "Couldn't determine your AWS identity."
+            }
+        }
     }
 
     /// Returns the verified caller ARN and the derived Linux username.

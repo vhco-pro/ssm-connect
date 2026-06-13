@@ -28,10 +28,21 @@ struct WorkstationAgentClient {
         let user: String
     }
 
-    enum AgentError: Error, Equatable {
+    enum AgentError: Error, Equatable, LocalizedError {
         case unauthorized
         case provisioningFailed(status: Int)
         case badResponse
+
+        var errorDescription: String? {
+            switch self {
+            case .unauthorized:
+                "You're not authorized for this workstation."
+            case .provisioningFailed(let status):
+                "The workstation couldn't prepare your session (agent error \(status))."
+            case .badResponse:
+                "The workstation agent returned an unexpected response."
+            }
+        }
     }
 
     /// Ensures the caller's virtual session exists and returns its id + owner.

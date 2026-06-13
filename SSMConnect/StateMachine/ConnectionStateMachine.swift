@@ -416,7 +416,15 @@ final class ConnectionStateMachine {
             let agentPort = profile.resolvedAgentRemotePort
             let agentHandle = try await openAgentTunnel(instanceId: instanceId, port: agentPort)
             let agent = WorkstationAgentClient(baseURL: URL(string: "http://127.0.0.1:\(agentPort)")!)
-            let provisioned = try await ensureSessionWithRetry(agent: agent, presigner: presigner, credentials: creds)
+            let provisioned: WorkstationAgentClient.EnsureSessionResult
+            do {
+                provisioned = try await ensureSessionWithRetry(agent: agent, presigner: presigner, credentials: creds)
+            } catch {
+                // Always tear down the transient agent tunnel — otherwise a failed
+                // ensure-session leaks the session-manager-plugin holding the agent port.
+                await agentHandle.terminate()
+                throw error
+            }
             await agentHandle.terminate()
             log.log(.tunnel, "Agent ensured session '\(provisioned.sessionId)' for '\(provisioned.user)'.")
 
