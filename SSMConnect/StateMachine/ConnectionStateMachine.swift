@@ -415,12 +415,8 @@ final class ConnectionStateMachine {
             //    locally on the box, not through the client — so we close it right after.
             let agentPort = profile.resolvedAgentRemotePort
             let agentHandle = try await openAgentTunnel(instanceId: instanceId, port: agentPort)
-            let provisioned: WorkstationAgentClient.EnsureSessionResult
-            do {
-                let token = presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
-                let agent = WorkstationAgentClient(baseURL: URL(string: "http://127.0.0.1:\(agentPort)")!)
-                provisioned = try await agent.ensureSession(authToken: token)
-            }
+            let agent = WorkstationAgentClient(baseURL: URL(string: "http://127.0.0.1:\(agentPort)")!)
+            let provisioned = try await ensureSessionWithRetry(agent: agent, presigner: presigner, credentials: creds)
             await agentHandle.terminate()
             log.log(.tunnel, "Agent ensured session '\(provisioned.sessionId)' for '\(provisioned.user)'.")
 
@@ -449,6 +445,31 @@ final class ConnectionStateMachine {
             warningMessage = describe(error)
             log.log(.tunnel, "Multi-user connect issue: \(describe(error))")
         }
+    }
+
+    /// Call `/ensure-session`, retrying transient connection failures while the freshly-opened
+    /// agent tunnel becomes ready (the port-forward isn't listening the instant the handle returns).
+    /// `ensureSession` is idempotent, so retrying is safe. A real agent response (401/5xx) is *not*
+    /// transient and propagates immediately. A fresh token is minted per attempt to avoid expiry.
+    private func ensureSessionWithRetry(
+        agent: WorkstationAgentClient,
+        presigner: STSPresigner,
+        credentials: AWSCredentials,
+        attempts: Int = 15
+    ) async throws -> WorkstationAgentClient.EnsureSessionResult {
+        var lastError: Error = AuthError.signInRequired
+        for _ in 1...attempts {
+            do {
+                let token = presigner.presignedGetCallerIdentityURL(credentials: credentials, now: Date())
+                return try await agent.ensureSession(authToken: token)
+            } catch let agentError as WorkstationAgentClient.AgentError {
+                throw agentError // the agent responded — not transient
+            } catch {
+                lastError = error
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        throw lastError
     }
 
     /// Open a transient SSM tunnel to the on-box agent (`port`→`port`). Not stored as the
