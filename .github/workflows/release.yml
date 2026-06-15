@@ -31,18 +31,18 @@ jobs:
       contents: write # tag + create the GitHub Release
     steps:
       - name: Checkout (full history for GitVersion)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
 
       - name: Setup GitVersion
-        uses: gittools/actions/gitversion/setup@c368911c8982846e30b6855f79e579104849bfc3 # v0.13.6
+        uses: gittools/actions/gitversion/setup@bc6623af8fc07d5a8903052dd46da33403eec8e8 # v4.5.0
         with:
           versionSpec: '6.0.0'
 
       - name: Compute version
         id: gv
-        uses: gittools/actions/gitversion/execute@c368911c8982846e30b6855f79e579104849bfc3 # v0.13.6
+        uses: gittools/actions/gitversion/execute@bc6623af8fc07d5a8903052dd46da33403eec8e8 # v4.5.0
         with:
           useConfigFile: true
           configFilePath: gitversion.yml
@@ -84,7 +84,7 @@ jobs:
 
       - name: Cache SwiftPM + build products
         if: steps.ver.outputs.bump == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build/DerivedData/SourcePackages
