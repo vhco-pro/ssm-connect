@@ -75,6 +75,7 @@ jobs:
             -scheme SSMConnect \
             -destination 'platform=macOS' \
             -derivedDataPath .build/DerivedData \
+            -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 
       - name: Autobuild (Actions)
