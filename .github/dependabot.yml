@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # GitHub Actions used by the release workflow.
+  # Note: Swift package deps are NOT tracked here — this app's SPM manifest lives
+  # in the XcodeGen-generated (gitignored) .xcodeproj, so there's no committed
+  # Package.swift/Package.resolved for Dependabot to read. Commit one to enable
+  # Swift dependency + security updates.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns:
+          - "*"
