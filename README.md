@@ -1,17 +1,18 @@
 # SSM Connect
 
-> Config-driven macOS menu-bar app that gets you into your cloud workstation with one click — as the shared `ec2-user`, **or as your own AWS identity**.
+> [!NOTE]
+> Config-driven macOS menu-bar app that gets you into your cloud workstation with one click - as the shared `ec2-user`, **or as your own AWS identity**.
 
 **SSM Connect** is a native macOS (Swift / SwiftUI) menu-bar utility that automates the whole
 "connect to an EC2 workstation over AWS SSM" dance: AWS SSO authentication, instance discovery by
 tag, instance start + SSM-readiness wait, an SSM port-forward tunnel, and launching the viewer
-(Amazon DCV by default) — with **zero manual terminal commands**.
+(Amazon DCV by default) - with **zero manual terminal commands**.
 
 It drives two kinds of host:
 
 - a **single-user** box (vanilla `ec2-user` + a DCV password), and
 - a **multi-user** box where each person lands in their **own isolated desktop**, authenticated by
-  their **own AWS IAM Identity Center (SSO) identity** — no per-user passwords. The on-box half of
+  their **own AWS IAM Identity Center (SSO) identity** - no per-user passwords. The on-box half of
   that is the companion [`dcv-session-agent`](https://github.com/vhco-pro/dcv-session-agent).
 
 Nothing is hardcoded. A connection is a **config-driven profile** (AWS account, SSO start URL,
@@ -28,10 +29,10 @@ so nothing changes unless you opt in.
 |---|---|---|
 | You log in as | the shared **`ec2-user`** | **your own** SSO identity (e.g. `dl6544-a`) |
 | DCV session | the host's one **console** session | a **per-user virtual** session, created on demand |
-| Authentication | a **DCV password** from Secrets Manager | a **presigned `sts:GetCallerIdentity`** identity token — **no password** |
+| Authentication | a **DCV password** from Secrets Manager | a **presigned `sts:GetCallerIdentity`** identity token - **no password** |
 | Isolation | everyone shares one desktop | each user gets their **own** desktop + home |
 | Profile fields | `secretId` (the password secret) | `connectMode = multiUser`, `agentRemotePort` (default `8444`) |
-| Extra AWS permission | `secretsmanager:GetSecretValue` | none — it proves *your own* identity |
+| Extra AWS permission | `secretsmanager:GetSecretValue` | none - it proves *your own* identity |
 
 ### Dependencies per mode
 
@@ -47,7 +48,8 @@ so nothing changes unless you opt in.
 - No password, no broker, no web portal. The agent provisions your Linux user + virtual session on
   first connect.
 
-> A multi-user host is **identity-only** — there is no `ec2-user`/shared fallback on it. Keep a
+> [!IMPORTANT]
+> A multi-user host is **identity-only** - there is no `ec2-user`/shared fallback on it. Keep a
 > separate single-user profile if you also have a vanilla box.
 
 ## Install
@@ -67,7 +69,7 @@ xattr -dr com.apple.quarantine "/Applications/SSMConnect.app"
 
 ## First launch
 
-The app starts with **no profile** — nothing about any AWS environment is baked in.
+The app starts with **no profile** - nothing about any AWS environment is baked in.
 
 1. Click the menu-bar icon → **Set Up a Workstation…** (opens Settings → Profiles).
 2. Click **Import from `~/.aws/config`** and pick the profile for your workstation. The SSO start
@@ -113,14 +115,14 @@ graph TD
     M --> N["Agent provisions your user<br/>+ virtual session"]
     N --> O[Close agent tunnel]
     O --> P["Presign a fresh<br/>sts:GetCallerIdentity token"]
-    P --> Q["Write .dcv: user + sessionId = you<br/>+ authToken — NO password"]
+    P --> Q["Write .dcv: user + sessionId = you<br/>+ authToken - NO password"]
 
     I --> J[Launch DCV Viewer<br/>auto-login]
     Q --> J
     J --> R([Your desktop])
 ```
 
-In multi-user mode the agent tunnel is **transient** — it's only needed for the one
+In multi-user mode the agent tunnel is **transient** - it's only needed for the one
 `/ensure-session` call; DCV reaches its token verifier locally on the box, not through the client,
 so the agent tunnel is torn down before the viewer launches. The `.dcv` file is short-lived (`0600`)
 and deleted right after the viewer opens.
@@ -132,17 +134,17 @@ and deleted right after the viewer opens.
   `TunnelProvider` protocol (the SDK only exposes `StartSession`; the port-forward data-channel
   protocol lives only in the plugin). The plugin is fetched + checksum-verified at build time.
 - **The identity token** (multi-user) is a presigned `sts:GetCallerIdentity` request used as an
-  opaque bearer token — the same credential the SSM tunnel already required. The agent proves your
+  opaque bearer token - the same credential the SSM tunnel already required. The agent proves your
   identity by re-executing it against STS. A fresh token is minted per attempt to avoid expiry.
 
 Security: no secrets are written to UserDefaults or Keychain; the only disk touch is the transient
-`.dcv` file. No inbound security-group rules are ever suggested — all traffic is outbound over the
+`.dcv` file. No inbound security-group rules are ever suggested - all traffic is outbound over the
 SSM tunnel.
 
 ## Development
 
 The Xcode project is generated from `project.yml` via [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-(the generated `.xcodeproj` is gitignored — always regenerate).
+(the generated `.xcodeproj` is gitignored - always regenerate).
 
 ```bash
 brew install xcodegen
@@ -168,7 +170,7 @@ sha256 via a scheduled workflow in that tap (no manual cask edit needed).
 The app is ad-hoc signed for personal/Homebrew distribution. To remove all Gatekeeper friction for
 wider distribution, enroll in the Apple Developer Program, obtain a *Developer ID Application*
 certificate, sign the app + plugin with `--options=runtime` (Hardened Runtime), then
-`xcrun notarytool submit … --wait` and `xcrun stapler staple`. No code changes are required — only
+`xcrun notarytool submit … --wait` and `xcrun stapler staple`. No code changes are required - only
 the signing/release pipeline.
 
 ## License
