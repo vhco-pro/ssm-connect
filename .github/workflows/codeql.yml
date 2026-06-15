@@ -1,0 +1,71 @@
+# CodeQL code scanning. Advanced setup (not the repo's default setup) because the
+# Swift sources only compile after `xcodegen generate` recreates the gitignored
+# .xcodeproj — CodeQL's autobuild has nothing to build otherwise. Mirrors the
+# release workflow's proven macOS build environment (newest Xcode for XcodeGen's
+# objectVersion 77). Actions workflows are scanned on a cheap Linux runner.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '27 4 * * 1' # weekly, Monday 04:27 UTC
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            runner: ubuntu-latest
+          - language: swift
+            runner: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare Swift build (XcodeGen + newest Xcode)
+        if: matrix.language == 'swift'
+        run: |
+          brew install xcodegen
+          # XcodeGen emits a recent project format the runner's default Xcode can be too old to read.
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          xcodebuild -version
+          xcodegen generate
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Build Swift (clean, unsigned — CodeQL traces the compile)
+        if: matrix.language == 'swift'
+        run: |
+          set -o pipefail
+          xcodebuild clean build \
+            -project SSMConnect.xcodeproj \
+            -scheme SSMConnect \
+            -destination 'platform=macOS' \
+            -derivedDataPath .build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      - name: Autobuild (Actions)
+        if: matrix.language == 'actions'
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
