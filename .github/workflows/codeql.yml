@@ -56,7 +56,7 @@ jobs:
           path: |
             .build/DerivedData/SourcePackages
             ~/Library/Caches/org.swift.swiftpm
-          key: codeql-spm-${{ hashFiles('project.yml') }}
+          key: codeql-spm-${{ hashFiles('SSMConnectKit/Package.resolved') }}
           restore-keys: |
             codeql-spm-
 

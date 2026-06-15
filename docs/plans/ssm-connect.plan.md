@@ -534,20 +534,23 @@ The following ADRs are **new decisions introduced by this plan**, not present in
 
 **Context:** The app is a macOS `.app` bundle that requires `Info.plist` (`LSUIElement`, bundle ID), entitlements, code signing, embedded helper binaries (`session-manager-plugin` in `Contents/Helpers/`), and build phases (plugin fetch script). A pure SwiftPM executable package cannot natively produce an `.app` bundle with these elements.
 
-**Decision:** Use a standard Xcode project (`.xcodeproj`) for the app target. SwiftPM is used within the project for dependency management (`aws-sdk-swift`).
+**Decision:** Use an Xcode project (generated from `project.yml` by XcodeGen) for the app **target/bundle**, but keep the app's Swift code and its external dependencies in a **local Swift package, `SSMConnectKit`**. The Xcode target is a thin `@main` shell (App lifecycle + `Info.plist` + entitlements + the plugin build phases) that depends on the local package; the package's `Package.swift` declares `aws-sdk-swift` and is the **single source of truth for dependencies**.
+
+> **Revision (2026-06-15) — dependencies moved into a local Swift package.** Originally the AWS SDK dependency was declared in `project.yml` (XcodeGen). Because `project.yml` is an XcodeGen-specific format, Dependabot / GitHub's dependency graph could not read it, so the app received **no Swift dependency/security update PRs and no CVE alerts**. Moving the deps into `SSMConnectKit/Package.swift` (a standard SPM manifest) makes them the single source of truth Dependabot reads and bumps — with **no second manifest to keep in sync**. The app code moved into the package (`SSMConnectKit/Sources/SSMConnectKit`), leaving a thin `@main` shell in the `SSMConnect` target that uses a small public API from the package; the unit tests moved to the package and run via `swift test` (like `go test`). The Xcode bundle/signing role is unchanged — only *where the code + deps live* changed.
 
 **Alternatives Considered:**
 
 | Option | Pros | Cons |
 |--------|------|------|
-| **Xcode project + SPM deps** (chosen) | Native Info.plist, entitlements, code signing, build phases, archive/export support. IDE-first workflow | Xcode-specific; `.xcodeproj` is opaque |
-| **Pure SwiftPM package** | Portable, transparent `Package.swift` | No native `.app` bundle output; requires custom scripts for Info.plist, entitlements, helper embedding, code signing. Significant build-system friction |
-| **SwiftPM + Xcode workspace** | SPM package opened in Xcode | Same `.app` bundle limitations as pure SwiftPM |
+| **Xcode shell + local Swift package** (chosen) | Native `.app` bundle/signing via Xcode; deps in a standard `Package.swift` → Dependabot single-source; `swift test`; clean module boundary | A small public API surface at the shell↔package seam |
+| **Xcode project with SPM deps in `project.yml`** (original) | Simplest single target | Deps invisible to Dependabot (XcodeGen format); no Swift update/security PRs |
+| **Pure SwiftPM package (no Xcode)** | Portable, transparent `Package.swift` | No native `.app` bundle output; needs custom scripts for Info.plist, entitlements, helper embedding, code signing |
 
 **Consequences:**
-- Build/archive is `xcodebuild` (standard Xcode workflow)
-- CI (if added later) uses `xcodebuild` on a macOS runner
-- The `.xcodeproj` directory is committed to git
+- Build/archive is `xcodebuild` on the `SSMConnect` scheme (builds the shell + the local package).
+- Dependencies live in `SSMConnectKit/Package.swift` (+ committed `Package.resolved`); Dependabot opens Swift version + security PRs.
+- Unit tests live in the package and run via `swift test` (no Xcode test target).
+- Both `project.yml` and the generated `.xcodeproj` follow ADR-P-XcodeGen: `project.yml` is committed, the `.xcodeproj` is gitignored and regenerated.
 
 ### ADR-P2: Swift Testing Framework + Protocol-Based DI for Tests
 
