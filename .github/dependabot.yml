@@ -1,10 +1,12 @@
 version: 2
+# Swift packages: a copy of the XcodeGen-generated Package.resolved is committed at
+# the repo root so GitHub's dependency graph sees the SPM deps -> Dependabot
+# *security alerts* (and security-fix PRs) cover aws-sdk-swift et al. Routine
+# *version-update* PRs are NOT configured for Swift: Dependabot's swift updater
+# needs a Package.swift manifest, which this XcodeGen project doesn't use (deps
+# live in project.yml). Keep ./Package.resolved in sync when bumping deps in Xcode.
 updates:
-  # GitHub Actions used by the release workflow.
-  # Note: Swift package deps are NOT tracked here — this app's SPM manifest lives
-  # in the XcodeGen-generated (gitignored) .xcodeproj, so there's no committed
-  # Package.swift/Package.resolved for Dependabot to read. Commit one to enable
-  # Swift dependency + security updates.
+  # GitHub Actions used by the release + CodeQL workflows.
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -5,13 +5,16 @@
 # objectVersion 77). Actions workflows are scanned on a cheap Linux runner.
 name: CodeQL
 
+# The Swift analysis does a clean build of aws-sdk-swift (slow), so to save runner
+# time it runs on PRs to main + a weekly schedule, NOT on every push to main (code
+# reaches main via PR, which is already scanned). The schedule keeps the default-
+# branch baseline fresh.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   schedule:
     - cron: '27 4 * * 1' # weekly, Monday 04:27 UTC
+  workflow_dispatch:
 
 permissions: {}
 
@@ -43,6 +46,19 @@ jobs:
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
           xcodegen generate
+
+      # Cache resolved SwiftPM dependency *sources* (aws-sdk-swift is large to clone)
+      # — NOT the build products, so CodeQL still traces a full clean compile.
+      - name: Cache SwiftPM sources (Swift)
+        if: matrix.language == 'swift'
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/DerivedData/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: codeql-spm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            codeql-spm-
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3

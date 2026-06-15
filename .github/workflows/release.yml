@@ -36,13 +36,13 @@ jobs:
           fetch-depth: 0
 
       - name: Setup GitVersion
-        uses: gittools/actions/gitversion/setup@v0
+        uses: gittools/actions/gitversion/setup@c368911c8982846e30b6855f79e579104849bfc3 # v0.13.6
         with:
           versionSpec: '6.0.0'
 
       - name: Compute version
         id: gv
-        uses: gittools/actions/gitversion/execute@v0
+        uses: gittools/actions/gitversion/execute@c368911c8982846e30b6855f79e579104849bfc3 # v0.13.6
         with:
           useConfigFile: true
           configFilePath: gitversion.yml
