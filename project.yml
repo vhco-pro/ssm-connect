@@ -10,10 +10,11 @@ options:
   minimumXcodeGenVersion: "2.40.0"
 
 packages:
-  # Task A2 — aws-sdk-swift SwiftPM dependencies, pinned from 1.7.13 (spec §12.1)
-  aws-sdk-swift:
-    url: https://github.com/awslabs/aws-sdk-swift.git
-    from: "1.7.13"
+  # The app's code + its external dependencies live in this LOCAL Swift package,
+  # the single source of truth for deps (ADR-P1). aws-sdk-swift is declared inside
+  # SSMConnectKit/Package.swift — that's the manifest Dependabot reads and bumps.
+  SSMConnectKit:
+    path: SSMConnectKit
 
 targets:
   SSMConnect:
@@ -36,17 +37,10 @@ targets:
         # Task I3 / NF-04 — outbound-network entitlement, applied during code signing.
         CODE_SIGN_ENTITLEMENTS: SSMConnect/SSMConnect.entitlements
     dependencies:
-      # Task A2 — AWSSSOOIDC, AWSSSO, AWSEC2, AWSSSM, AWSSecretsManager
-      - package: aws-sdk-swift
-        product: AWSSSOOIDC
-      - package: aws-sdk-swift
-        product: AWSSSO
-      - package: aws-sdk-swift
-        product: AWSEC2
-      - package: aws-sdk-swift
-        product: AWSSSM
-      - package: aws-sdk-swift
-        product: AWSSecretsManager
+      # The thin @main shell depends only on the local package; the AWS SDK products
+      # are SSMConnectKit's dependencies (declared in its Package.swift).
+      - package: SSMConnectKit
+        product: SSMConnectKit
     # Task A5/A6 — Build-time plugin fetch + embed (ADR-7, ADR-P3)
     preBuildScripts:
       - script: '"${SRCROOT}/scripts/fetch-plugin.sh"'
@@ -85,33 +79,16 @@ targets:
           /usr/bin/codesign --verify --deep --strict "${APP}"
         name: "Embed & re-sign session-manager-plugin"
 
-  SSMConnectTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: SSMConnectTests
-        excludes:
-          - "**/.DS_Store"
-    dependencies:
-      - target: SSMConnect
-    settings:
-      base:
-        SWIFT_VERSION: "5"
-        GENERATE_INFOPLIST_FILE: "YES"
+# Unit tests live in the SSMConnectKit package (Tests/SSMConnectKitTests) and run
+# via `swift test` (see the Makefile) — there is no Xcode test target.
 
 schemes:
-  # Wire the unit-test bundle into the SSMConnect scheme's test action
   SSMConnect:
     build:
       targets:
         SSMConnect: all
-        SSMConnectTests: [test]
     run:
       config: Debug
-    test:
-      config: Debug
-      targets:
-        - SSMConnectTests
     profile:
       config: Release
     analyze:

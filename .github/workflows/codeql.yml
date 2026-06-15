@@ -56,7 +56,7 @@ jobs:
           path: |
             .build/DerivedData/SourcePackages
             ~/Library/Caches/org.swift.swiftpm
-          key: codeql-spm-${{ hashFiles('project.yml') }}
+          key: codeql-spm-${{ hashFiles('SSMConnectKit/Package.resolved') }}
           restore-keys: |
             codeql-spm-
 
@@ -75,6 +75,7 @@ jobs:
             -scheme SSMConnect \
             -destination 'platform=macOS' \
             -derivedDataPath .build/DerivedData \
+            -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 
       - name: Autobuild (Actions)

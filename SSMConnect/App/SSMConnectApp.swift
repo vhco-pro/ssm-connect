@@ -1,4 +1,5 @@
 import AppKit
+import SSMConnectKit
 import SwiftUI
 
 // Task A1, A3 — SwiftUI App lifecycle, MenuBarExtra (F-01, NF-10, NF-11)

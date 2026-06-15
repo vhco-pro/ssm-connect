@@ -46,12 +46,9 @@ echo "==> Generating Xcode project from project.yml"
 xcodegen generate
 
 if [[ "$mode" == "test" ]]; then
-  echo "==> Running tests"
-  exec xcodebuild test \
-    -project "$PROJECT" -scheme "$SCHEME" \
-    -destination "$DESTINATION" \
-    -derivedDataPath "$DERIVED" \
-    -skipPackagePluginValidation
+  # Unit tests live in the SSMConnectKit package and run via SwiftPM (like `go test`).
+  echo "==> Running tests (swift test in SSMConnectKit)"
+  exec swift test --package-path SSMConnectKit
 fi
 
 echo "==> Building (first build compiles the AWS SDK — be patient)"

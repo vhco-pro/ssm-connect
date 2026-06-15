@@ -1,11 +1,19 @@
 version: 2
-# Swift packages are NOT tracked by Dependabot here. This app's SPM deps live in
-# the XcodeGen project.yml (the generated .xcodeproj is gitignored), so there's no
-# Package.swift. GitHub's dependency graph does not parse a standalone
-# Package.resolved (verified), so neither alerts nor update PRs fire for Swift.
-# To enable them, the deps would need a Package.swift manifest as their source of
-# truth (a parallel to project.yml) — deferred to avoid two sources of truth.
 updates:
+  # Swift packages — the single source of truth is SSMConnectKit/Package.swift
+  # (the app's local package; ADR-P1). Dependabot reads it + the committed
+  # Package.resolved and opens version + security PRs for aws-sdk-swift et al.
+  - package-ecosystem: swift
+    directory: /SSMConnectKit
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+    groups:
+      swift-deps:
+        patterns:
+          - "*"
+
   # GitHub Actions used by the release + CodeQL workflows.
   - package-ecosystem: github-actions
     directory: /
