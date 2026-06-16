@@ -38,3 +38,6 @@ secrets/
 
 # Release artifacts
 dist/
+
+# Build/test logs
+*.log
