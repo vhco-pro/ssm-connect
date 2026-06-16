@@ -26,7 +26,10 @@ permissions: {}
 
 jobs:
   release:
-    runs-on: macos-14
+    # macOS 26 (Tahoe) runner — ships Xcode 26, which compiles the Icon Composer AppIcon.icon.
+    # (The old macos-14/Sonoma runner topped out at Xcode 16.x → it copied the .icon in raw,
+    # producing a blank app icon in the release.)
+    runs-on: macos-26
     permissions:
       contents: write # tag + create the GitHub Release
     steps:
@@ -104,6 +107,16 @@ jobs:
       - name: Build + package the signed .app
         if: steps.ver.outputs.bump == 'true'
         run: ./scripts/release.sh
+
+      - name: Verify the app icon compiled (fail loudly, never ship a blank icon)
+        if: steps.ver.outputs.bump == 'true'
+        run: |
+          APP=".build/DerivedData/Build/Products/Release/SSMConnect.app"
+          plutil -p "$APP/Contents/Info.plist" | grep -q CFBundleIconName \
+            || { echo "::error::AppIcon did not compile — runner Xcode is too old for AppIcon.icon"; exit 1; }
+          test -f "$APP/Contents/Resources/AppIcon.icns" \
+            || { echo "::error::no AppIcon.icns in the bundle"; exit 1; }
+          echo "✓ AppIcon compiled"
 
       - name: Publish GitHub Release
         if: steps.ver.outputs.bump == 'true'
