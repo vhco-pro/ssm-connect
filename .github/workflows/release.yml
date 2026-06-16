@@ -1,13 +1,8 @@
 # Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
 #
-# Single-job release on push to main — no GitHub App / bot, just the repo's GITHUB_TOKEN
-# (GitVersion only needs a token with contents:write to push the tag; the App is only required
-# when a *separate* release workflow must be triggered by the tag — not the case here).
-#
-# GitVersion computes the next version from conventional-commit messages. Only when it's a NEW
-# version (i.e. a feat:/fix:/etc. landed) do we tag it with the reusable michielvha/gitversion-tag-action,
-# build the ad-hoc-signed .app on macOS, and publish a vX.Y.Z GitHub Release with the zip asset.
-# The Homebrew cask is bumped by vhco-pro/homebrew-tap's own sync-cask workflow.
+# Single-job release on push to main. michielvha/gitversion-tag-action computes the next version
+# from conventional commits and tags it; we then build the ad-hoc-signed .app on macOS and publish
+# a vX.Y.Z GitHub Release with the zip asset. The Homebrew cask is bumped by vhco-pro/homebrew-tap.
 
 name: Release
 
@@ -27,8 +22,6 @@ permissions: {}
 jobs:
   release:
     # macOS 26 (Tahoe) runner — ships Xcode 26, which compiles the Icon Composer AppIcon.icon.
-    # (The old macos-14/Sonoma runner topped out at Xcode 16.x → it copied the .icon in raw,
-    # producing a blank app icon in the release.)
     runs-on: macos-26
     permissions:
       contents: write # tag + create the GitHub Release
@@ -38,55 +31,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup GitVersion
-        uses: gittools/actions/gitversion/setup@c368911c8982846e30b6855f79e579104849bfc3 # v0.13.6
-        with:
-          versionSpec: '6.0.0'
-
-      - name: Compute version
-        id: gv
-        uses: gittools/actions/gitversion/execute@c368911c8982846e30b6855f79e579104849bfc3 # v0.13.6
-        with:
-          useConfigFile: true
-          configFilePath: gitversion.yml
-
-      - name: Gate on a version bump
-        id: ver
-        run: |
-          VERSION="${{ steps.gv.outputs.semVer }}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          git fetch --tags --force
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "bump=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No version bump (v$VERSION already released) — skipping."
-          else
-            echo "bump=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Releasing v$VERSION"
-          fi
-
       - name: Tag with GitVersion (reusable action)
-        if: steps.ver.outputs.bump == 'true'
+        id: version
         uses: michielvha/gitversion-tag-action@71eb5b08849c8867ee613dc9c929af41d145d91d # main snapshot 2026-05-23
         with:
           configFilePath: gitversion.yml
           prefix: 'v'
 
       - name: Install XcodeGen
-        if: steps.ver.outputs.bump == 'true'
         run: brew install xcodegen
 
       - name: Select the newest installed Xcode
-        if: steps.ver.outputs.bump == 'true'
         id: xcode
-        # XcodeGen emits a recent project format (objectVersion 77) the runner's default Xcode
-        # can be too old to read; pick the newest Xcode on the image.
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
           echo "version=$(xcodebuild -version | head -1 | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM + build products
-        if: steps.ver.outputs.bump == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -99,30 +61,26 @@ jobs:
             spm-${{ runner.os }}-
 
       - name: Stamp version
-        if: steps.ver.outputs.bump == 'true'
         run: |
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.version }}" SSMConnect/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.semVer }}" SSMConnect/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" SSMConnect/Info.plist
 
       - name: Build + package the signed .app
-        if: steps.ver.outputs.bump == 'true'
         run: ./scripts/release.sh
 
       - name: Verify the app icon compiled (fail loudly, never ship a blank icon)
-        if: steps.ver.outputs.bump == 'true'
         run: |
           APP=".build/DerivedData/Build/Products/Release/SSMConnect.app"
           plutil -p "$APP/Contents/Info.plist" | grep -q CFBundleIconName \
             || { echo "::error::AppIcon did not compile — runner Xcode is too old for AppIcon.icon"; exit 1; }
           test -f "$APP/Contents/Resources/AppIcon.icns" \
             || { echo "::error::no AppIcon.icns in the bundle"; exit 1; }
-          echo "✓ AppIcon compiled"
+          echo "AppIcon compiled"
 
       - name: Publish GitHub Release
-        if: steps.ver.outputs.bump == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ steps.version.outputs.semVer }}
         run: |
           gh release create "v${VERSION}" \
             --title "SSM Connect ${VERSION}" \
@@ -130,5 +88,4 @@ jobs:
             "dist/SSMConnect-${VERSION}.zip"
 
       - name: Note cask sync
-        if: steps.ver.outputs.bump == 'true'
-        run: echo "::notice::Release v${{ steps.ver.outputs.version }} published — homebrew-tap's sync-cask will bump the cask."
+        run: echo "::notice::Release v${{ steps.version.outputs.semVer }} published — homebrew-tap's sync-cask will bump the cask."
