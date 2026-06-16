@@ -36,7 +36,7 @@ jobs:
             runner: macos-14
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Prepare Swift build (XcodeGen + newest Xcode)
         if: matrix.language == 'swift'
@@ -51,7 +51,7 @@ jobs:
       # — NOT the build products, so CodeQL still traces a full clean compile.
       - name: Cache SwiftPM sources (Swift)
         if: matrix.language == 'swift'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .build/DerivedData/SourcePackages
@@ -61,7 +61,7 @@ jobs:
             codeql-spm-
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
@@ -80,9 +80,9 @@ jobs:
 
       - name: Autobuild (Actions)
         if: matrix.language == 'actions'
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
