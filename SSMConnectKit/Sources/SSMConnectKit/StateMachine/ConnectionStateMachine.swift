@@ -325,7 +325,7 @@ public final class ConnectionStateMachine {
             // 7. Connected
             state = .connected
             connectedAt = Date()
-            log.log(.tunnel, "Connected: localhost:\(profile.localPort) → \(instance.id):\(profile.remotePort).")
+            log.log(.tunnel, "Connected: 127.0.0.1:\(profile.localPort) → \(instance.id):\(profile.remotePort).")
             startTunnelMonitor(handle: handle)
             await notifier.post(.connected)
         } catch is CancellationError {
@@ -389,7 +389,7 @@ public final class ConnectionStateMachine {
                 interval: timeouts.dcvReadyPollInterval
             )
             if !ready {
-                log.log(.tunnel, "DCV server not reachable on localhost:\(profile.localPort) yet; launching viewer anyway.")
+                log.log(.tunnel, "DCV server not reachable on 127.0.0.1:\(profile.localPort) yet; launching viewer anyway.")
             }
             let file = DCVConnectionFile(port: profile.localPort, password: pw)
             try await dcv.launch(connectionFile: file)
@@ -446,7 +446,7 @@ public final class ConnectionStateMachine {
                 interval: timeouts.dcvReadyPollInterval
             )
             if !ready {
-                log.log(.tunnel, "DCV server not reachable on localhost:\(profile.localPort) yet; launching viewer anyway.")
+                log.log(.tunnel, "DCV server not reachable on 127.0.0.1:\(profile.localPort) yet; launching viewer anyway.")
             }
             let freshToken = presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
             let file = DCVConnectionFile.multiUser(

@@ -54,7 +54,7 @@ extension ConnectionStateMachine {
             }
         }
         if let tunnelPID, let localPort {
-            lines.append("Tunnel: pid \(tunnelPID) · localhost:\(localPort)")
+            lines.append("Tunnel: pid \(tunnelPID) · 127.0.0.1:\(localPort)")
         }
         if let connectedAt {
             lines.append("Up \(Self.elapsed(since: connectedAt))")

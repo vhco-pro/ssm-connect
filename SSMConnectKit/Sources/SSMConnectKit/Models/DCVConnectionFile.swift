@@ -12,7 +12,10 @@ import Foundation
 ///   own virtual session. No password. The native client supports both `authtoken` and `sessionid`
 ///   in the `[connect]` section.
 struct DCVConnectionFile: Equatable, Sendable {
-    var host: String = "localhost"
+    /// IPv4 loopback (not `localhost`): the SSM port-forward binds IPv4 `127.0.0.1` only, while
+    /// `localhost` resolves to IPv6 `::1` first on macOS — the DCV Viewer then connects to `::1`,
+    /// finds no listener, and fails with "endpoint is unreachable" (see docs/specs/bug-ipv6-localhost-*).
+    var host: String = "127.0.0.1"
     var port: Int
     var user: String = "ec2-user"
     /// Vanilla auth: Secrets-Manager password. `nil` in multi-user mode.
@@ -29,12 +32,12 @@ struct DCVConnectionFile: Equatable, Sendable {
     static let fileExtension = "dcv"
 
     /// Vanilla (single-user) connection: `user` + Secrets-Manager `password`.
-    static func vanilla(host: String = "localhost", port: Int, user: String = "ec2-user", password: String) -> DCVConnectionFile {
+    static func vanilla(host: String = "127.0.0.1", port: Int, user: String = "ec2-user", password: String) -> DCVConnectionFile {
         DCVConnectionFile(host: host, port: port, user: user, password: password)
     }
 
     /// Multi-user connection: `user`'s own `sessionId`, authorized by a presigned-identity `authToken`.
-    static func multiUser(host: String = "localhost", port: Int, user: String, sessionId: String, authToken: String) -> DCVConnectionFile {
+    static func multiUser(host: String = "127.0.0.1", port: Int, user: String, sessionId: String, authToken: String) -> DCVConnectionFile {
         DCVConnectionFile(host: host, port: port, user: user, password: nil, authToken: authToken, sessionId: sessionId)
     }
 
