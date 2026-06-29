@@ -6,7 +6,7 @@ import Foundation
 /// profile model already carries a "connect action" field; future RDP/VNC/SSH targets are a
 /// config-only extension (spec §13) and are intentionally not implemented here.
 enum ConnectAction: Codable, Equatable, Sendable {
-    /// Launch Amazon DCV Viewer with an auto-login `.dcv` file at `https://localhost:<localPort>`.
+    /// Launch Amazon DCV Viewer with an auto-login `.dcv` file at `https://127.0.0.1:<localPort>`.
     case dcvViewer
 
     var displayName: String {

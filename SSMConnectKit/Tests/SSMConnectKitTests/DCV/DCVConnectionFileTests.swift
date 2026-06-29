@@ -9,7 +9,7 @@ struct DCVConnectionFileTests {
         let ini = file.iniContent()
 
         #expect(ini.contains("[connect]"))
-        #expect(ini.contains("host=localhost"))
+        #expect(ini.contains("host=127.0.0.1"))
         #expect(ini.contains("port=8443"))
         #expect(ini.contains("user=ec2-user"))
         #expect(ini.contains("password=p@ss w0rd"))
@@ -42,5 +42,15 @@ struct DCVConnectionFileTests {
         #expect(ini.contains("sessionid=dl6544"))
         #expect(ini.contains("authtoken=TOK123"))
         #expect(!ini.contains("password="))
+    }
+
+    /// Regression guard for the IPv6-localhost bug (docs/specs/bug-ipv6-localhost-*): the SSM
+    /// port-forward binds IPv4 `127.0.0.1` only, so the `.dcv` host must be the IPv4 loopback —
+    /// `localhost` resolves to `::1` first on macOS and the Viewer fails "endpoint is unreachable".
+    @Test("Default host is the IPv4 loopback (not localhost) on all entry points")
+    func defaultHostIsIPv4Loopback() {
+        #expect(DCVConnectionFile(port: 8443, password: "x").iniContent().contains("host=127.0.0.1"))
+        #expect(DCVConnectionFile.vanilla(port: 8443, password: "x").iniContent().contains("host=127.0.0.1"))
+        #expect(DCVConnectionFile.multiUser(port: 8443, user: "u", sessionId: "u", authToken: "t").iniContent().contains("host=127.0.0.1"))
     }
 }
