@@ -43,9 +43,9 @@ Both route through the existing `runConnect` `catch` → `teardownTunnel()` + `f
 New seam `TunnelListenerProbing { func isListening(host:port:timeout:) async -> Bool }` + default `TCPListenerProbe` (Network framework `NWConnection` raw TCP to `127.0.0.1:<port>`; `.ready` → true, `.failed/.waiting/.cancelled` or timeout → false). The `session-manager-plugin` binds the local port as soon as it's up, so a TCP refusal cleanly distinguishes *tunnel-not-listening* (`tunnelNotEstablished`) from *tunnel-up-but-DCV-not-answering* (`dcvServerNotReady`, the HTTPS probe).
 
 ### Centralized gate (RVL-1/RVL-2/RVL-3)
-Add `assertEndpointReady(port:)`:
-1. `guard await tunnelListener.isListening(...) else { throw .tunnelNotEstablished }`
-2. `guard await readiness.waitUntilReady(port:, timeout: dcvReady, interval: dcvReadyPollInterval) else { throw .dcvServerNotReady }`
+Add `assertEndpointReady(port:)`. **The HTTPS readiness poll is the primary gate** — it connects to `127.0.0.1:<port>`, so a success already proves the tunnel is listening; there is no separate pre-check that could false-negative a tunnel a moment from ready (the v0.3.0 regression). The TCP listener probe runs **only on the failure path**, purely to classify the message:
+1. `if await readiness.waitUntilReady(...) { return }` — proven mechanism, polls for `dcvReady`.
+2. else `let listening = await tunnelListener.isListening(...)` → throw `listening ? .dcvServerNotReady : .tunnelNotEstablished`.
 
 Call it in `runConnect` **between** `establishTunnel` (step 5) and the per-mode auto-login switch (step 6), so it applies uniformly to vanilla + multi-user and throws into the main `catch`. Remove the `if !ready { log "launching anyway" }` blocks (and their now-redundant readiness probe) from both launch helpers (RVL-1, AC-6 grep guard). The viewer-not-installed / launch-failure / token paths stay best-effort warnings.
 

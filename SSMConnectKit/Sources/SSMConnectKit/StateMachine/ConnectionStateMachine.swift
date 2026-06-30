@@ -410,17 +410,20 @@ public final class ConnectionStateMachine {
         }
     }
 
-    /// Hard-gate the viewer launch (#9, RVL-1/2/3): first assert the SSM port-forward is actually
-    /// listening locally (distinguishes a dead tunnel from a slow server), then poll the in-VM DCV
-    /// server until it answers within the `dcvReady` budget. Throws a distinct `DCVReadinessError`
-    /// on either failure so the viewer is never launched into an unverified endpoint.
+    /// Hard-gate the viewer launch (#9, RVL-1/2/3): poll the in-VM DCV server over the tunnel until
+    /// it answers within the `dcvReady` budget. A successful probe connects to `127.0.0.1:<port>`, so
+    /// it *also* proves the local tunnel is listening — there's no separate pre-check that could
+    /// false-negative a tunnel that's a moment from ready. Only if the probe never answers do we run
+    /// one quick TCP check to classify *why*, so the user sees an accurate, distinct message:
+    /// nothing listening → `tunnelNotEstablished`; listening but silent → `dcvServerNotReady`.
     private func assertEndpointReady(port: Int) async throws {
-        guard await tunnelListener.isListening(host: "127.0.0.1", port: port, timeout: timeouts.tunnelListen) else {
-            throw DCVReadinessError.tunnelNotEstablished(port: port)
+        if await readiness.waitUntilReady(port: port, timeout: timeouts.dcvReady, interval: timeouts.dcvReadyPollInterval) {
+            return
         }
-        guard await readiness.waitUntilReady(port: port, timeout: timeouts.dcvReady, interval: timeouts.dcvReadyPollInterval) else {
-            throw DCVReadinessError.dcvServerNotReady(port: port)
-        }
+        let listening = await tunnelListener.isListening(host: "127.0.0.1", port: port, timeout: timeouts.tunnelListen)
+        throw listening
+            ? DCVReadinessError.dcvServerNotReady(port: port)
+            : DCVReadinessError.tunnelNotEstablished(port: port)
     }
 
     /// Fetch the DCV password, copy it to the clipboard, and auto-login DCV Viewer.
