@@ -1,6 +1,6 @@
 # BUG REPORT: DCV "endpoint is unreachable" — `localhost` resolves to IPv6 `::1`, SSM tunnel is IPv4-only
 
-- **Status:** root-caused, fix proposed (not yet applied)
+- **Status:** FIXED — shipped in v0.2.2 (`host=127.0.0.1` on every `.dcv` entry point + readiness/cert-trust probes; PRs #11/#12), verified live (token accepted, display channel over `127.0.0.1`). The launch-path resilience gap that *hid* this (#9) shipped in v0.3.0 and was corrected in v0.3.1.
 - **Severity:** P0 — blocks all connections on affected Macs (no workaround inside the app)
 - **Area:** F-09 (SSM tunnel) / F-10 (DCV viewer auto-login)
 - **Reported:** 2026-06-29 — author's Mac, against the multi-user workstation (`i-0e0d7f2d6366e9205`, eu-central-1)

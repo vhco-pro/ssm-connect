@@ -1,6 +1,6 @@
 # SPECIFICATION: Resilient DCV Viewer Launch (readiness gating + reconnect safety)
 
-- **Status:** implemented — shipped in v0.3.0 (PR #15, #9 closed). See [`resilient-dcv-viewer-launch.plan.md`](../plans/resilient-dcv-viewer-launch.plan.md).
+- **Status:** implemented — shipped in v0.3.0 (PR #15, #9 closed); the readiness-gate false-block introduced in v0.3.0 was fixed in **v0.3.1** (PR #16). v0.3.1 is the current released version. See [`resilient-dcv-viewer-launch.plan.md`](../plans/resilient-dcv-viewer-launch.plan.md).
 - **Tracking:** GitHub issue [#9](https://github.com/vhco-pro/ssm-connect/issues/9)
 - **Related:** [#11](https://github.com/vhco-pro/ssm-connect/issues/11) / `bug-ipv6-localhost-endpoint-unreachable.spec.md` (the IPv4 fix). This spec hardens the launch path that *masked* #11 — a failure that should have been a clear, retryable error instead launched the viewer into a dead endpoint.
 - **Touches:** F-09 (tunnel), F-10 (viewer auto-login), §5 state machine, §8 edge cases.

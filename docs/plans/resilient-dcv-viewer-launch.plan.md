@@ -1,6 +1,6 @@
 ---
 status: complete
-status_description: "COMPLETE — shipped in v0.3.0 (PR #15, squash-merged to main; #9 closed). RVL-1..RVL-6 implemented in SSMConnectKit; 127 tests green incl. AC-1..AC-5; AC-6 grep guard clean (no \"launch anyway\"). Release pipeline built + published v0.3.0 and the homebrew-tap cask was synced; verified installed + running locally (CFBundleShortVersionString 0.3.0). Defaults locked from spec open questions: RVL-5 = 2 retries (2s/4s backoff); flat probe interval; silent instance-replacement reset + log line."
+status_description: "COMPLETE — shipped in v0.3.0 (PR #15, squash-merged to main; #9 closed) and HARDENED in v0.3.1 (PR #16): the v0.3.0 standalone TCP pre-check false-blocked healthy tunnels (\"tunnel isn't listening\"), so the HTTPS readiness poll is now the primary gate and the TCP probe runs only to classify the error on failure. RVL-1..RVL-6 implemented in SSMConnectKit; 128 tests green incl. AC-1..AC-5 + AC-2b regression guard; AC-6 grep guard clean (no \"launch anyway\"). Released v0.3.1, homebrew-tap cask synced, installed + running locally (CFBundleShortVersionString 0.3.1), connect verified working by the user. Defaults locked from spec open questions: RVL-5 = 2 retries (2s/4s backoff); flat probe interval; silent instance-replacement reset + log line."
 description: "Implementation plan for resilient DCV viewer launch (readiness gating + reconnect safety)"
 spec: docs/specs/resilient-dcv-viewer-launch.spec.md
 tracking: "https://github.com/vhco-pro/ssm-connect/issues/9"
