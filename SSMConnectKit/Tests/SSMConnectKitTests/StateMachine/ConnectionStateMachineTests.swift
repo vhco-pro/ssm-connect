@@ -18,6 +18,8 @@ struct ConnectionStateMachineTests {
         secrets: MockSecretsService = MockSecretsService(),
         dcv: MockDCVLauncher = MockDCVLauncher(),
         readiness: WorkstationReadinessProbing = StubReadinessProbe(),
+        tunnelListener: TunnelListenerProbing = StubTunnelListenerProbe(),
+        instanceIds: InstanceIdPersisting = MockInstanceIdStore(),
         clipboard: ClipboardManager = ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
         notifier: Notifying = MockNotifier(),
         profile: ConnectionProfile = .example,
@@ -32,6 +34,8 @@ struct ConnectionStateMachineTests {
             secrets: secrets,
             dcv: dcv,
             readiness: readiness,
+            tunnelListener: tunnelListener,
+            instanceIds: instanceIds,
             clipboard: clipboard,
             notifier: notifier,
             profile: profile,
@@ -174,6 +178,97 @@ struct ConnectionStateMachineTests {
         #expect(machine.warningMessage != nil)
     }
 
+    // MARK: Readiness gating + reconnect safety (#9, RVL-1..RVL-6)
+
+    @Test("AC-1: an unready DCV server fails retryably and never launches the viewer")
+    func unreadyServerFailsWithoutLaunch() async {
+        let probe = StubReadinessProbe(ready: false) // never answers within budget
+        let tunnel = RecordingTunnelProvider(handles: [])
+        let dcv = MockDCVLauncher()
+        let machine = makeMachine(ec2: runningEC2(), tunnel: tunnel, dcv: dcv, readiness: probe)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .error)
+        #expect(dcv.launchCount == 0) // RVL-1: never launched into a dead endpoint
+        #expect(machine.errorMessage?.contains("DCV server didn't become ready") == true)
+        #expect(tunnel.startCount == 3) // RVL-5: 1 + 2 retries
+    }
+
+    @Test("AC-2: a tunnel that isn't listening fails as tunnelNotEstablished, never probing or launching")
+    func tunnelNotListeningFailsDistinctly() async {
+        let listener = StubTunnelListenerProbe(listening: false)
+        let probe = StubReadinessProbe(ready: true)
+        let dcv = MockDCVLauncher()
+        let machine = makeMachine(ec2: runningEC2(), dcv: dcv, readiness: probe, tunnelListener: listener)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .error)
+        #expect(machine.errorMessage?.contains("isn't listening") == true) // RVL-3 distinct error
+        #expect(probe.calls == 0)   // never reached the readiness probe
+        #expect(dcv.launchCount == 0)
+    }
+
+    @Test("AC-4: a transient readiness miss re-establishes once and then connects")
+    func transientReadinessMissRetriesThenConnects() async {
+        let probe = StubReadinessProbe(sequence: [false, true]) // miss, then ready
+        let tunnel = RecordingTunnelProvider(handles: [])
+        let dcv = MockDCVLauncher()
+        let machine = makeMachine(ec2: runningEC2(), tunnel: tunnel, dcv: dcv, readiness: probe)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(tunnel.startCount == 2) // RVL-5: one re-establish
+        #expect(dcv.launchCount == 1)
+    }
+
+    @Test("AC-3: a changed instance-id resets stale state and is recorded")
+    func instanceReplacementResetsAndRecords() async {
+        let profile = ConnectionProfile.example
+        let store = MockInstanceIdStore(seed: [profile.id: "i-old"])
+        let ec2 = runningEC2(id: "i-new")
+        let machine = makeMachine(ec2: ec2, instanceIds: store, profile: profile)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(machine.log.entries.contains { $0.message.contains("instance changed") })
+        #expect(store.lastInstanceId(forProfile: profile.id) == "i-new")
+    }
+
+    @Test("AC-3: an unchanged instance-id does not log a replacement")
+    func sameInstanceNoReplacementLog() async {
+        let profile = ConnectionProfile.example
+        let store = MockInstanceIdStore(seed: [profile.id: "i-same"])
+        let ec2 = runningEC2(id: "i-same")
+        let machine = makeMachine(ec2: ec2, instanceIds: store, profile: profile)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(!machine.log.entries.contains { $0.message.contains("instance changed") })
+    }
+
+    @Test("AC-5: readiness errors carry specific messages and the menu offers Retry")
+    func readinessErrorsAreSpecificAndRetryable() async {
+        #expect(DCVReadinessError.tunnelNotEstablished(port: 8443).errorDescription?.contains("8443") == true)
+        #expect(DCVReadinessError.dcvServerNotReady(port: 8443).errorDescription?.contains("didn't become ready") == true)
+
+        let machine = makeMachine(ec2: runningEC2(), readiness: StubReadinessProbe(ready: false))
+        machine.connect()
+        await machine.awaitInFlightTask()
+        #expect(machine.state == .error)
+        #expect(machine.actionTitle == "Retry Connect")
+        #expect(machine.actionEnabled)
+    }
+
     // MARK: SSO expiry recovery (F-17)
 
     @Test("an expired-credentials error triggers a single re-auth and then succeeds")
@@ -241,7 +336,9 @@ struct ConnectionStateMachineTests {
 
     @Test("wake from sleep with a dead tunnel reconnects and re-launches DCV")
     func wakeDeadTunnelReconnects() async {
-        let probe = StubReadinessProbe(ready: true)
+        // Gate-ready on the initial connect, dead at the wake health-check (triggers reconnect),
+        // ready again on the reconnect's launch gate. (The readiness gate is now fatal — #9 RVL-1.)
+        let probe = StubReadinessProbe(sequence: [true, false, true])
         let tunnel = RecordingTunnelProvider(handles: [MockTunnelHandle(), MockTunnelHandle()])
         let dcv = MockDCVLauncher()
         let machine = makeMachine(ec2: runningEC2(), tunnel: tunnel, dcv: dcv, readiness: probe)
@@ -252,7 +349,6 @@ struct ConnectionStateMachineTests {
         #expect(tunnel.startCount == 1)
         #expect(dcv.launchCount == 1)
 
-        probe.ready = false // tunnel went dead while the Mac slept
         await machine.handleSystemWake()
         await machine.awaitInFlightTask()
         await waitUntil { tunnel.startCount == 2 }
