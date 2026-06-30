@@ -44,6 +44,10 @@ public final class ConnectionStateMachine {
     private let secrets: SecretsProviding
     private let dcv: DCVLaunching
     private let readiness: WorkstationReadinessProbing
+    /// Asserts the local tunnel port is actually listening before the readiness probe (#9, RVL-3).
+    private let tunnelListener: TunnelListenerProbing
+    /// Persists last-connected instance-id per profile for instance-replacement detection (#9, RVL-4).
+    private let instanceIds: InstanceIdPersisting
     private let clipboard: ClipboardManager
     /// In-memory connection log (F-19) + Apple Unified Logging (NF-14). Exposed for the log window.
     public let log: ConnectionLog
@@ -85,6 +89,8 @@ public final class ConnectionStateMachine {
         secrets: SecretsProviding = SecretsService(),
         dcv: DCVLaunching = DCVLauncher(),
         readiness: WorkstationReadinessProbing = HTTPSReadinessProbe(),
+        tunnelListener: TunnelListenerProbing = TCPListenerProbe(),
+        instanceIds: InstanceIdPersisting = UserDefaultsInstanceIdStore(),
         clipboard: ClipboardManager = ClipboardManager(),
         log: ConnectionLog? = nil,
         notifier: Notifying = UserNotificationService(),
@@ -103,6 +109,8 @@ public final class ConnectionStateMachine {
         self.secrets = secrets
         self.dcv = dcv
         self.readiness = readiness
+        self.tunnelListener = tunnelListener
+        self.instanceIds = instanceIds
         self.clipboard = clipboard
         self.log = log ?? ConnectionLog()
         self.notifier = notifier
@@ -275,6 +283,16 @@ public final class ConnectionStateMachine {
                 throw EC2Error.instanceTerminated(instanceId: instance.id)
             }
 
+            // Instance-replacement detection (F-14, RVL-4): if the workstation was rebuilt, its
+            // instance-id changed — never reuse a tunnel/handle/port bound to the terminated one.
+            if let previous = instanceIds.lastInstanceId(forProfile: profile.id), previous != instance.id {
+                log.log(.ec2, "Workstation instance changed (\(previous) \u{2192} \(instance.id)); resetting stale tunnel state.")
+                await teardownTunnel()
+                localPort = nil
+                tunnelPID = nil
+            }
+            instanceIds.setLastInstanceId(instance.id, forProfile: profile.id)
+
             // 3. Auto-start a stopped instance (F-07)
             if instance.state != .running {
                 state = .starting
@@ -309,9 +327,13 @@ public final class ConnectionStateMachine {
             try Task.checkCancellation()
             log.log(.ssm, "SSM agent is online.")
 
-            // 5. Open the port-forwarding tunnel (F-09)
+            // 5. Open the port-forwarding tunnel (F-09) and hard-gate on endpoint readiness:
+            //    assert the tunnel is listening + the DCV server answers BEFORE launching the
+            //    viewer, re-establishing a bounded number of times on a readiness miss (#9,
+            //    RVL-1/2/3/5). On exhaustion this throws a distinct, retryable error — we never
+            //    launch the viewer into an unverified endpoint.
             state = .tunneling
-            let handle = try await establishTunnel(instanceId: instance.id)
+            let handle = try await establishReadyTunnel(instanceId: instance.id)
             try Task.checkCancellation()
 
             // 6. Auto-login DCV — vanilla password (single-user) or identity token (multi-user).
@@ -366,6 +388,41 @@ public final class ConnectionStateMachine {
         return handle
     }
 
+    /// Open the tunnel and confirm the endpoint is genuinely usable before returning, so the caller
+    /// can launch the viewer knowing the server answered. On a readiness miss (`DCVReadinessError`)
+    /// it tears the tunnel down and re-establishes, up to `establishRetryAttempts` times with a
+    /// per-attempt backoff, then rethrows the (retryable) error (#9, RVL-5). Cancellable.
+    private func establishReadyTunnel(instanceId: String) async throws -> TunnelHandle {
+        var attempt = 0
+        while true {
+            attempt += 1
+            let handle = try await establishTunnel(instanceId: instanceId)
+            do {
+                try await assertEndpointReady(port: profile.localPort)
+                return handle
+            } catch let error as DCVReadinessError {
+                await teardownTunnel()
+                guard attempt <= timeouts.establishRetryAttempts else { throw error }
+                log.log(.tunnel, "Endpoint not ready (\(describe(error))); re-establishing (attempt \(attempt))…")
+                try await reconnectSleep(timeouts.establishRetryBackoff * attempt)
+                try Task.checkCancellation()
+            }
+        }
+    }
+
+    /// Hard-gate the viewer launch (#9, RVL-1/2/3): first assert the SSM port-forward is actually
+    /// listening locally (distinguishes a dead tunnel from a slow server), then poll the in-VM DCV
+    /// server until it answers within the `dcvReady` budget. Throws a distinct `DCVReadinessError`
+    /// on either failure so the viewer is never launched into an unverified endpoint.
+    private func assertEndpointReady(port: Int) async throws {
+        guard await tunnelListener.isListening(host: "127.0.0.1", port: port, timeout: timeouts.tunnelListen) else {
+            throw DCVReadinessError.tunnelNotEstablished(port: port)
+        }
+        guard await readiness.waitUntilReady(port: port, timeout: timeouts.dcvReady, interval: timeouts.dcvReadyPollInterval) else {
+            throw DCVReadinessError.dcvServerNotReady(port: port)
+        }
+    }
+
     /// Fetch the DCV password, copy it to the clipboard, and auto-login DCV Viewer.
     /// Failures here are non-fatal — the tunnel stays up (F-16, spec §8).
     private func fetchSecretAndLaunchDCV() async {
@@ -381,16 +438,8 @@ public final class ConnectionStateMachine {
                 warningMessage = DCVError.viewerNotInstalled.errorDescription
                 return
             }
-            // Wait for the in-VM DCV server to accept connections before launching the viewer —
-            // SSM-agent-Online doesn't imply the server is listening yet (F-16, "endpoint unreachable").
-            let ready = await readiness.waitUntilReady(
-                port: profile.localPort,
-                timeout: timeouts.dcvReady,
-                interval: timeouts.dcvReadyPollInterval
-            )
-            if !ready {
-                log.log(.tunnel, "DCV server not reachable on 127.0.0.1:\(profile.localPort) yet; launching viewer anyway.")
-            }
+            // Endpoint readiness was already hard-gated in establishReadyTunnel (#9, RVL-1), so the
+            // server is confirmed answering here — just launch the viewer.
             let file = DCVConnectionFile(port: profile.localPort, password: pw)
             try await dcv.launch(connectionFile: file)
         } catch {
@@ -435,18 +484,11 @@ public final class ConnectionStateMachine {
             await agentHandle.terminate()
             log.log(.tunnel, "Agent ensured session '\(provisioned.sessionId)' for '\(provisioned.user)'.")
 
-            // 3. Wait for the DCV server, mint a FRESH token, and auto-login with sessionid+authtoken (CL-03).
+            // 3. Mint a FRESH token and auto-login with sessionid+authtoken (CL-03). Endpoint
+            //    readiness was already hard-gated in establishReadyTunnel (#9, RVL-1).
             guard dcv.isViewerInstalled() else {
                 warningMessage = DCVError.viewerNotInstalled.errorDescription
                 return
-            }
-            let ready = await readiness.waitUntilReady(
-                port: profile.localPort,
-                timeout: timeouts.dcvReady,
-                interval: timeouts.dcvReadyPollInterval
-            )
-            if !ready {
-                log.log(.tunnel, "DCV server not reachable on 127.0.0.1:\(profile.localPort) yet; launching viewer anyway.")
             }
             let freshToken = presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
             let file = DCVConnectionFile.multiUser(

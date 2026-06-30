@@ -101,15 +101,39 @@ final class SequencedEC2Service: EC2Providing, @unchecked Sendable {
     }
 }
 
-/// Readiness probe double — returns a fixed result immediately (no network).
+/// Readiness probe double — returns a fixed result immediately (no network), or a per-call
+/// sequence (falling back to the last value once exhausted) for multi-connect scenarios.
 final class StubReadinessProbe: WorkstationReadinessProbing, @unchecked Sendable {
     var ready: Bool
+    private var queue: [Bool]
     private(set) var calls = 0
-    init(ready: Bool = true) { self.ready = ready }
+    init(ready: Bool = true) { self.ready = ready; self.queue = [] }
+    /// Returns each element in turn, then sticks on the last value.
+    init(sequence: [Bool]) { self.ready = sequence.last ?? true; self.queue = sequence }
     func waitUntilReady(port: Int, timeout: Duration, interval: Duration) async -> Bool {
         calls += 1
+        if !queue.isEmpty { return queue.removeFirst() }
         return ready
     }
+}
+
+/// Tunnel-liveness probe double — returns a fixed result immediately (no socket).
+final class StubTunnelListenerProbe: TunnelListenerProbing, @unchecked Sendable {
+    var listening: Bool
+    private(set) var calls = 0
+    init(listening: Bool = true) { self.listening = listening }
+    func isListening(host: String, port: Int, timeout: Duration) async -> Bool {
+        calls += 1
+        return listening
+    }
+}
+
+/// In-memory `InstanceIdPersisting` double for instance-replacement tests (#9, RVL-4).
+final class MockInstanceIdStore: InstanceIdPersisting, @unchecked Sendable {
+    private var storage: [UUID: String]
+    init(seed: [UUID: String] = [:]) { self.storage = seed }
+    func lastInstanceId(forProfile id: UUID) -> String? { storage[id] }
+    func setLastInstanceId(_ instanceId: String, forProfile id: UUID) { storage[id] = instanceId }
 }
 
 /// Sentinel error treated as "credentials expired" by an injected predicate.

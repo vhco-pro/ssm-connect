@@ -13,6 +13,13 @@ struct ConnectionTimeouts: Sendable {
     /// (SSM-agent-Online ≠ DCV-server-ready).
     var dcvReady: Duration = .seconds(30)
     var dcvReadyPollInterval: Duration = .seconds(1)
+    /// Budget for the tunnel-up TCP assertion before the readiness probe (#9, RVL-3).
+    var tunnelListen: Duration = .seconds(3)
+    /// How many times to tear down + re-establish the tunnel on a pre-launch readiness failure
+    /// before surfacing a retryable error (#9, RVL-5). 2 retries → 3 attempts total.
+    var establishRetryAttempts: Int = 2
+    /// Base backoff between RVL-5 re-establish attempts; multiplied by the attempt number (2s, 4s).
+    var establishRetryBackoff: Duration = .seconds(2)
 
     static let `default` = ConnectionTimeouts()
 }
