@@ -196,10 +196,13 @@ struct ConnectionStateMachineTests {
         #expect(tunnel.startCount == 3) // RVL-5: 1 + 2 retries
     }
 
-    @Test("AC-2: a tunnel that isn't listening fails as tunnelNotEstablished, never probing or launching")
+    @Test("AC-2: when the endpoint never answers AND nothing is listening, the error is tunnelNotEstablished")
     func tunnelNotListeningFailsDistinctly() async {
+        // Readiness fails (server never answers) and the TCP classifier finds nothing listening →
+        // the distinct tunnelNotEstablished message (#9, RVL-3). The TCP probe runs only on the
+        // failure path, so it can never false-block a healthy tunnel.
         let listener = StubTunnelListenerProbe(listening: false)
-        let probe = StubReadinessProbe(ready: true)
+        let probe = StubReadinessProbe(ready: false)
         let dcv = MockDCVLauncher()
         let machine = makeMachine(ec2: runningEC2(), dcv: dcv, readiness: probe, tunnelListener: listener)
 
@@ -208,8 +211,26 @@ struct ConnectionStateMachineTests {
 
         #expect(machine.state == .error)
         #expect(machine.errorMessage?.contains("isn't listening") == true) // RVL-3 distinct error
-        #expect(probe.calls == 0)   // never reached the readiness probe
+        #expect(listener.calls >= 1) // classification ran on the failure path
         #expect(dcv.launchCount == 0)
+    }
+
+    @Test("AC-2b: a healthy tunnel is never blocked by the listener check (no false negative)")
+    func healthyTunnelNotBlockedByListenerCheck() async {
+        // Even if the TCP listener probe would say "not listening", a successful readiness probe
+        // connects and launches — the listener check must not run on the success path. This is the
+        // regression guard for the v0.3.0 false-block.
+        let listener = StubTunnelListenerProbe(listening: false)
+        let probe = StubReadinessProbe(ready: true)
+        let dcv = MockDCVLauncher()
+        let machine = makeMachine(ec2: runningEC2(), dcv: dcv, readiness: probe, tunnelListener: listener)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(dcv.launchCount == 1)
+        #expect(listener.calls == 0) // never consulted on the happy path
     }
 
     @Test("AC-4: a transient readiness miss re-establishes once and then connects")
