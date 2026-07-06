@@ -51,7 +51,7 @@ jobs:
       # — NOT the build products, so CodeQL still traces a full clean compile.
       - name: Cache SwiftPM sources (Swift)
         if: matrix.language == 'swift'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             .build/DerivedData/SourcePackages
