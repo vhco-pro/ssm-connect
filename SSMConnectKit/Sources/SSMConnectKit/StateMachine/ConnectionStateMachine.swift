@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Observation
+import Smithy
 
 /// Orchestrates the full connection lifecycle across all service layers (Phase F, spec §5).
 ///
@@ -252,6 +253,19 @@ public final class ConnectionStateMachine {
         log.log(.ui, "Connecting to \(profile.name) (\(profile.resourceRegion))…")
 
         do {
+            // 0. Pre-flight: validate the profile's regions before any SDK call. A bad region
+            //    (empty, whitespace, or malformed) would otherwise reach the AWS SDK's endpoint
+            //    resolver and throw the opaque `Smithy.ClientError.invalidValue` ("error 4").
+            //    Catching it here gives an actionable message and covers both the manual and
+            //    auto-connect paths (both funnel through `runConnect()`). ssoRegion feeds auth,
+            //    resourceRegion feeds EC2/SSM/Secrets; validate both.
+            guard AWSRegion.isValid(profile.ssoRegion) else {
+                throw ProfileConfigError.invalidRegion(field: "SSO region", value: profile.ssoRegion)
+            }
+            guard AWSRegion.isValid(profile.resourceRegion) else {
+                throw ProfileConfigError.invalidRegion(field: "resource region", value: profile.resourceRegion)
+            }
+
             // 1. Authenticate (F-04/F-05)
             state = .authenticating
             let authProvider = self.authProvider
@@ -667,7 +681,30 @@ public final class ConnectionStateMachine {
     }
 
     private func describe(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        if let localized = (error as? LocalizedError)?.errorDescription {
+            return localized
+        }
+        // AWS SDK errors like `Smithy.ClientError` are `Error`-only (no `LocalizedError` /
+        // `CustomNSError`), so `localizedDescription` would drop their informative payload and
+        // yield the opaque bridge string "The operation couldn't be completed. (Smithy.ClientError
+        // error 4.)". Surface the associated message instead so, e.g., a region rejection reads
+        // "Invalid region: ..." rather than "error 4".
+        if let clientError = error as? ClientError {
+            return Self.message(from: clientError)
+        }
+        return error.localizedDescription
+    }
+
+    /// Extract the human-readable payload from a `Smithy.ClientError` (all cases carry a `String`).
+    private static func message(from error: ClientError) -> String {
+        switch error {
+        case let .serializationFailed(message),
+             let .dataNotFound(message),
+             let .unknownError(message),
+             let .authError(message),
+             let .invalidValue(message):
+            return message
+        }
     }
 
     /// Default heuristic for detecting expired/unauthorized SSO credentials across SDK services.

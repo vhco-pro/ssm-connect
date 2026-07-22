@@ -68,12 +68,16 @@ struct AWSConfigParser {
     func resolvedProfile(named profileName: String) -> ResolvedProfile? {
         guard let profile = profiles[profileName] else { return nil }
         let session = profile.ssoSession.flatMap { ssoSessions[$0] }
+        // Trim region values at the parse boundary so stored profiles are clean (a
+        // `region = eu-central-1 ` with a stray trailing space resolves to `eu-central-1`).
+        // An omitted `region` still yields `nil` here; it is caught later by validation, never
+        // inferred from `sso_region`.
         return ResolvedProfile(
             startUrl: session?.startUrl ?? profile.ssoStartUrl,
-            ssoRegion: session?.region ?? profile.ssoRegion,
+            ssoRegion: (session?.region ?? profile.ssoRegion).map(AWSRegion.normalize),
             accountId: profile.ssoAccountId,
             roleName: profile.ssoRoleName,
-            resourceRegion: profile.region
+            resourceRegion: profile.region.map(AWSRegion.normalize)
         )
     }
 

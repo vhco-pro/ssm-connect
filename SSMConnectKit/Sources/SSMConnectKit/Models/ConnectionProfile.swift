@@ -61,8 +61,8 @@ public struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
     /// Whether the profile has the minimum fields needed to attempt a connection. Used to gate
     /// auto-connect and guide first-launch users (the app ships with NO profile baked in).
     var isConfigured: Bool {
-        !ssoStartUrl.isEmpty && !ssoRegion.isEmpty && !accountId.isEmpty
-            && !roleName.isEmpty && !resourceRegion.isEmpty
+        !ssoStartUrl.isEmpty && AWSRegion.isValid(ssoRegion) && !accountId.isEmpty
+            && !roleName.isEmpty && AWSRegion.isValid(resourceRegion)
             && !instanceTagKey.isEmpty && !instanceTagValue.isEmpty
     }
 }
