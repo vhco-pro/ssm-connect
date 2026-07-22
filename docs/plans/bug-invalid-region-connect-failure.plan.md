@@ -1,6 +1,6 @@
 ---
-status: review
-status_description: "All 5 phases implemented and green: AWSRegion helper (T-2), parser trim + isConfigured region validation (T-1), pre-flight connect guard + ProfileConfigError (T-3), describe(_:) Smithy.ClientError unwrap (T-4), ProfileEditor inline validation via extracted seam (T-5). Full suite: 140 tests, 25 suites, 0 failures (GIT_CONFIG_VALUE_0=all swift test --package-path SSMConnectKit). Ready for review."
+status: complete
+status_description: "Reviewed 2026-07-22: all 6 acceptance criteria PASS against an executed suite (140 tests, 25 suites, 0 failures via GIT_CONFIG_VALUE_0=all swift test --package-path SSMConnectKit). Pre-flight guard verified ahead of every SDK seam (auth/ec2/ssm/secrets call counts 0 on manual path; isConfigured short-circuit keeps auto path .disconnected); describe(_:) surfaces the Smithy.ClientError payload not 'error 4'; out-of-scope client construction untouched. Parser normalize is benign defense-in-depth (parseKeyValue already trims). See summaries/bug-invalid-region-connect-failure.md."
 description: "Fix opaque Smithy.ClientError error 4 on Connect when a profile region is empty or malformed: centralized region validation, pre-flight guard, and error unwrapping."
 spec: docs/specs/bug-invalid-region-connect-failure.spec.md
 author: "SDD Planner (automated), run by michielvha <michielvh@outlook.com>"
