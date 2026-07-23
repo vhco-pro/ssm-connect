@@ -22,12 +22,14 @@ struct ProfileEditorView: View {
                 Section("AWS SSO") {
                     TextField("SSO start URL", text: $draft.ssoStartUrl)
                     TextField("SSO region", text: $draft.ssoRegion)
+                    regionError(for: draft.ssoRegion)
                     TextField("Account ID", text: $draft.accountId)
                     TextField("Role name", text: $draft.roleName)
                 }
 
                 Section("Workstation") {
                     TextField("Resource region", text: $draft.resourceRegion)
+                    regionError(for: draft.resourceRegion)
                     TextField("Instance tag key", text: $draft.instanceTagKey)
                     TextField("Instance tag value", text: $draft.instanceTagValue)
                     TextField("DCV password secret id (optional)", text: secretIdBinding)
@@ -67,6 +69,9 @@ struct ProfileEditorView: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
+                    // Trim region fields on commit so stored profiles are clean.
+                    draft.resourceRegion = AWSRegion.normalize(draft.resourceRegion)
+                    draft.ssoRegion = AWSRegion.normalize(draft.ssoRegion)
                     onSave(draft)
                     dismiss()
                 }
@@ -83,10 +88,10 @@ struct ProfileEditorView: View {
     private var isValid: Bool {
         !trimmed(draft.name).isEmpty
             && !trimmed(draft.ssoStartUrl).isEmpty
-            && !trimmed(draft.ssoRegion).isEmpty
+            && ProfileEditorValidation.regionState(draft.ssoRegion).isValid
             && !trimmed(draft.accountId).isEmpty
             && !trimmed(draft.roleName).isEmpty
-            && !trimmed(draft.resourceRegion).isEmpty
+            && ProfileEditorValidation.regionState(draft.resourceRegion).isValid
             && !trimmed(draft.instanceTagKey).isEmpty
             && !trimmed(draft.instanceTagValue).isEmpty
             && (1...65535).contains(draft.localPort)
@@ -95,6 +100,16 @@ struct ProfileEditorView: View {
 
     private func trimmed(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Inline field-level error shown only when a region field is non-empty but malformed, so a
+    /// fresh empty form stays quiet while Save remains disabled until it is valid.
+    @ViewBuilder
+    private func regionError(for value: String) -> some View {
+        if ProfileEditorValidation.regionState(value).showError {
+            Text("Not a valid AWS region (e.g. eu-central-1).")
+                .font(.caption).foregroundStyle(.red)
+        }
     }
 
     /// Bridges the optional `secretId` to a non-optional text binding (empty == nil).

@@ -98,6 +98,51 @@ struct AWSConfigParserTests {
         #expect(parser.resolvedProfile(named: "default")?.resourceRegion == "eu-west-1")
     }
 
+    // Verifies: Fix opaque region-failure on Connect, Criterion: "A `[profile]` with `region = eu-central-1 ` (trailing space), parsed by `AWSConfigParser`, yields `resourceRegion == "eu-central-1"` (trimmed, valid)."
+    @Test("a region with surrounding whitespace resolves to the trimmed, valid value")
+    func trimsRegionWhitespace() {
+        // The `region` and `sso_region` values carry trailing/leading spaces.
+        let config = "[profile ws]\n"
+            + "sso_session = ws\n"
+            + "sso_account_id = 111122223333\n"
+            + "region = eu-central-1  \n"
+            + "\n"
+            + "[sso-session ws]\n"
+            + "sso_start_url = https://ws.awsapps.com/start\n"
+            + "sso_region =   eu-west-1  \n"
+        let parser = AWSConfigParser(contents: config)
+        let resolved = parser.resolvedProfile(named: "ws")
+
+        #expect(resolved?.resourceRegion == "eu-central-1")
+        #expect(resolved?.ssoRegion == "eu-west-1")
+        #expect(AWSRegion.isValid(resolved?.resourceRegion ?? "") == true)
+        #expect(AWSRegion.isValid(resolved?.ssoRegion ?? "") == true)
+    }
+
+    // Verifies: Fix opaque region-failure on Connect, Criterion: "A profile omitting the `region` key, parsed then validated, yields `resourceRegion == ""` and `AWSRegion.isValid("")` returns `false`."
+    @Test("a profile omitting the region key yields no resource region and fails validation")
+    func omittedRegionIsInvalid() {
+        let config = """
+        [sso-session sess]
+        sso_start_url = https://x.awsapps.com/start
+        sso_region = eu-west-1
+
+        [profile no-region]
+        sso_session = sess
+        sso_account_id = 111122223333
+        sso_role_name = AdministratorAccess
+        """
+        let parser = AWSConfigParser(contents: config)
+        let resolved = parser.resolvedProfile(named: "no-region")
+
+        #expect(resolved?.resourceRegion == nil)
+        // A ConnectionProfile built from this config gets resourceRegion "", which is invalid.
+        let profile = ConnectionProfile(name: "no-region", awsConfig: resolved!)
+        #expect(profile.resourceRegion == "")
+        #expect(AWSRegion.isValid(profile.resourceRegion) == false)
+        #expect(profile.isConfigured == false)
+    }
+
     @Test("resolvedProfiles lists only SSO profiles, sorted, for the import picker")
     func listsSSOProfiles() {
         let config = """
