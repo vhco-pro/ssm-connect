@@ -19,11 +19,14 @@ struct DCVLauncherTests {
     func launchWritesOpensDeletes() async throws {
         let store = SpyConnectionFileStore()
         let opener = SpyViewerOpener()
+        let config = SpyViewerConfigurator()
         // cleanupDelay: .zero so the test doesn't wait the production grace period.
-        let launcher = DCVLauncher(locator: FakeViewerLocator(url: viewerURL), store: store, opener: opener, cleanupDelay: .zero)
+        let launcher = DCVLauncher(locator: FakeViewerLocator(url: viewerURL), store: store, opener: opener, configurator: config, cleanupDelay: .zero)
 
         try await launcher.launch(connectionFile: connectionFile)
 
+        // ensured Viewer prefs (HiDPI) before launching (CL-06)
+        #expect(config.calledScales.count == 1)
         // wrote the auto-login content
         #expect(store.writtenContents.count == 1)
         #expect(store.writtenContents.first?.contains("password=secret") == true)
@@ -51,7 +54,7 @@ struct DCVLauncherTests {
         let store = SpyConnectionFileStore()
         let opener = SpyViewerOpener()
         opener.openError = DummyOpenError()
-        let launcher = DCVLauncher(locator: FakeViewerLocator(url: viewerURL), store: store, opener: opener)
+        let launcher = DCVLauncher(locator: FakeViewerLocator(url: viewerURL), store: store, opener: opener, configurator: SpyViewerConfigurator())
 
         await #expect(throws: DCVError.self) {
             try await launcher.launch(connectionFile: connectionFile)

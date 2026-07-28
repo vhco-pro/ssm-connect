@@ -7,6 +7,8 @@ final class DCVLauncher: DCVLaunching {
     private let locator: DCVViewerLocating
     private let store: DCVConnectionFileStore
     private let opener: DCVViewerOpening
+    /// Sets Viewer prefs that must land before launch (HiDPI/Retina — CL-06). Best-effort.
+    private let configurator: DCVViewerConfiguring
     /// Grace period to keep the `.dcv` file on disk after launching DCV Viewer. The viewer reads
     /// the connection file *asynchronously* after `open` returns (which only signals launch, not
     /// read); deleting it immediately races that read and the viewer fails with a bogus
@@ -19,11 +21,13 @@ final class DCVLauncher: DCVLaunching {
         locator: DCVViewerLocating = SystemDCVViewerLocator(),
         store: DCVConnectionFileStore = TempDCVConnectionFileStore(),
         opener: DCVViewerOpening = WorkspaceDCVViewerOpener(),
+        configurator: DCVViewerConfiguring = GLibKeyfileDCVViewerConfigurator(),
         cleanupDelay: Duration = .seconds(5)
     ) {
         self.locator = locator
         self.store = store
         self.opener = opener
+        self.configurator = configurator
         self.cleanupDelay = cleanupDelay
     }
 
@@ -31,6 +35,10 @@ final class DCVLauncher: DCVLaunching {
 
     func launch(connectionFile: DCVConnectionFile) async throws {
         guard let appURL = locator.viewerAppURL() else { throw DCVError.viewerNotInstalled }
+
+        // CL-06: enable Viewer HiDPI before launch on a Retina client (best-effort, never blocks).
+        let backingScale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 1 }
+        configurator.ensurePreferredSettings(backingScale: backingScale)
 
         let fileURL = try store.write(connectionFile.iniContent())
 

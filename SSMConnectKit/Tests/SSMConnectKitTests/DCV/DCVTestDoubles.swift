@@ -42,4 +42,10 @@ final class SpyViewerOpener: DCVViewerOpening, @unchecked Sendable {
     }
 }
 
+/// Records ensurePreferredSettings calls; never touches disk (keeps launcher tests hermetic).
+final class SpyViewerConfigurator: DCVViewerConfiguring, @unchecked Sendable {
+    private(set) var calledScales: [CGFloat] = []
+    func ensurePreferredSettings(backingScale: CGFloat) { calledScales.append(backingScale) }
+}
+
 struct DummyOpenError: Error {}
