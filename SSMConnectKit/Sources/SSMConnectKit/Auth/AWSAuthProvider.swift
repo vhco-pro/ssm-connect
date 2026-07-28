@@ -1,6 +1,7 @@
 import AppKit
 import AWSSSO
 import AWSSSOOIDC
+import ClientRuntime
 import Foundation
 
 /// Default `AuthProviding` backed by `aws-sdk-swift` (B3, B4).
@@ -191,11 +192,26 @@ final class AWSAuthProvider: AuthProviding {
     /// Exchanges an SSO `accessToken` for temporary STS credentials (F-04).
     private func roleCredentials(profile: ConnectionProfile, accessToken: String) async throws -> AWSCredentials {
         let client = try makeSSOClient(profile.ssoRegion)
-        let output = try await client.getRoleCredentials(GetRoleCredentialsInput(
-            accessToken: accessToken,
-            accountId: profile.accountId,
-            roleName: profile.roleName
-        ))
+        let output: GetRoleCredentialsOutput
+        do {
+            output = try await client.getRoleCredentials(GetRoleCredentialsInput(
+                accessToken: accessToken,
+                accountId: profile.accountId,
+                roleName: profile.roleName
+            ))
+        } catch {
+            // The portal answers "you are not assigned this permission set" with a 403
+            // `ForbiddenException`, which the SSO Smithy model does *not* declare for this
+            // operation, so the SDK hands back an opaque `UnknownAWSHTTPServiceError` (#20).
+            // Re-authenticating can never fix it, so name the account and role instead of
+            // letting it read like a transient sign-in failure.
+            guard Self.isRoleAccessDenied(error) else { throw error }
+            throw AuthError.roleAccessDenied(
+                accountId: profile.accountId,
+                roleName: profile.roleName,
+                detail: (error as? ServiceError)?.typeName
+            )
+        }
         guard let role = output.roleCredentials,
               let accessKeyId = role.accessKeyId,
               let secretAccessKey = role.secretAccessKey,
@@ -209,5 +225,16 @@ final class AWSAuthProvider: AuthProviding {
             sessionToken: sessionToken,
             expiration: Date(timeIntervalSince1970: Double(role.expiration) / 1000)
         )
+    }
+
+    /// Whether a `GetRoleCredentials` failure means "signed in, but not assigned this role".
+    ///
+    /// Matches on HTTP 403 or the error type name, because `ForbiddenException` is unmodeled
+    /// here and therefore arrives as `UnknownAWSHTTPServiceError` rather than a concrete type.
+    /// `UnauthorizedException` is deliberately excluded: that one means the *token* is bad, and
+    /// the caller's re-auth path should keep handling it.
+    static func isRoleAccessDenied(_ error: Error) -> Bool {
+        if (error as? HTTPError)?.httpResponse.statusCode == .forbidden { return true }
+        return (error as? ServiceError)?.typeName == "ForbiddenException"
     }
 }

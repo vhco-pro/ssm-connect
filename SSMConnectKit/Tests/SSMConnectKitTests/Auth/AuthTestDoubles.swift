@@ -1,6 +1,8 @@
+@_spi(UnknownAWSHTTPServiceError) import AWSClientRuntime
 import AWSSSO
 import AWSSSOOIDC
 import Foundation
+import SmithyHTTPAPI
 @testable import SSMConnectKit
 
 // Test doubles for the SSO/OIDC client seams + cache (B7, ADR-P2).
@@ -84,6 +86,28 @@ final class MockSSOClient: SSOClienting, @unchecked Sendable {
         if let error { throw error }
         return output
     }
+}
+
+/// Builds the error the real SDK hands back when a service returns an error shape that is
+/// absent from the operation's Smithy model (#20).
+///
+/// `SSO.GetRoleCredentials` models only `InvalidRequestException`, `ResourceNotFoundException`,
+/// `TooManyRequestsException`, and `UnauthorizedException`. A real "you are not assigned this
+/// permission set" reply is a 403 `ForbiddenException`, which is *not* in that list, so the SDK
+/// wraps it as `UnknownAWSHTTPServiceError`. Using the genuine type keeps these tests honest:
+/// if a future SDK models `ForbiddenException` properly, they still pass via the `ServiceError`
+/// conformance both types share.
+func unmodeledAWSServiceError(
+    typeName: String?,
+    message: String?,
+    statusCode: HTTPStatusCode
+) -> any Error {
+    UnknownAWSHTTPServiceError(
+        httpResponse: HTTPResponse(statusCode: statusCode),
+        message: message,
+        requestID: "req-1234",
+        typeName: typeName
+    )
 }
 
 /// Thread-safe recorder for URLs passed to the provider's `openURL` closure.

@@ -214,4 +214,60 @@ struct AWSAuthProviderTests {
         let credentials = try await provider.authenticate(profile: profile)
         #expect(credentials.expiration == Date(timeIntervalSince1970: 1_700_000_000))
     }
+
+    // MARK: Role assignment removed (#20)
+
+    @Test("a 403 ForbiddenException from GetRoleCredentials names the account and role")
+    func forbiddenBecomesRoleAccessDenied() async throws {
+        let cache = MockSSOCache(stored: validToken())
+        let oidc = MockOIDCClient()
+        let sso = MockSSOClient()
+        // Exactly what the portal returns once an Identity Center assignment is removed.
+        sso.error = unmodeledAWSServiceError(
+            typeName: "ForbiddenException",
+            message: "No access",
+            statusCode: .forbidden
+        )
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+
+        let thrown = try #require(await #expect(throws: AuthError.self) {
+            _ = try await provider.authenticate(profile: profile)
+        })
+        guard case let .roleAccessDenied(accountId, roleName, detail) = thrown else {
+            Issue.record("expected .roleAccessDenied, got \(thrown)")
+            return
+        }
+        #expect(accountId == profile.accountId)
+        #expect(roleName == profile.roleName)
+        #expect(detail == "ForbiddenException")
+
+        // The rendered message must be actionable, and must not read as a transient sign-in blip.
+        let description = try #require(thrown.errorDescription)
+        #expect(description.contains(profile.accountId))
+        #expect(description.contains(profile.roleName))
+        #expect(description.contains("error 1") == false)
+    }
+
+    @Test("a non-403 GetRoleCredentials failure is left alone for the re-auth path")
+    func unauthorizedIsNotSwallowed() async throws {
+        let cache = MockSSOCache(stored: validToken())
+        let oidc = MockOIDCClient()
+        let sso = MockSSOClient()
+        // A bad *token* (401) must keep flowing to the caller's expired-credentials handling
+        // rather than being mislabeled as a missing role assignment.
+        sso.error = unmodeledAWSServiceError(
+            typeName: "UnauthorizedException",
+            message: "Session token not found or invalid",
+            statusCode: .unauthorized
+        )
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+
+        await #expect(throws: (any Error).self) {
+            _ = try await provider.authenticate(profile: profile)
+        }
+        // Not converted: `isRoleAccessDenied` is deliberately narrow.
+        #expect(AWSAuthProvider.isRoleAccessDenied(sso.error!) == false)
+    }
 }

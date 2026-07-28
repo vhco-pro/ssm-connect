@@ -6,17 +6,21 @@ import Testing
 @MainActor
 struct ProfileStoreTests {
 
-    /// A throwaway `UserDefaults` suite per test, cleaned up immediately.
-    private func makeDefaults() -> UserDefaults {
-        let suite = "ssmconnect.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        return defaults
+    /// Fresh, disk-free storage per test.
+    ///
+    /// This used to hand out a `UserDefaults(suiteName: "ssmconnect.tests.<uuid>")`. That is not
+    /// actually throwaway: the suite gets registered with `cfprefsd` and flushed to
+    /// `~/Library/Preferences/`, and the `removePersistentDomain` call ran *before* the test wrote
+    /// anything, so it cleaned up nothing. Every CI and local run leaked one plist per test onto
+    /// the developer's machine. Doing teardown afterwards does not fix it either, because it
+    /// races the daemon's async flush. Staying off disk does.
+    private func makeDefaults() -> InMemoryKeyValueStore {
+        InMemoryKeyValueStore()
     }
 
     @Test("a fresh store has no profiles — nothing about an AWS env is baked in")
     func startsEmpty() {
-        let store = ProfileStore(defaults: makeDefaults())
+        let store = ProfileStore(store: makeDefaults())
         #expect(store.profiles.isEmpty)
         #expect(store.hasProfiles == false)
         // activeProfile falls back to a blank template (not connectable).
@@ -25,7 +29,7 @@ struct ProfileStoreTests {
 
     @Test("importableProfiles maps ~/.aws/config SSO profiles, leaving tag + secret blank")
     func importFromConfig() {
-        let store = ProfileStore(defaults: makeDefaults())
+        let store = ProfileStore(store: makeDefaults())
         let parser = AWSConfigParser(contents: """
         [profile workstation-prd]
         sso_session = sess
@@ -54,13 +58,13 @@ struct ProfileStoreTests {
 
     @Test("importableProfiles is empty when no config is available")
     func importNoConfig() {
-        let store = ProfileStore(defaults: makeDefaults())
+        let store = ProfileStore(store: makeDefaults())
         #expect(store.importableProfiles(parser: nil).isEmpty)
     }
 
     @Test("add/update/duplicate/delete behave correctly")
     func crud() {
-        let store = ProfileStore(defaults: makeDefaults())
+        let store = ProfileStore(store: makeDefaults())
         var p = ConnectionProfile.example
         p.id = UUID()
         store.addProfile(p)
@@ -83,7 +87,7 @@ struct ProfileStoreTests {
     @Test("profiles and settings persist across store instances")
     func persistence() {
         let defaults = makeDefaults()
-        let store = ProfileStore(defaults: defaults)
+        let store = ProfileStore(store: defaults)
         var p = ConnectionProfile.example
         p.id = UUID()
         p.name = "Persisted"
@@ -91,7 +95,7 @@ struct ProfileStoreTests {
         store.settings.autoConnect = true
         store.settings.clipboardAutoClearSeconds = 90
 
-        let reloaded = ProfileStore(defaults: defaults)
+        let reloaded = ProfileStore(store: defaults)
         #expect(reloaded.profiles.first?.name == "Persisted")
         #expect(reloaded.activeProfileID == p.id)
         #expect(reloaded.settings.autoConnect == true)
@@ -100,7 +104,7 @@ struct ProfileStoreTests {
 
     @Test("deleting the last profile leaves a safe blank-template fallback rather than crashing")
     func deleteLeavesActiveValid() {
-        let store = ProfileStore(defaults: makeDefaults())
+        let store = ProfileStore(store: makeDefaults())
         store.addProfile(.example)
         let onlyID = store.profiles[0].id
         store.deleteProfile(onlyID)

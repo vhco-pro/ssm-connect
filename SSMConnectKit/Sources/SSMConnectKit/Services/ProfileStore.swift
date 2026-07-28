@@ -16,16 +16,21 @@ public final class ProfileStore {
         didSet { save() }
     }
 
-    private let defaults: UserDefaults
+    private let defaults: any KeyValueStoring
     private static let profilesKey = "ssmconnect.profiles.v1"
     private static let activeKey = "ssmconnect.activeProfileID.v1"
     private static let settingsKey = "ssmconnect.settings.v1"
 
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        self.profiles = Self.decode([ConnectionProfile].self, from: defaults, key: Self.profilesKey) ?? []
-        self.settings = Self.decode(AppSettings.self, from: defaults, key: Self.settingsKey) ?? .default
-        if let raw = defaults.string(forKey: Self.activeKey) {
+    public convenience init(defaults: UserDefaults = .standard) {
+        self.init(store: defaults)
+    }
+
+    /// Designated initializer. Takes the storage seam so tests can stay off disk entirely.
+    init(store: any KeyValueStoring) {
+        self.defaults = store
+        self.profiles = Self.decode([ConnectionProfile].self, from: store, key: Self.profilesKey) ?? []
+        self.settings = Self.decode(AppSettings.self, from: store, key: Self.settingsKey) ?? .default
+        if let raw = store.string(forKey: Self.activeKey) {
             self.activeProfileID = UUID(uuidString: raw)
         }
     }
@@ -103,12 +108,12 @@ public final class ProfileStore {
         defaults.set(activeProfileID?.uuidString, forKey: Self.activeKey)
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, key: String) -> T? {
+    private static func decode<T: Decodable>(_ type: T.Type, from defaults: any KeyValueStoring, key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
-    private static func encode<T: Encodable>(_ value: T, to defaults: UserDefaults, key: String) {
+    private static func encode<T: Encodable>(_ value: T, to defaults: any KeyValueStoring, key: String) {
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
     }
