@@ -24,6 +24,9 @@ enum AuthError: LocalizedError, Equatable {
     case deviceAuthorizationFailed
     /// `SSO.GetRoleCredentials` returned without usable credentials.
     case missingRoleCredentials
+    /// Sign-in succeeded, but the SSO portal refuses this account + role pair. Distinct from
+    /// `signInRequired`: re-authenticating cannot fix it, only an AWS-side assignment can (#20).
+    case roleAccessDenied(accountId: String, roleName: String, detail: String?)
 
     var errorDescription: String? {
         switch self {
@@ -31,6 +34,13 @@ enum AuthError: LocalizedError, Equatable {
         case .deviceAuthTimedOut:       "Sign-in timed out. Please try again."
         case .deviceAuthorizationFailed: "Could not start AWS SSO authorization."
         case .missingRoleCredentials:   "AWS did not return role credentials."
+        case let .roleAccessDenied(accountId, roleName, detail):
+            """
+            No access to account \(accountId) with role “\(roleName)”. \
+            You are signed in, but AWS SSO does not grant you that permission set: \
+            it may have been removed, or the profile's account/role may be wrong.\
+            \(detail.map { " (\($0))" } ?? "")
+            """
         }
     }
 }

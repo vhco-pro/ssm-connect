@@ -31,7 +31,10 @@ let package = Package(
             name: "SSMConnectKitTests",
             dependencies: [
                 "SSMConnectKit",
-                // The tests construct AWS SDK response types directly.
+                // The tests construct AWS SDK response types directly. AWSClientRuntime is
+                // explicit because the error-rendering tests build a real
+                // `UnknownAWSHTTPServiceError` rather than a look-alike stub (#20).
+                .product(name: "AWSClientRuntime", package: "aws-sdk-swift"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
                 .product(name: "AWSSSO", package: "aws-sdk-swift"),
                 .product(name: "AWSEC2", package: "aws-sdk-swift"),

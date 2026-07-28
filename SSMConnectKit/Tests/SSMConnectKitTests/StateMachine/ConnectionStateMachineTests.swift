@@ -1,5 +1,6 @@
 import Foundation
 import Smithy
+import SmithyHTTPAPI
 import Testing
 @testable import SSMConnectKit
 
@@ -242,6 +243,45 @@ struct ConnectionStateMachineTests {
         #expect(machine.errorMessage?.contains("Invalid region") == true)
         #expect(machine.errorMessage?.contains("error 4") == false)
         #expect(machine.errorMessage?.contains("Smithy.ClientError") == false)
+    }
+
+    // Verifies #20: an AWS service error whose shape is not in the operation's Smithy model
+    // arrives as `UnknownAWSHTTPServiceError` and must not bridge to "(… error 1.)".
+    @Test("an unmodeled AWS service error is unwrapped to its message, not 'error 1'")
+    func unknownAWSServiceErrorIsUnwrapped() async {
+        let ec2 = MockEC2Service()
+        ec2.resolveResult = .failure(unmodeledAWSServiceError(
+            typeName: "ForbiddenException",
+            message: "No access",
+            statusCode: .forbidden
+        ))
+        let machine = makeMachine(ec2: ec2, profile: .example)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .error)
+        #expect(machine.errorMessage == "No access (ForbiddenException, HTTP 403)")
+        #expect(machine.errorMessage?.contains("error 1") == false)
+        #expect(machine.errorMessage?.contains("UnknownAWSHTTPServiceError") == false)
+    }
+
+    @Test("an unmodeled AWS service error with no message still names its type and status")
+    func unknownAWSServiceErrorWithoutMessage() async {
+        let ec2 = MockEC2Service()
+        ec2.resolveResult = .failure(unmodeledAWSServiceError(
+            typeName: "ThrottlingException",
+            message: nil,
+            statusCode: .badRequest
+        ))
+        let machine = makeMachine(ec2: ec2, profile: .example)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .error)
+        #expect(machine.errorMessage == "AWS returned a ThrottlingException.")
+        #expect(machine.errorMessage?.contains("error 1") == false)
     }
 
     // MARK: DCV is best-effort (F-16)

@@ -1,7 +1,9 @@
+import ClientRuntime
 import Darwin
 import Foundation
 import Observation
 import Smithy
+import SmithyHTTPAPI
 
 /// Orchestrates the full connection lifecycle across all service layers (Phase F, spec §5).
 ///
@@ -692,6 +694,15 @@ public final class ConnectionStateMachine {
         if let clientError = error as? ClientError {
             return Self.message(from: clientError)
         }
+        // Errors *returned by an AWS service* have the same problem one layer up. Any response
+        // whose error shape is absent from the operation's Smithy model becomes an
+        // `UnknownAWSHTTPServiceError`, which is likewise `Error`-only and bridges to the
+        // useless "(AWSClientRuntime.UnknownAWSHTTPServiceError error 1.)" (#20). It does carry
+        // `typeName`/`message`, so match the `ServiceError` protocol: that covers unmodeled and
+        // modeled service errors alike, for every AWS API this app calls.
+        if let serviceError = error as? ServiceError {
+            return Self.message(from: serviceError, httpStatus: (error as? HTTPError)?.httpResponse.statusCode)
+        }
         return error.localizedDescription
     }
 
@@ -705,6 +716,19 @@ public final class ConnectionStateMachine {
              let .invalidValue(message):
             return message
         }
+    }
+
+    /// Render an AWS service error as "<message> (<TypeName>, HTTP <status>)", degrading
+    /// gracefully as fields are missing. The type name and status are what make an otherwise
+    /// generic message ("No access") actionable in a bug report.
+    static func message(from error: ServiceError, httpStatus: HTTPStatusCode?) -> String {
+        let detail = [error.typeName, httpStatus.map { "HTTP \($0.rawValue)" }]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+        let summary = error.message ?? error.typeName.map { "AWS returned a \($0)." }
+            ?? "AWS returned an unrecognized error."
+        guard !detail.isEmpty, error.message != nil else { return summary }
+        return "\(summary) (\(detail))"
     }
 
     /// Default heuristic for detecting expired/unauthorized SSO credentials across SDK services.
