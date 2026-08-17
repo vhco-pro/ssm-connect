@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "ssm-readiness-timeout-fails",
+  "title": "SSM never comes online within its budget",
+  "covers": ["SSM readiness timeout"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": { "waitForSSMOnline": [{ "error": { "kind": "stageTimeout", "message": "Waiting for SSM timed out." } }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "error"],
+    "forbiddenCalls": [{ "port": "TunnelProvider", "method": "startTunnel" }],
+    "terminal": { "state": "error", "errorCategory": "timeout", "tunnelActive": false }
+  }
+}

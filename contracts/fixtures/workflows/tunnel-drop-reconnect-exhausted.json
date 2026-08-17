@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "tunnel-drop-reconnect-exhausted",
+  "title": "Every bounded reconnect attempt fails and the tunnel is torn down",
+  "covers": ["Bounded reconnect exhaustion", "No half-open plugin process is left behind"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "settings": { "autoReconnect": true },
+  "harness": { "maxReconnectAttempts": 3, "reconnectBackoffSeconds": 0 },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0009" } }]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          { "result": { "processIdentifier": 4249 } },
+          { "error": { "kind": "localPortInUse" } },
+          { "error": { "kind": "localPortInUse" } },
+          { "error": { "kind": "localPortInUse" } }
+        ]
+      },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
+      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
+      "DCVLauncher": { "launch": [{ "result": null }] }
+    },
+    "events": [
+      { "kind": "tunnelDrop", "afterState": "connected", "reason": { "kind": "processExited", "exitCode": 255, "stderr": "connection closed" } }
+    ]
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected", "tunneling", "error"],
+    "calls": [{ "port": "TunnelProvider", "method": "startTunnel", "times": 4 }],
+    "terminal": { "state": "error", "errorCategory": "tunnel", "tunnelActive": false }
+  }
+}

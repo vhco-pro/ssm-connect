@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "id": "system-wake-reconnects-a-dead-tunnel",
+  "title": "A tunnel that looks connected but fails its health check after wake is reconnected",
+  "covers": [
+    "Suspend/resume health check"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0020"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4260
+            }
+          },
+          {
+            "result": {
+              "processIdentifier": 4261
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          },
+          {
+            "result": false
+          },
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    },
+    {
+      "action": "handleSystemWake",
+      "afterState": "connected"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected",
+      "tunneling",
+      "connected"
+    ],
+    "statesAreExact": false,
+    "calls": [
+      {
+        "port": "TunnelProvider",
+        "method": "startTunnel",
+        "times": 2
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "tunnelActive": true
+    }
+  }
+}

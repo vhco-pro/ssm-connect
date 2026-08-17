@@ -528,6 +528,16 @@ This table is the evidence record. The requirements the spikes produced are norm
 Create the versioned profile schema and extract representative conformance fixtures from current
 Swift tests. Add schema validation and fixture checks to CI.
 
+**Status (2026-08-17): drafted, not yet executed.** `contracts/` holds the v1 profile schema, the
+fixture format, 28 workflow fixtures covering all ten required case groups in §6.2, and a
+`validate.py` document check wired into CI. These were derived by *reading* the Swift
+implementation on a Windows host, so they are unverified against it.
+
+Phase 1 is complete only when a fixture runner executes all cases against the existing Swift
+implementation and every disagreement is reconciled, treating shipping macOS behavior as the
+reference. Until then §15 question 6 stays open and AC-04 is unmet. Phases 3–5 MAY proceed against
+the drafted contracts, accepting that a reconciliation may change them.
+
 ### Phase 2: Behavior-preserving Swift separation
 
 Create the Swift domain, workflow, AWS, and macOS targets. Move one dependency boundary at a time,

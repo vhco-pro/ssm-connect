@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "readiness-miss-re-establishes-then-connects",
+  "title": "A readiness miss tears the tunnel down and re-establishes before launching the viewer",
+  "covers": ["Bounded tunnel re-establish", "Viewer is never launched into an unverified endpoint"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "harness": { "establishRetryAttempts": 2 },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0006" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4246 } }] },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": false }, { "result": true }] },
+      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
+      "DCVLauncher": { "launch": [{ "result": null }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected"],
+    "calls": [
+      { "port": "TunnelProvider", "method": "startTunnel", "times": 2 },
+      { "port": "DCVLauncher", "method": "launch", "times": 1 }
+    ],
+    "terminal": { "state": "connected", "errorCategory": "none", "tunnelActive": true }
+  }
+}

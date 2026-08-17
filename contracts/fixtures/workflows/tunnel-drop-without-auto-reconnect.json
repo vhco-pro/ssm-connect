@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "tunnel-drop-without-auto-reconnect",
+  "title": "With auto-reconnect disabled a drop surfaces as an error",
+  "covers": ["Tunnel unexpected drop", "autoReconnect preference is honoured"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "settings": { "autoReconnect": false },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0010" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4250 } }] },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
+      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
+      "DCVLauncher": { "launch": [{ "result": null }] }
+    },
+    "events": [
+      { "kind": "tunnelDrop", "afterState": "connected", "reason": { "kind": "processExited", "exitCode": 1, "stderr": "" } }
+    ]
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected", "error"],
+    "calls": [{ "port": "TunnelProvider", "method": "startTunnel", "times": 1 }],
+    "terminal": { "state": "error", "errorCategory": "tunnel", "tunnelActive": false }
+  }
+}

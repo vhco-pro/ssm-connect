@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/vhco-pro/ssm-connect/contracts/connection-profile.schema.json",
+  "title": "SSM Connect portable connection profile",
+  "description": "Portable interchange format for a connection profile (specification section 6.1). Each client MAY keep its own native storage; both MUST be able to export and import this document. Unknown optional properties are permitted and SHOULD be preserved on round-trip.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "ssoStartUrl",
+    "ssoRegion",
+    "accountId",
+    "roleName",
+    "resourceRegion",
+    "instanceTagKey",
+    "instanceTagValue",
+    "localPort",
+    "remotePort"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document format. A client that does not support the value MUST fail with an actionable message rather than guess."
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Stable profile identity, preserved across export and import."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name."
+    },
+
+    "ssoStartUrl": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri",
+      "description": "AWS IAM Identity Center start URL, for example https://d-xxxx.awsapps.com/start."
+    },
+    "ssoRegion": {
+      "$ref": "#/$defs/awsRegion",
+      "description": "Region for SSOOIDC and SSO:GetRoleCredentials. Distinct from resourceRegion."
+    },
+    "accountId": {
+      "type": "string",
+      "pattern": "^[0-9]{12}$",
+      "description": "AWS account ID. See the 'deliberate tightenings' note in contracts/README.md."
+    },
+    "roleName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "IAM Identity Center permission-set role name."
+    },
+
+    "resourceRegion": {
+      "$ref": "#/$defs/awsRegion",
+      "description": "Region for EC2, SSM, and Secrets Manager operations."
+    },
+    "instanceTagKey": {
+      "type": "string",
+      "minLength": 1,
+      "description": "EC2 tag key used to resolve the workstation."
+    },
+    "instanceTagValue": {
+      "type": "string",
+      "description": "EC2 tag value. May be empty in a not-yet-configured profile; a profile is only connectable when this is non-empty."
+    },
+
+    "connectMode": {
+      "enum": ["singleUser", "multiUser"],
+      "default": "singleUser",
+      "description": "Absent or null MUST resolve to singleUser, so profiles written before this field existed keep working."
+    },
+    "connectAction": {
+      "enum": ["dcvViewer"],
+      "default": "dcvViewer",
+      "description": "What to launch once the tunnel is up. v1 implements the DCV Viewer auto-login path only."
+    },
+
+    "localPort": {
+      "$ref": "#/$defs/port",
+      "default": 8443,
+      "description": "Local loopback port the tunnel binds."
+    },
+    "remotePort": {
+      "$ref": "#/$defs/port",
+      "default": 8443,
+      "description": "Remote DCV port forwarded over the tunnel."
+    },
+    "agentRemotePort": {
+      "oneOf": [{ "$ref": "#/$defs/port" }, { "type": "null" }],
+      "default": 8444,
+      "description": "Multi-user only. Port the on-box agent listens on. Absent or null MUST resolve to 8444."
+    },
+
+    "secretId": {
+      "type": ["string", "null"],
+      "description": "Single-user only. Secrets Manager secret ID holding the DCV password. This is an identifier, never the secret value."
+    },
+
+    "preferences": {
+      "type": "object",
+      "description": "Non-secret client preferences supported on both platforms.",
+      "properties": {
+        "autoConnect": {
+          "type": "boolean",
+          "default": false,
+          "description": "Connect automatically at application launch, only when the profile is fully configured."
+        },
+        "autoReconnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-establish the tunnel automatically if it drops unexpectedly."
+        },
+        "clipboardAutoClearSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30,
+          "description": "Seconds before the clipboard clears after copying the DCV password. 0 disables auto-clear."
+        }
+      }
+    }
+  },
+
+  "allOf": [
+    {
+      "$comment": "Security boundary, specification sections 6.1 and 12: the portable document carries identifiers and preferences only. It MUST NOT carry live authentication material or machine-local paths.",
+      "not": {
+        "anyOf": [
+          { "required": ["accessKeyId"] },
+          { "required": ["secretAccessKey"] },
+          { "required": ["sessionToken"] },
+          { "required": ["credentials"] },
+          { "required": ["accessToken"] },
+          { "required": ["refreshToken"] },
+          { "required": ["ssoAccessToken"] },
+          { "required": ["password"] },
+          { "required": ["dcvPassword"] },
+          { "required": ["secretValue"] },
+          { "required": ["authToken"] },
+          { "required": ["presignedUrl"] },
+          { "required": ["sessionResponse"] },
+          { "required": ["ssmSession"] },
+          { "required": ["connectionFilePath"] },
+          { "required": ["tempFilePath"] }
+        ]
+      }
+    },
+    {
+      "$comment": "A multi-user host is identity-only: there is no shared-password fallback, so a secret ID on a multi-user profile indicates a mistake rather than a fallback.",
+      "if": {
+        "properties": { "connectMode": { "const": "multiUser" } },
+        "required": ["connectMode"]
+      },
+      "then": {
+        "properties": { "secretId": { "type": "null" } }
+      }
+    }
+  ],
+
+  "$defs": {
+    "awsRegion": {
+      "type": "string",
+      "pattern": "^(?!.*-$)(?!-)[a-zA-Z0-9-]{1,63}$",
+      "$comment": "Byte-for-byte the rule the AWS SDK endpoint resolver applies. Kept identical so a profile is rejected with an actionable message before any SDK call rather than surfacing an opaque client error. Leading or trailing whitespace makes a region invalid.",
+      "description": "Syntactically valid AWS region."
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    }
+  }
+}

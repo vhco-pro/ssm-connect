@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "connect-starts-pending-instance",
+  "title": "Connect auto-starts an instance reported as pending",
+  "covers": ["pending instance", "Auto-start"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": {
+        "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "pending" } }],
+        "startInstance": [{ "result": null }],
+        "pollUntilRunning": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0003" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4244 } }] },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
+      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
+      "DCVLauncher": { "launch": [{ "result": null }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "starting", "waitingForSSM", "tunneling", "connected"],
+    "calls": [
+      { "port": "EC2Provider", "method": "startInstance", "times": 1, "with": { "instanceId": "i-0aaaaaaaaaaaaaaa1" } },
+      { "port": "EC2Provider", "method": "pollUntilRunning", "times": 1 }
+    ],
+    "terminal": { "state": "connected", "errorCategory": "none", "tunnelActive": true }
+  }
+}

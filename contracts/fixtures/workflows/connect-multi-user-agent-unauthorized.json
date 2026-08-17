@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "id": "connect-multi-user-agent-unauthorized",
+  "title": "An agent rejection warns but keeps the tunnel up and never falls back to a shared user",
+  "covers": [
+    "Agent provisioning failure",
+    "A multi-user host is identity-only"
+  ],
+  "profile": {
+    "$ref": "../profiles/multi-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0bbbbbbbbbbbbbbb2",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0012"
+            }
+          },
+          {
+            "result": {
+              "sessionId": "example-agent-session-0012"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4253
+            }
+          },
+          {
+            "result": {
+              "processIdentifier": 4254
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "IdentityProvider": {
+        "resolveIdentity": [
+          {
+            "result": {
+              "username": "example.user"
+            }
+          }
+        ],
+        "presignedIdentityToken": [
+          {
+            "result": "synthetic-presigned-token-1"
+          }
+        ]
+      },
+      "AgentClient": {
+        "ensureSession": [
+          {
+            "error": {
+              "kind": "agentUnauthorized",
+              "message": "401 from the workstation agent."
+            }
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected"
+    ],
+    "calls": [
+      {
+        "port": "AgentClient",
+        "method": "ensureSession",
+        "times": 1
+      },
+      {
+        "port": "TunnelProvider",
+        "method": "terminateTunnel",
+        "times": 1
+      }
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "DCVLauncher",
+        "method": "launch"
+      },
+      {
+        "port": "SecretsProvider",
+        "method": "fetchSecret"
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "warningPresent": true,
+      "tunnelActive": true,
+      "passwordInMemory": false
+    }
+  }
+}

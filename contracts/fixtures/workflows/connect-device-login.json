@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "connect-device-login",
+  "title": "Connect when no cached SSO session exists and device authorization runs",
+  "covers": ["Device login"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [{ "result": { "source": "deviceAuthorization", "interactive": true } }]
+      },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0002" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4243 } }] },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
+      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
+      "DCVLauncher": { "launch": [{ "result": null }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected"],
+    "calls": [{ "port": "AuthProvider", "method": "authenticate", "times": 1 }],
+    "terminal": { "state": "connected", "errorCategory": "none", "tunnelActive": true }
+  }
+}

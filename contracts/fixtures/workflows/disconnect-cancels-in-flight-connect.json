@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "id": "disconnect-cancels-in-flight-connect",
+  "title": "Disconnecting mid-flow cancels the connect and settles disconnected",
+  "covers": [
+    "Disconnect cancellation"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0020"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4260
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    },
+    {
+      "action": "disconnect",
+      "afterState": "waitingForSSM"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "disconnected"
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "DCVLauncher",
+        "method": "launch"
+      }
+    ],
+    "terminal": {
+      "state": "disconnected",
+      "errorCategory": "none",
+      "instanceId": null,
+      "localPort": null,
+      "tunnelActive": false,
+      "passwordInMemory": false
+    }
+  }
+}

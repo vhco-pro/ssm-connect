@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "33333333-3333-4333-8333-333333333333",
+  "name": "New Workstation",
+  "ssoStartUrl": "https://d-0000000000.awsapps.com/start",
+  "ssoRegion": "eu-west-1",
+  "accountId": "000000000000",
+  "roleName": "ExampleWorkstationRole",
+  "resourceRegion": "eu-central-1",
+  "instanceTagKey": "Name",
+  "instanceTagValue": "",
+  "connectMode": "singleUser",
+  "connectAction": "dcvViewer",
+  "localPort": 8443,
+  "remotePort": 8443,
+  "secretId": null
+}

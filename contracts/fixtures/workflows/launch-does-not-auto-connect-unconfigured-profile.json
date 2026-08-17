@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "launch-does-not-auto-connect-unconfigured-profile",
+  "title": "Auto-connect at launch is skipped for a profile that is not fully configured",
+  "covers": [
+    "Auto-connect only for a configured profile"
+  ],
+  "profile": {
+    "$ref": "../profiles/unconfigured.json"
+  },
+  "settings": {
+    "autoConnect": true
+  },
+  "given": {
+    "ports": {}
+  },
+  "when": [
+    {
+      "action": "onLaunch"
+    }
+  ],
+  "expect": {
+    "states": [],
+    "forbiddenCalls": [
+      {
+        "port": "AuthProvider",
+        "method": "authenticate"
+      },
+      {
+        "port": "EC2Provider",
+        "method": "resolveInstance"
+      }
+    ],
+    "terminal": {
+      "state": "disconnected",
+      "errorCategory": "none",
+      "tunnelActive": false
+    }
+  }
+}

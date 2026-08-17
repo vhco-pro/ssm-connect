@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "ssm-readiness-recovers",
+  "title": "SSM comes online after the agent finishes registering",
+  "covers": ["SSM readiness successful recovery"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0004" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4245 } }] },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
+      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
+      "DCVLauncher": { "launch": [{ "result": null }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected"],
+    "terminal": { "state": "connected", "errorCategory": "none", "tunnelActive": true }
+  }
+}

@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/vhco-pro/ssm-connect/contracts/state-machine.schema.json",
+  "title": "SSM Connect workflow conformance fixture",
+  "description": "One behavioral case both workflow implementations MUST satisfy (specification section 6.2). A fixture states the inputs, the outcome each injected port produces, the calls the workflow is expected to make, the ordered states it emits, and its terminal result. Fixtures contain synthetic identifiers only.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "title", "profile", "when", "expect"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Stable kebab-case identity, unique across the fixture set."
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "covers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Which specification section 6.2 requirements this case exercises."
+    },
+    "required": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether both implementations MUST pass this case to claim conformance."
+    },
+
+    "profile": {
+      "type": "object",
+      "description": "The profile under test. Either a reference to a profile fixture, optionally with overrides, or a complete inline document.",
+      "properties": {
+        "$ref": {
+          "type": "string",
+          "description": "Path to a profile fixture, relative to this file."
+        },
+        "overrides": {
+          "type": "object",
+          "description": "Shallow field overrides applied on top of the referenced profile."
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autoConnect": { "type": "boolean", "default": false },
+        "autoReconnect": { "type": "boolean", "default": true },
+        "clipboardAutoClearSeconds": { "type": "integer", "minimum": 0, "default": 30 }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "description": "Deterministic overrides for values that are wall-clock or retry dependent. Implementations MUST honour these so fixtures run fast and identically on both platforms.",
+      "additionalProperties": false,
+      "properties": {
+        "maxReconnectAttempts": { "type": "integer", "minimum": 1, "default": 3 },
+        "reconnectBackoffSeconds": { "type": "number", "minimum": 0, "default": 5 },
+        "establishRetryAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2,
+          "description": "Re-establish attempts after a readiness miss. 2 means 3 tunnel attempts in total."
+        },
+        "stageTimeoutSeconds": {
+          "type": "object",
+          "description": "Per-stage timeout budget overrides, keyed by stage name.",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+
+    "given": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lastInstanceId": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Value the InstanceIdStore returns for this profile at the start of the case. A different value from the resolved instance MUST trigger instance-replacement handling."
+        },
+        "viewerInstalled": { "type": "boolean", "default": true },
+        "ports": {
+          "type": "object",
+          "description": "Outcome queue per port method. Each entry is consumed in order, one per call; the last entry repeats if the workflow calls more times than there are entries.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/outcome" }
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "description": "Out-of-band events injected during the run, such as the tunnel process exiting.",
+          "items": { "$ref": "#/$defs/event" }
+        }
+      }
+    },
+
+    "when": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered user or lifecycle actions driving the case.",
+      "items": { "$ref": "#/$defs/step" }
+    },
+
+    "expect": {
+      "type": "object",
+      "required": ["states", "terminal"],
+      "additionalProperties": false,
+      "properties": {
+        "states": {
+          "type": "array",
+          "description": "The ordered connection states the workflow emits, excluding the initial disconnected state. Consecutive duplicates are not emitted.",
+          "items": { "$ref": "#/$defs/connectionState" }
+        },
+        "statesAreExact": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true the emitted sequence MUST equal 'states'. When false 'states' MUST appear as an ordered subsequence."
+        },
+        "calls": {
+          "type": "array",
+          "description": "Calls the workflow MUST make, in the listed relative order. Calls not listed are not asserted.",
+          "items": { "$ref": "#/$defs/expectedCall" }
+        },
+        "forbiddenCalls": {
+          "type": "array",
+          "description": "Calls the workflow MUST NOT make in this case.",
+          "items": {
+            "type": "object",
+            "required": ["port", "method"],
+            "additionalProperties": false,
+            "properties": {
+              "port": { "$ref": "#/$defs/portName" },
+              "method": { "type": "string" }
+            }
+          }
+        },
+        "terminal": { "$ref": "#/$defs/terminal" }
+      }
+    }
+  },
+
+  "$defs": {
+    "connectionState": {
+      "enum": [
+        "disconnected",
+        "authenticating",
+        "resolving",
+        "starting",
+        "waitingForSSM",
+        "tunneling",
+        "connected",
+        "error"
+      ]
+    },
+    "portName": {
+      "enum": [
+        "AuthProvider",
+        "EC2Provider",
+        "SSMProvider",
+        "SecretsProvider",
+        "IdentityProvider",
+        "AgentClient",
+        "TunnelProvider",
+        "ReadinessProbe",
+        "DCVLauncher",
+        "InstanceIdStore",
+        "EventSink"
+      ]
+    },
+    "errorKind": {
+      "description": "Portable failure kinds an injected port can produce. Implementations map these onto their own error types; the fixture never names a platform type.",
+      "enum": [
+        "expiredCredentials",
+        "signInRequired",
+        "invalidRegion",
+        "instanceTerminated",
+        "stageTimeout",
+        "localPortInUse",
+        "tunnelNotEstablished",
+        "dcvServerNotReady",
+        "agentUnauthorized",
+        "agentUnreachable",
+        "viewerNotInstalled",
+        "awsServiceError",
+        "unknown"
+      ]
+    },
+    "errorCategory": {
+      "description": "Terminal error classification. AC-04 requires both implementations to agree on this, not on message wording.",
+      "enum": [
+        "none",
+        "configuration",
+        "authentication",
+        "instanceTerminated",
+        "timeout",
+        "tunnel",
+        "readiness",
+        "agent",
+        "aws",
+        "unknown"
+      ]
+    },
+    "outcome": {
+      "type": "object",
+      "oneOf": [{ "required": ["result"] }, { "required": ["error"] }],
+      "additionalProperties": false,
+      "properties": {
+        "result": {
+          "description": "Value the port method returns. Shape depends on the method; null means a void return."
+        },
+        "error": {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "$ref": "#/$defs/errorKind" },
+            "message": {
+              "type": "string",
+              "description": "Optional detail. Never asserted verbatim across platforms."
+            }
+          }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["kind", "afterState"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["tunnelDrop", "systemWake", "applicationWillTerminate"] },
+        "afterState": {
+          "$ref": "#/$defs/connectionState",
+          "description": "Inject the event once the workflow has reached this state."
+        },
+        "reason": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["processExited", "terminatedByUser"] },
+            "exitCode": { "type": "integer" },
+            "stderr": { "type": "string" }
+          }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["action"],
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "onLaunch",
+            "connect",
+            "disconnect",
+            "reconnect",
+            "stopWorkstation",
+            "handleSystemWake",
+            "applicationWillTerminate"
+          ]
+        },
+        "afterState": {
+          "$ref": "#/$defs/connectionState",
+          "description": "Delay the action until the workflow reaches this state. Absent means run it once the previous step has settled."
+        }
+      }
+    },
+    "expectedCall": {
+      "type": "object",
+      "required": ["port", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "port": { "$ref": "#/$defs/portName" },
+        "method": { "type": "string" },
+        "times": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact call count across the whole case. Omit to assert only that the call occurred in order."
+        },
+        "with": {
+          "type": "object",
+          "description": "Arguments that MUST match. Only the listed arguments are asserted."
+        }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "required": ["state"],
+      "additionalProperties": false,
+      "properties": {
+        "state": { "$ref": "#/$defs/connectionState" },
+        "errorCategory": { "$ref": "#/$defs/errorCategory", "default": "none" },
+        "errorMessageContains": {
+          "type": "string",
+          "description": "Optional substring both implementations MUST include. Use only for user-facing text the specification fixes, such as a named profile field."
+        },
+        "warningPresent": {
+          "type": "boolean",
+          "description": "Whether a non-fatal warning is set. A warning keeps the connection up; it is not a failure."
+        },
+        "instanceId": { "type": ["string", "null"] },
+        "localPort": { "type": ["integer", "null"] },
+        "tunnelActive": {
+          "type": "boolean",
+          "description": "Whether a supervised tunnel process is still running at the end of the case."
+        },
+        "passwordInMemory": {
+          "type": "boolean",
+          "description": "Whether the DCV password is held in memory. It MUST never be persisted in any case."
+        }
+      }
+    }
+  }
+}

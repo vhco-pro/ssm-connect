@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "connect-shutting-down-instance-fails",
+  "title": "Connect fails fast when the instance is shutting-down",
+  "covers": ["shutting-down instance", "Terminal instance states are not connectable"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "shutting-down" } }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "error"],
+    "forbiddenCalls": [
+      { "port": "EC2Provider", "method": "startInstance" },
+      { "port": "SSMProvider", "method": "startSession" },
+      { "port": "TunnelProvider", "method": "startTunnel" }
+    ],
+    "terminal": {
+      "state": "error",
+      "errorCategory": "instanceTerminated",
+      "instanceId": "i-0aaaaaaaaaaaaaaa1",
+      "tunnelActive": false
+    }
+  }
+}

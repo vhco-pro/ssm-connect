@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "tunnel-local-port-collision-fails",
+  "title": "The local forward port is already in use",
+  "covers": ["Tunnel local-port collision"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0005" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "error": { "kind": "localPortInUse", "message": "Local port 8443 is already in use." } }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "error"],
+    "forbiddenCalls": [{ "port": "DCVLauncher", "method": "launch" }],
+    "terminal": { "state": "error", "errorCategory": "tunnel", "tunnelActive": false }
+  }
+}

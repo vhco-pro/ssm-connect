@@ -1,0 +1,42 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+#
+# Validates the portable contracts that keep the macOS and Windows clients from drifting
+# (specification section 6). This is deliberately platform-neutral and runs on a cheap Linux
+# runner: it checks the schemas and fixtures as documents, not either implementation's behavior.
+# Conformance — actually running the fixtures against Swift and .NET — belongs to each client's
+# own test job, because it needs that client's toolchain.
+
+name: Contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate schemas and fixtures
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The runner image ships Python 3, so no setup action is needed and there is one
+      # fewer third-party SHA to keep pinned.
+      - name: Install the JSON Schema validator
+        run: python3 -m pip install --user --disable-pip-version-check jsonschema
+
+      - name: Validate contracts
+        run: python3 contracts/validate.py

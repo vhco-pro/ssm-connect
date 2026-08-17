@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "id": "connect-multi-user",
+  "title": "Multi-user connect resolves identity, provisions the session, and mints a fresh token",
+  "covers": [
+    "Multi-user identity resolution",
+    "Agent provisioning",
+    "Token refresh",
+    "Multi-user DCV launch"
+  ],
+  "profile": {
+    "$ref": "../profiles/multi-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0bbbbbbbbbbbbbbb2",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0011"
+            }
+          },
+          {
+            "result": {
+              "sessionId": "example-agent-session-0011"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4251
+            }
+          },
+          {
+            "result": {
+              "processIdentifier": 4252
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "IdentityProvider": {
+        "resolveIdentity": [
+          {
+            "result": {
+              "username": "example.user"
+            }
+          }
+        ],
+        "presignedIdentityToken": [
+          {
+            "result": "synthetic-presigned-token-1"
+          },
+          {
+            "result": "synthetic-presigned-token-2"
+          }
+        ]
+      },
+      "AgentClient": {
+        "ensureSession": [
+          {
+            "result": {
+              "user": "example.user",
+              "sessionId": "example.user-session"
+            }
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected"
+    ],
+    "calls": [
+      {
+        "port": "IdentityProvider",
+        "method": "resolveIdentity",
+        "times": 1
+      },
+      {
+        "port": "SSMProvider",
+        "method": "startSession",
+        "times": 2,
+        "with": {
+          "remotePort": 8444
+        }
+      },
+      {
+        "port": "AgentClient",
+        "method": "ensureSession",
+        "times": 1
+      },
+      {
+        "port": "DCVLauncher",
+        "method": "launch",
+        "with": {
+          "user": "example.user",
+          "sessionId": "example.user-session"
+        }
+      },
+      {
+        "port": "TunnelProvider",
+        "method": "terminateTunnel",
+        "times": 1
+      }
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "SecretsProvider",
+        "method": "fetchSecret"
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "warningPresent": false,
+      "tunnelActive": true,
+      "passwordInMemory": false
+    }
+  }
+}

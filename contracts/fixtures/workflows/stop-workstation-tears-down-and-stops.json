@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "id": "stop-workstation-tears-down-and-stops",
+  "title": "Stopping the workstation cancels the connection, tears the tunnel down, and stops the instance",
+  "covers": [
+    "Stop-workstation cancellation"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ],
+        "stopInstance": [
+          {
+            "result": null
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0020"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4260
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    },
+    {
+      "action": "stopWorkstation",
+      "afterState": "connected"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected",
+      "disconnected"
+    ],
+    "calls": [
+      {
+        "port": "EC2Provider",
+        "method": "stopInstance",
+        "times": 1,
+        "with": {
+          "instanceId": "i-0aaaaaaaaaaaaaaa1"
+        }
+      }
+    ],
+    "terminal": {
+      "state": "disconnected",
+      "errorCategory": "none",
+      "instanceId": null,
+      "tunnelActive": false,
+      "passwordInMemory": false
+    }
+  }
+}

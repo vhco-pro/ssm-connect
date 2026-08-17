@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "connect-invalid-region-fails-preflight",
+  "title": "A malformed resource region fails before any AWS SDK call",
+  "covers": ["Pre-flight profile validation"],
+  "profile": {
+    "$ref": "../profiles/single-user.json",
+    "overrides": { "resourceRegion": "eu-central-1-" }
+  },
+  "given": { "ports": {} },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["error"],
+    "forbiddenCalls": [
+      { "port": "AuthProvider", "method": "authenticate" },
+      { "port": "EC2Provider", "method": "resolveInstance" }
+    ],
+    "terminal": {
+      "state": "error",
+      "errorCategory": "configuration",
+      "errorMessageContains": "resource region",
+      "tunnelActive": false
+    }
+  }
+}

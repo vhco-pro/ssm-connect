@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "22222222-2222-4222-8222-222222222222",
+  "name": "Example Multi-User Workstation",
+  "ssoStartUrl": "https://d-0000000000.awsapps.com/start",
+  "ssoRegion": "eu-west-1",
+  "accountId": "000000000000",
+  "roleName": "ExampleWorkstationRole",
+  "resourceRegion": "eu-central-1",
+  "instanceTagKey": "Name",
+  "instanceTagValue": "example-workstation-mu",
+  "connectMode": "multiUser",
+  "connectAction": "dcvViewer",
+  "localPort": 8443,
+  "remotePort": 8443,
+  "agentRemotePort": 8444,
+  "secretId": null,
+  "preferences": {
+    "autoConnect": false,
+    "autoReconnect": true,
+    "clipboardAutoClearSeconds": 30
+  }
+}

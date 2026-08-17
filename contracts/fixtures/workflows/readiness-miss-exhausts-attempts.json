@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "readiness-miss-exhausts-attempts",
+  "title": "The endpoint never answers and the bounded re-establish budget is exhausted",
+  "covers": ["Bounded tunnel re-establish exhaustion"],
+  "profile": { "$ref": "../profiles/single-user.json" },
+  "harness": { "establishRetryAttempts": 2 },
+  "given": {
+    "ports": {
+      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
+      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
+      "SSMProvider": {
+        "waitForSSMOnline": [{ "result": null }],
+        "startSession": [{ "result": { "sessionId": "example-session-0007" } }]
+      },
+      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4247 } }] },
+      "ReadinessProbe": { "waitUntilReady": [{ "result": false }] }
+    }
+  },
+  "when": [{ "action": "connect" }],
+  "expect": {
+    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "error"],
+    "calls": [{ "port": "TunnelProvider", "method": "startTunnel", "times": 3 }],
+    "forbiddenCalls": [{ "port": "DCVLauncher", "method": "launch" }],
+    "terminal": { "state": "error", "errorCategory": "readiness", "tunnelActive": false }
+  }
+}
