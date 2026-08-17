@@ -1,0 +1,25 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="SSM Connect Windows Phase 0 Spike"
+    Manufacturer="VHCo"
+    Version="$(PackageVersion)"
+    UpgradeCode="B1EC6927-F15E-4FA9-AFAE-5BC522B79618"
+    Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SSM Connect Windows Spike">
+          <Component Id="MainExecutable" Guid="*">
+            <File Id="SpikeExecutable" Source="$(Payload)" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Complete" Title="SSM Connect Windows Phase 0 Spike">
+      <ComponentRef Id="MainExecutable" />
+    </Feature>
+  </Package>
+</Wix>

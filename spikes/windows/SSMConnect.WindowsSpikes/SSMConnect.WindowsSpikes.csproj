@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows 11 24H2 is the servicing baseline. Pinning it in the TFM makes
+         CA1416 enforce it instead of the net10.0-windows default of Windows 7.0. -->
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.100.8" />
+    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.8" />
+    <PackageReference Include="AWSSDK.SimpleSystemsManagement" Version="4.0.101" />
+    <PackageReference Include="AWSSDK.SSO" Version="4.0.100.8" />
+    <PackageReference Include="AWSSDK.SSOOIDC" Version="4.0.100.8" />
+  </ItemGroup>
+
+</Project>

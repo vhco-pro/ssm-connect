@@ -1,6 +1,7 @@
 # SPECIFICATION: Cross-Platform SSM Connect Client
 
-- **Status:** accepted — Phase 0 feasibility spikes in progress; implementation remains gated
+- **Status:** accepted — Phase 0 feasibility spikes passed on Windows 11 x64; the §16 planning gate
+  is met and Phase 1 may begin
 - **Date:** 2026-08-17
 - **Scope:** refactor the existing macOS implementation into explicit boundaries and add a Windows client
 - **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md), which remains the source of truth for current macOS behavior
@@ -284,34 +285,83 @@ response to workflow events rather than embedded in the portable workflow.
 
 ## 9. Platform Adapter Requirements
 
+### 9.0 AWS IAM Identity Center
+
+Phase 0 verified AWS SDK for .NET v4 against a real `sso_session` profile: it resolved the modern
+shared profile, attempted cached-token reuse and refresh, fell back to interactive authorization
+after an invalid refresh token, and completed `sts:GetCallerIdentity`.
+
+`CredentialProfileStoreChain` resolves the profile, but the SDK's default options attempt cache
+reuse and refresh only — they do **not** start interactive authorization, so a stale refresh token
+fails instead of recovering. The adapter MUST therefore set `SupportsGettingNewToken = true` and a
+`ClientName` on `SSOAWSCredentialsOptions`, and MUST supply either an `SsoVerificationCallback` or
+PKCE, so that expiry falls back to the browser exactly as the macOS client does.
+
+`AWSSDK.SSO` and `AWSSDK.SSOOIDC` are mandatory package references; the credential chain fails at
+runtime without them.
+
 ### 9.1 Session Manager plugin
 
-Before implementation, a Windows spike MUST verify the official plugin's five-argument invocation,
-stdout/stderr behavior, exit codes, shutdown behavior, and x64 availability. AWS documents the
-plugin for PowerShell and Command Prompt and warns that third-party command-line tools may be
-incompatible, so the spike MUST launch it directly through `.NET Process` without relying on an
-interactive shell. The product MUST either:
+Phase 0 verified plugin 1.2.835.0 against these requirements; see the Phase 0 spike plan for the
+run log.
+
+The adapter MUST launch the official x64 plugin directly through `.NET Process`, passing the same
+five arguments the macOS client uses: session JSON, region, `StartSession`, an empty profile
+argument, and request JSON. AWS documents the plugin for PowerShell and Command Prompt and warns
+that third-party command-line tools may be incompatible, so the adapter MUST NOT route the launch
+through an interactive shell. It MUST redirect and drain stdout and stderr, because the plugin
+writes progress to both.
+
+The adapter MUST contain the plugin in a Windows Job Object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Phase 0 confirmed this survives abnormal termination of the
+owning process: `TerminateProcess` on the owner, with no managed cleanup path running at all, reaped
+the contained child in 1–5 ms. This containment is local only and MUST NOT be treated as terminating
+the AWS-side session; see §9.3.
+
+The product MUST either:
 
 1. Bundle a pinned, checksum-verified official Windows binary and its license, matching the macOS
    supply-chain policy; or
 2. Reliably discover and validate an official user installation.
 
-Bundling is preferred for a one-click experience, subject to the spike confirming package layout
-and redistribution terms. Process containment SHOULD use a Windows Job Object so the plugin is
-terminated if the app exits unexpectedly.
+Bundling is preferred for a one-click experience. Phase 0 confirmed the package layout supports it —
+the ZIP carries the x86-64 PE, license, notice, third-party notices, and release notes. **Open:**
+whether the included terms permit redistribution inside SSM Connect is a licence question that Phase
+0 did not settle, and it MUST be answered before bundling is chosen over discovery. This is the only
+remaining half of §15 question 2.
 
 ### 9.2 Amazon DCV Viewer
 
+Phase 0 verified DCV Client 2025.0.9800.0 in both auth modes against real workstations.
+
 The Windows adapter MUST discover the installed viewer using documented installation information or
-file association, not one hardcoded path. A spike MUST prove:
+file association, not one hardcoded path. Windows registers `.dcv` as `DcvViewerProgId` with
+`dcvviewer.exe --connection-file="%1"`; the adapter MUST resolve through that registration rather
+than assuming an install directory.
 
-- The Windows viewer accepts the generated `.dcv` format for both auth modes.
-- Shell launch passes the file to the intended viewer.
-- The viewer has consumed the file before deletion.
-- Orphan cleanup is safe after crashes.
+The temporary directory and file ACL MUST grant access only to the current user. The adapter MUST
+delete the connection file after the viewer has consumed it; Phase 0 used a five-second grace period
+and confirmed deletion did not disturb an established session. Startup MUST sweep only
+`ssm-connect-*.dcv` files below an application-owned directory, using a bounded age.
 
-The temporary directory and file ACL MUST grant access only to the current user. Startup MUST sweep
-only files created by SSM Connect, using an application-specific name and bounded age.
+#### Certificate validation
+
+The workstation's DCV certificate is self-signed for its private hostname or IP, while the client
+reaches it at `127.0.0.1` through the SSM tunnel. The names cannot match, so the Windows viewer
+stops at a native trust prompt and the connection cannot complete unattended. The adapter MUST
+therefore launch the viewer with `--certificate-validation-policy=accept-untrusted`.
+
+This is a deliberate, narrowly scoped exception and MUST be constrained as follows:
+
+- It MUST be applied only to a loopback endpoint that this application established through an
+  authenticated SSM tunnel. Confidentiality and peer authenticity come from the SSM session, not
+  from the DCV certificate.
+- It MUST NOT be applied to any user-supplied, remote, or non-loopback endpoint, and MUST NOT be
+  exposed as a user-facing setting.
+- The launch code MUST make the policy explicit and commented at the call site rather than inheriting
+  it from shared defaults, so it cannot be widened by accident.
+
+See §12.
 
 ### 9.3 Windows lifecycle
 
@@ -319,6 +369,18 @@ The Windows shell MUST handle session ending, system suspend/resume, and process
 cancellation MUST run first; the Job Object provides best-effort cleanup if graceful shutdown does
 not finish. Resume MUST run the same health check used by macOS wake handling before reporting the
 tunnel as connected.
+
+Phase 0 proved the local half of this: the Job Object reaps contained processes even when the owner
+is killed outright, with no managed cleanup path running. That is necessary but not sufficient. Two
+behaviors remain unproven and MUST be validated under AC-07 rather than assumed:
+
+- **AWS-side session teardown.** Killing the client reaps the local plugin process, but nothing has
+  been shown to terminate the SSM session server-side. If sessions linger until timeout, the client
+  MUST reap them on next start — enumerate its own prior sessions and terminate them — rather than
+  relying on process containment. The workflow MUST NOT assume a dead local process means a closed
+  remote session.
+- **Logoff and suspend/resume.** Neither can be automated from inside the session under test; both
+  MUST be exercised manually or in a VM that can drive the power state.
 
 ### 9.4 Installer and WinGet
 
@@ -333,10 +395,24 @@ the release MUST be exercised in Windows Sandbox or a clean Windows VM for insta
 upgrade, uninstall, and residue checks. The release process then submits a version-specific pull
 request to `microsoft/winget-pkgs` and records its status.
 
-WinGet supports MSI, WiX, MSIX, EXE, and other installer formats. The Phase 0 packaging spike MUST
-choose the underlying format based on tray startup, child-process launch, per-user installation,
-code signing, clean upgrades, and clean uninstall. WinGet compatibility alone does not decide
-between MSIX and WiX/MSI.
+WinGet supports MSI, WiX, MSIX, EXE, and other installer formats. **Phase 0 chose WiX/MSI over
+MSIX**, evaluated against tray startup, child-process launch, per-user installation, code signing,
+clean upgrades, and clean uninstall. WiX 6.0.2 produced a non-elevated per-user MSI installing under
+`%LOCALAPPDATA%`, and it imposes none of the process-launch or local-file restrictions that MSIX
+would apply to launching `session-manager-plugin` and `dcvviewer.exe` and to writing `.dcv` files.
+WinGet compatibility alone did not decide this.
+
+The installer MUST remain per-user and non-elevated. Release automation MUST set `MinimumOSVersion`
+in the WinGet installer manifest to the §11.2 baseline. WiX 7 MUST NOT be adopted without
+project-owner review: its CLI requires accepting the OSMF EULA, which automation cannot accept on
+the owner's behalf.
+
+The clean-environment check MUST NOT read the exit code of `WindowsSandbox.exe` as its result. On
+the packaged Windows Sandbox app that launcher is asynchronous — it returns 0 within roughly 200 ms
+while the sandbox is still booting, which reports a passing run as a failure. CI MUST take the
+verdict from an artifact the sandbox writes into a mapped folder, as
+`spikes/windows/sandbox/Invoke-SandboxLifecycle.ps1` does, or drive the sandbox synchronously
+through the `wsb.exe` CLI.
 
 ## 10. macOS Refactor Requirements
 
@@ -354,7 +430,9 @@ between MSIX and WiX/MSI.
 The refactor MUST proceed in small behavior-preserving steps. It MUST NOT combine target extraction
 with retry, authentication, profile, or UI redesign.
 
-## 11. macOS Deployment Target
+## 11. Deployment Targets
+
+### 11.1 macOS
 
 The existing minimum of **macOS 14 Sonoma** is intentional and uses modern APIs:
 
@@ -374,12 +452,39 @@ macOS 14 unless a required API or dependency needs 15. The more significant curr
 After MR-05, the pure workflow target will no longer require macOS 14 merely because of
 Observation. The shipping app may still retain macOS 14 as its supported baseline.
 
+### 11.2 Windows
+
+The Windows baseline is **Windows 11 24H2, OS build 10.0.26100, x64**, decided in Phase 0 as §15
+question 5.
+
+- .NET 10 supports Windows 11 26H1, 25H2, 24H2, and 23H2 Enterprise/Education only. Windows 11 23H2
+  Home/Pro is already past end of updates, so 24H2 is the lowest build that is both .NET-supported
+  and serviced across editions.
+- The Amazon DCV Windows client requires 64-bit Windows 10 or 11 plus .NET Framework 4.6.2 and the
+  Visual C++ Redistributable, so it does not raise the floor. Both remain prerequisites the
+  installer MUST account for.
+- x64 only for v1, because the official `session-manager-plugin` and DCV client artifacts are x64.
+  This matches the macOS client's Apple-Silicon-only restriction in kind.
+
+The baseline MUST be declared in both places that bind it: the project TFM
+(`net10.0-windows10.0.26100.0` with a matching `SupportedOSPlatformVersion`) and `MinimumOSVersion`
+in the WinGet installer manifest. The TFM is what makes the CA1416 platform-compatibility analyzer
+enforce the floor; the `net10.0-windows` default declares Windows 7.0 and silently checks nothing
+useful. Pinning costs roughly 27 MB in a self-contained single-file publish because the Windows SDK
+projection assemblies are included, so trimming SHOULD be measured before the first release.
+
+**Review date:** Windows 11 24H2 Home/Pro reaches end of updates on 2026-10-13. The floor MUST be
+re-reviewed then and will likely move to 25H2 (build 26200).
+
 ## 12. Security Requirements
 
 - Continue the current no-inbound-rules architecture; all workstation traffic uses SSM tunnels.
 - Never log credentials, SSO tokens, secret values, presigned URLs, or DCV auth tokens.
 - Keep DCV passwords and tokens in memory only for the shortest practical duration.
 - Restrict temporary DCV files to the current OS user and remove them after viewer consumption.
+- Disable DCV certificate validation only for a loopback endpoint this application opened through an
+  authenticated SSM tunnel, never for a user-supplied or remote endpoint, and never as a
+  user-facing setting. See §9.2.
 - Verify downloaded plugin and packaging artifacts with pinned cryptographic checksums.
 - Include third-party licenses in each platform package.
 - Sign Windows release artifacts before general release.
@@ -403,15 +508,20 @@ registry, file-association, ACL, browser, suspend/resume, or installer behavior.
 
 | Spike | Status | Evidence / remaining work |
 |-------|--------|---------------------------|
-| Host readiness | Partial | Fedora host has KVM/QEMU, 20 GiB available RAM, and enough CPU support. No Windows image is present; only about 37 GiB disk is free. |
-| AWS SDK for .NET SSO capability | Documented | AWS SDK for .NET v4 supports shared IAM Identity Center profiles, cached sessions, and programmatic browser login through `SSOAWSCredentials`; `AWSSDK.SSO` and `AWSSDK.SSOOIDC` are mandatory. Runtime login, refresh, and service calls remain untested. |
-| Windows Session Manager plugin artifact | Inspected | Official current ZIP contains an x86-64 PE `session-manager-plugin.exe`, license, notice, third-party notices, and release notes. Direct `.NET Process` five-argument invocation, output draining, termination, and Job Object behavior remain untested on Windows. |
-| Amazon DCV Windows artifact | Inspected | Amazon publishes signed x64 MSI and portable clients; the portable package contains `dcvviewer.exe`. `.dcv` consumption, both auth modes, process launch, and safe deletion remain untested on Windows. |
-| Installer and WinGet | Documented | WinGet accepts MSI/WiX/MSIX/EXE and requires manifest validation, hashes, silent operation, clean install/uninstall, and publisher-hosted direct URLs. Installer format and clean-VM behavior remain untested. |
+| Host readiness | Passed | Physical Windows 11 Pro x64 host, build 26200, with .NET SDK 10.0.111 and Windows Desktop Runtime 10.0.11. Windows Sandbox 0.8.107.0 runs clean-environment lifecycles from this host. The supported baseline is Windows 11 24H2 (build 10.0.26100) x64, pinned in the project TFM and the WinGet `MinimumOSVersion`. |
+| AWS SDK for .NET SSO capability | Passed | AWS SDK v4 loaded a standard `sso_session` profile, attempted cached-token refresh, fell back to programmatic device authorization after an invalid refresh token, resolved temporary credentials, and completed `sts:GetCallerIdentity`. Interactive fallback requires `SSOAWSCredentialsOptions.SupportsGettingNewToken = true` plus `SsoVerificationCallback` or PKCE. |
+| Windows Session Manager plugin | Passed | Official signed `session-manager-plugin` 1.2.835.0 accepted the same five direct `.NET Process` arguments, exposed redirected output, opened live tunnels to remote ports 8443 and 8444, and terminated through a kill-on-close Job Object. The harness then terminated each SSM session; no process or active-session residue remained. |
+| Amazon DCV Windows client | Passed | Official signed DCV Client 2025.0.9800.0 registered `.dcv` through `DcvViewerProgId`. Real multi-user and single-user runs both reached server-confirmed authenticated connections. The viewer needs `--certificate-validation-policy=accept-untrusted` for the workstation's self-signed certificate over the authenticated SSM loopback tunnel. Both modes retained the current-user-only file for five seconds, deleted it after consumption, and cleaned local/AWS residue. |
+| Installer and WinGet | Passed | A WiX 6.0.2 per-user MSI silently installed version 0.0.1, launched its installed payload, upgraded to 0.0.2, and silently uninstalled with exit code 0 and no payload/directory residue — first on the host, then twice in a clean Windows Sandbox (base image 10.0.26100) that also passed the Job Object crash-containment probe. A three-file `VHCo.SSMConnect` manifest with `MinimumOSVersion: 10.0.26100.0` passes `winget validate`. WiX 7 requires acceptance of its OSMF EULA and was not accepted by automation. |
+| Release signing | Blocked | Requires a purchased code-signing certificate; no engineering unknown remains. See the Phase 0 spike plan for scope. |
 
-Phase 0 is complete only when all runtime rows pass on Windows, both connection modes reach DCV,
-and the installer passes a clean install/upgrade/uninstall cycle. Artifact inspection alone is not
-an implementation go-ahead.
+Phase 0 was complete only when all runtime rows passed on Windows, both connection modes reached
+DCV, and the installer passed a clean install/upgrade/uninstall cycle. Artifact inspection alone was
+not an implementation go-ahead. **All runtime rows now pass**; release signing is an AC-09 release
+gate rather than a feasibility unknown.
+
+This table is the evidence record. The requirements the spikes produced are normative in §9.0–§9.4,
+§11.2, and §12; where the two differ, those sections govern.
 
 ### Phase 1: Contracts and golden fixtures
 
@@ -452,8 +562,10 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   terminal command or inbound security-group rule.
 - **AC-06:** Windows completes a multi-user connection with the resolved identity, agent-created
   session, and fresh identity token.
-- **AC-07:** Disconnect, app exit, logoff, and crash do not leave a reusable orphan tunnel; startup
-  safely handles any process or file residue.
+- **AC-07:** Disconnect, app exit, logoff, suspend/resume, and crash do not leave a reusable orphan
+  tunnel; startup safely handles any process or file residue. Local Job Object containment is proven
+  and is not sufficient evidence on its own: this criterion MUST also show that the AWS-side SSM
+  session does not survive an abnormal client exit, or that the client reaps it on next start.
 - **AC-08:** Automated security tests find no persisted credential, DCV password, or presigned token
   in profile storage, logs, or ordinary temporary files.
 - **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a signed versioned
@@ -466,18 +578,22 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
 
 These questions MUST be answered in Phase 0 rather than guessed during implementation:
 
-1. Does AWS SDK for .NET v4 runtime behavior match the current app for IAM Identity Center cache,
-  refresh, and device authorization when tested against a real SSO profile?
-2. Does the official x64 Windows `session-manager-plugin` preserve the same five-argument contract,
-  and may its ZIP payload be redistributed inside SSM Connect under the included terms?
-3. Does Amazon DCV Viewer for Windows consume the current `.dcv` file fields identically in both
-   modes, and what signal makes post-launch deletion safe?
-4. Is MSIX compatible with plugin and DCV process launch plus per-user startup, or is a signed
-   installer such as WiX the lower-risk packaging choice?
-5. Which Windows 11 servicing baseline should be the minimum? Architecture is decided: x64 only for
-  v1 because the official Session Manager plugin and DCV client artifacts inspected are x64.
-6. Should profile export include app preferences, or only connection profiles? Proposed: profiles
-   only in schema v1.
+1. **Answered.** AWS SDK for .NET v4 matches the current app for IAM Identity Center cache, refresh,
+   and device authorization, subject to the options in §9.0.
+2. **Partly answered.** The official x64 plugin preserves the same five-argument contract (§9.1).
+   Whether its ZIP payload may be redistributed inside SSM Connect under the included terms is a
+   licence question that remains **open** and blocks choosing bundling over discovery.
+3. **Answered.** Amazon DCV Viewer for Windows consumes the current `.dcv` fields in both modes; a
+   bounded grace period after launch makes deletion safe (§9.2). The spike also surfaced an
+   unanticipated requirement: the certificate-validation policy in §9.2.
+4. **Answered.** WiX/MSI, not MSIX (§9.4).
+5. **Answered.** Windows 11 24H2, build 10.0.26100, x64 (§11.2).
+6. **Open.** Should profile export include app preferences, or only connection profiles? Proposed:
+   profiles only in schema v1. This is a contract decision, not a spike; it MUST be settled in
+   Phase 1 before the schema is versioned.
+
+Questions 2 and 6 are the only ones still open. Neither blocks Phase 1 from starting; question 6
+MUST be closed within it, and question 2 before packaging work in Phase 5.
 
 ## 16. Planning Gate
 
@@ -485,3 +601,9 @@ The owner has accepted the native-shells direction. The implementation plan MUST
 track Phase 0 spikes and MUST identify a rollback point after each Swift target extraction. No
 Swift target refactor or production Windows UI work may begin until AWS SSO, the SSM plugin, DCV
 launch in both auth modes, and installer lifecycle have succeeded on actual Windows 11 x64.
+
+**Gate status (2026-08-17): met.** All four conditions passed on a physical Windows 11 Pro x64 host,
+and the installer lifecycle passed again in a clean Windows Sandbox. Phase 1 may begin.
+
+Release signing is not part of this gate. It needs a purchased code-signing certificate rather than
+an engineering answer, and it gates the first general release under AC-09, not the refactor.

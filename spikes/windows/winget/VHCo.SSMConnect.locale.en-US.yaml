@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: VHCo.SSMConnect
+PackageVersion: 0.0.2
+PackageLocale: en-US
+Publisher: VHCo
+PublisherUrl: https://github.com/vhco-pro
+PublisherSupportUrl: https://github.com/vhco-pro/ssm-connect/issues
+PackageName: SSM Connect
+PackageUrl: https://github.com/vhco-pro/ssm-connect
+License: Apache-2.0
+LicenseUrl: https://github.com/vhco-pro/ssm-connect/blob/main/LICENSE
+ShortDescription: Connect to EC2 workstations through AWS Systems Manager.
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

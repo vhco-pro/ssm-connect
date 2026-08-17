@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: VHCo.SSMConnect
+PackageVersion: 0.0.2
+InstallerType: wix
+Scope: user
+MinimumOSVersion: 10.0.26100.0
+InstallModes:
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: 2026-08-17
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/vhco-pro/ssm-connect/releases/download/v0.0.2/SSMConnect-Windows-Spike-0.0.2.msi
+    InstallerSha256: DD8B40EDD1C9497BDAE5D830E5C8F3B640777E8084031D0478C020AD2329C08C
+    ProductCode: '{7DA339D7-60B8-42CB-B94F-6E991B76AC44}'
+ManifestType: installer
+ManifestVersion: 1.9.0
