@@ -8,42 +8,151 @@
     "Tunnel startup",
     "Single-user secret retrieval and DCV launch"
   ],
-  "profile": { "$ref": "../profiles/single-user.json" },
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
   "given": {
     "lastInstanceId": null,
     "ports": {
       "AuthProvider": {
-        "authenticate": [{ "result": { "source": "cache", "interactive": false } }]
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
       },
       "EC2Provider": {
-        "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }]
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
       },
       "SSMProvider": {
-        "waitForSSMOnline": [{ "result": null }],
-        "startSession": [{ "result": { "sessionId": "example-session-0001" } }]
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0001"
+            }
+          }
+        ]
       },
       "TunnelProvider": {
-        "startTunnel": [{ "result": { "processIdentifier": 4242 } }]
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4242
+            }
+          }
+        ]
       },
-      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
-      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
-      "DCVLauncher": { "launch": [{ "result": null }] }
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
     }
   },
-  "when": [{ "action": "connect" }],
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
   "expect": {
-    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected"],
-    "calls": [
-      { "port": "AuthProvider", "method": "authenticate", "times": 1 },
-      { "port": "EC2Provider", "method": "resolveInstance", "with": { "tagKey": "Name", "tagValue": "example-workstation-su" } },
-      { "port": "SSMProvider", "method": "waitForSSMOnline", "with": { "instanceId": "i-0aaaaaaaaaaaaaaa1" } },
-      { "port": "SSMProvider", "method": "startSession", "with": { "localPort": 8443, "remotePort": 8443 } },
-      { "port": "TunnelProvider", "method": "startTunnel", "times": 1 },
-      { "port": "SecretsProvider", "method": "fetchSecret", "with": { "secretId": "example/dcv/password" } },
-      { "port": "DCVLauncher", "method": "launch", "times": 1 },
-      { "port": "InstanceIdStore", "method": "setLastInstanceId", "with": { "instanceId": "i-0aaaaaaaaaaaaaaa1" } }
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected"
     ],
-    "forbiddenCalls": [{ "port": "EC2Provider", "method": "startInstance" }],
+    "calls": [
+      {
+        "port": "AuthProvider",
+        "method": "authenticate",
+        "times": 1
+      },
+      {
+        "port": "EC2Provider",
+        "method": "resolveInstance",
+        "with": {
+          "tagKey": "Name",
+          "tagValue": "example-workstation-su"
+        }
+      },
+      {
+        "port": "InstanceIdStore",
+        "method": "setLastInstanceId",
+        "with": {
+          "instanceId": "i-0aaaaaaaaaaaaaaa1"
+        }
+      },
+      {
+        "port": "SSMProvider",
+        "method": "waitForSSMOnline",
+        "with": {
+          "instanceId": "i-0aaaaaaaaaaaaaaa1"
+        }
+      },
+      {
+        "port": "SSMProvider",
+        "method": "startSession",
+        "with": {
+          "localPort": 8443,
+          "remotePort": 8443
+        }
+      },
+      {
+        "port": "TunnelProvider",
+        "method": "startTunnel",
+        "times": 1
+      },
+      {
+        "port": "SecretsProvider",
+        "method": "fetchSecret",
+        "with": {
+          "secretId": "example/dcv/password"
+        }
+      },
+      {
+        "port": "DCVLauncher",
+        "method": "launch",
+        "times": 1
+      }
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "EC2Provider",
+        "method": "startInstance"
+      }
+    ],
     "terminal": {
       "state": "connected",
       "errorCategory": "none",

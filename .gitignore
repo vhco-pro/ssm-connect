@@ -46,3 +46,7 @@ dist/
 **/bin/
 **/obj/
 spikes/windows/installer/payload/
+
+# .NET Windows client build output
+windows/**/bin/
+windows/**/obj/

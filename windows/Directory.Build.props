@@ -1,0 +1,20 @@
+<Project>
+
+  <!--
+    Shared settings for every Windows-client project.
+
+    Domain and Workflow deliberately target plain net10.0, not net10.0-windows: the
+    specification's boundary rules (section 5.2) forbid them from touching WPF, Win32, or an AWS
+    SDK, and the surest way to enforce that is to make those references impossible to compile
+    rather than to rely on review. Only the shell and adapter projects raise their target.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

@@ -142,17 +142,17 @@
         "times": 1
       },
       {
+        "port": "TunnelProvider",
+        "method": "terminateTunnel",
+        "times": 1
+      },
+      {
         "port": "DCVLauncher",
         "method": "launch",
         "with": {
           "user": "example.user",
           "sessionId": "example.user-session"
         }
-      },
-      {
-        "port": "TunnelProvider",
-        "method": "terminateTunnel",
-        "times": 1
       }
     ],
     "forbiddenCalls": [

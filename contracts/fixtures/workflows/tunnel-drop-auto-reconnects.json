@@ -2,35 +2,135 @@
   "schemaVersion": 1,
   "id": "tunnel-drop-auto-reconnects",
   "title": "An unexpected tunnel drop reconnects without re-running the whole flow",
-  "covers": ["Tunnel unexpected drop", "Bounded reconnect"],
-  "profile": { "$ref": "../profiles/single-user.json" },
-  "settings": { "autoReconnect": true },
-  "harness": { "maxReconnectAttempts": 3, "reconnectBackoffSeconds": 0 },
+  "covers": [
+    "Tunnel unexpected drop",
+    "Bounded reconnect"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "settings": {
+    "autoReconnect": true
+  },
+  "harness": {
+    "maxReconnectAttempts": 3,
+    "reconnectBackoffSeconds": 0
+  },
   "given": {
     "ports": {
-      "AuthProvider": { "authenticate": [{ "result": { "source": "cache", "interactive": false } }] },
-      "EC2Provider": { "resolveInstance": [{ "result": { "id": "i-0aaaaaaaaaaaaaaa1", "state": "running" } }] },
-      "SSMProvider": {
-        "waitForSSMOnline": [{ "result": null }],
-        "startSession": [{ "result": { "sessionId": "example-session-0008" } }]
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
       },
-      "TunnelProvider": { "startTunnel": [{ "result": { "processIdentifier": 4248 } }] },
-      "ReadinessProbe": { "waitUntilReady": [{ "result": true }] },
-      "SecretsProvider": { "fetchSecret": [{ "result": "synthetic-dcv-password" }] },
-      "DCVLauncher": { "launch": [{ "result": null }] }
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0008"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4248
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
     },
     "events": [
-      { "kind": "tunnelDrop", "afterState": "connected", "reason": { "kind": "processExited", "exitCode": 1, "stderr": "" } }
+      {
+        "kind": "tunnelDrop",
+        "afterState": "connected",
+        "reason": {
+          "kind": "processExited",
+          "exitCode": 1,
+          "stderr": ""
+        }
+      }
     ]
   },
-  "when": [{ "action": "connect" }],
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
   "expect": {
-    "states": ["authenticating", "resolving", "waitingForSSM", "tunneling", "connected", "tunneling", "connected"],
-    "calls": [
-      { "port": "TunnelProvider", "method": "startTunnel", "times": 2 },
-      { "port": "EC2Provider", "method": "resolveInstance", "times": 1 },
-      { "port": "AuthProvider", "method": "authenticate", "times": 1 }
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected",
+      "tunneling",
+      "connected"
     ],
-    "terminal": { "state": "connected", "errorCategory": "none", "tunnelActive": true }
+    "calls": [
+      {
+        "port": "AuthProvider",
+        "method": "authenticate",
+        "times": 1
+      },
+      {
+        "port": "EC2Provider",
+        "method": "resolveInstance",
+        "times": 1
+      },
+      {
+        "port": "TunnelProvider",
+        "method": "startTunnel",
+        "times": 2
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "tunnelActive": true
+    }
   }
 }
