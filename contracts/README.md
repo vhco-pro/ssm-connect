@@ -16,23 +16,36 @@ contracts/
 
 ## Status
 
-**The schemas and fixtures are authored but not yet executed against either implementation.**
+**Executed against .NET. Not yet executed against Swift.**
 
-They were derived by reading the current Swift implementation — principally
+| Implementation | State |
+|---|---|
+| .NET (`windows/`) | All 28 fixtures pass, via `windows/tests/SSMConnect.Workflow.Tests`. |
+| Swift (`SSMConnectKit/`) | Not yet run. No fixture runner exists. |
+
+The fixtures were derived by reading the Swift implementation — principally
 `ConnectionStateMachine.swift`, the models under `Models/`, and the existing test suite — on a
-Windows host with no Swift toolchain. `validate.py` proves the documents are internally consistent;
-it does not prove they describe the macOS client's real behavior.
+Windows host with no Swift toolchain, and the .NET workflow was then written to satisfy them.
 
-Closing that gap is the first Phase 1 task on a macOS machine:
+That ordering matters when reading a disagreement. These fixtures describe **intended** behavior
+that two implementations now agree on, but only one of those implementations is the shipping
+product. Running them against Swift is the remaining half of AC-04, and until that happens a
+mismatch is more likely to be a fixture error than a macOS bug.
+
+Running them against .NET has already earned its keep: it caught three ordering errors in the
+fixtures, all in the `expect.calls` ordering rather than in the behavior itself. The correct order
+is now recorded, and the same class of mistake would otherwise have been discovered as a spurious
+"macOS is wrong" failure later.
+
+The remaining Phase 1 task, on a macOS machine:
 
 1. Build a fixture runner against the existing Swift implementation.
-2. Run all 28 cases and reconcile every disagreement, in that direction — the shipping macOS
-   behavior is the reference, so a mismatch means the fixture is wrong unless it exposes a genuine
-   macOS bug.
-3. Only then treat the fixtures as the specification for the .NET implementation.
+2. Run all 28 cases and reconcile every disagreement, treating shipping macOS behavior as the
+   reference — a mismatch means the fixture is wrong unless it exposes a genuine macOS bug.
+3. Where a fixture changes, re-run the .NET suite, which must then be brought back into agreement.
 
-Until step 2 passes, treat a fixture as a well-informed claim about intended behavior, not a
-verified fact. AC-04 is not satisfied by this directory alone.
+`windows/tests/SSMConnect.Workflow.Tests` is a working reference for step 1: the fixture model, the
+outcome-queue semantics, and the assertion rules are all implemented there.
 
 ## Deliberate tightenings
 

@@ -528,15 +528,14 @@ This table is the evidence record. The requirements the spikes produced are norm
 Create the versioned profile schema and extract representative conformance fixtures from current
 Swift tests. Add schema validation and fixture checks to CI.
 
-**Status (2026-08-17): drafted, not yet executed.** `contracts/` holds the v1 profile schema, the
-fixture format, 28 workflow fixtures covering all ten required case groups in §6.2, and a
-`validate.py` document check wired into CI. These were derived by *reading* the Swift
-implementation on a Windows host, so they are unverified against it.
+**Status (2026-08-18): executed against .NET, not against Swift.** `contracts/` holds the v1 profile
+schema, the fixture format, 28 workflow fixtures covering all ten required case groups in §6.2, and
+a `validate.py` document check wired into CI. All 28 pass against the .NET workflow.
 
-Phase 1 is complete only when a fixture runner executes all cases against the existing Swift
-implementation and every disagreement is reconciled, treating shipping macOS behavior as the
-reference. Until then §15 question 6 stays open and AC-04 is unmet. Phases 3–5 MAY proceed against
-the drafted contracts, accepting that a reconciliation may change them.
+They were derived by *reading* the Swift implementation on a Windows host, so the shipping client
+has not confirmed them. Phase 1 is complete only when a fixture runner executes all cases against
+the Swift implementation and every disagreement is reconciled, treating shipping macOS behavior as
+the reference. Until then §15 question 6 stays open and AC-04 is half met.
 
 ### Phase 2: Behavior-preserving Swift separation
 
@@ -547,6 +546,15 @@ running the existing focused tests after every move. Keep the released app behav
 
 Implement .NET domain types and workflow ports. Pass schema and mocked conformance tests before
 writing the tray UI.
+
+**Status (2026-08-18): complete.** `windows/` holds `SSMConnect.Domain` and `SSMConnect.Workflow`
+with 63 passing tests, including all 28 conformance fixtures run against the real workflow. Both
+projects target plain `net10.0` rather than `net10.0-windows`, so §5.2's boundary rules are
+enforced by the compiler rather than by review: a WPF, Win32, or AWS SDK reference cannot compile
+there. The solution uses the `.slnx` format that .NET 10 emits, not the `.sln` named illustratively
+in §5.1.
+
+No adapter yet implements the ports, so nothing has connected to AWS from .NET. That is Phase 4.
 
 ### Phase 4: Windows adapters and tray shell
 
