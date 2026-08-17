@@ -1,12 +1,25 @@
-# SSM Connect
+<p align="center">
+  <img src="img/bg-removed-1767172053004.png" alt="SSM Connect logo" width="180">
+</p>
 
-> [!NOTE]
-> Config-driven macOS menu-bar app that gets you into your cloud workstation with one click - as the shared `ec2-user`, **or as your own AWS identity**.
+<h1 align="center">SSM Connect</h1>
 
-**SSM Connect** is a native macOS (Swift / SwiftUI) menu-bar utility that automates the whole
-"connect to an EC2 workstation over AWS SSM" dance: AWS SSO authentication, instance discovery by
-tag, instance start + SSM-readiness wait, an SSM port-forward tunnel, and launching the viewer
-(Amazon DCV by default) - with **zero manual terminal commands**.
+<p align="center">
+  One-click access to EC2 cloud workstations through AWS Systems Manager.
+</p>
+
+<p align="center">
+  <a href="https://github.com/vhco-pro/ssm-connect/releases/latest"><img src="https://img.shields.io/github/v/release/vhco-pro/ssm-connect?display_name=tag&sort=semver" alt="Latest release"></a>
+  <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/release.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/release.yml/badge.svg" alt="Release build"></a>
+  <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/codeql.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/vhco-pro/ssm-connect" alt="Apache 2.0 license"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple" alt="macOS 14 or later">
+</p>
+
+**SSM Connect** is a working native macOS menu-bar app that automates the complete connection flow:
+AWS SSO authentication, instance discovery and startup, SSM readiness checks, an encrypted
+port-forwarding tunnel, and launching Amazon DCV Viewer. No manual terminal commands and no inbound
+security-group rules are required.
 
 It drives two kinds of host:
 
