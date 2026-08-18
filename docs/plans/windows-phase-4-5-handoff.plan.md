@@ -26,6 +26,7 @@ object (see below). `dotnet test windows/SSMConnect.slnx` passes exactly as you 
 | §15 question 6 | **Closed.** Profiles only; `preferences` removed from the profile schema. |
 | Both schema tightenings | **Confirmed against real stored profiles.** Neither relaxed. |
 | Phase 2 Swift separation | **Partly done.** Four dependency boundaries moved; the target split is not done. |
+| §6.1 profile export/import | **macOS half done**, Windows half is yours. Neither client had it before. AC-03 half met. |
 | Phase 3 Windows domain/workflow | Complete, unchanged, still 63 tests. |
 | Phase 4–5 Windows adapters, shell, packaging | **Not started. Yours.** |
 
@@ -41,11 +42,35 @@ your `ConnectionWorkflow` already treats them. The deciding evidence was that th
 app stores them under a separate `ssmconnect.settings.v1` key, next to and not inside
 `ssmconnect.profiles.v1`. Both clients already agreed; the schema was the odd one out.
 
-### One thing to know before you write an importer
+### Profile export and import: the macOS half now exists, the Windows half is yours
 
-The single-user profile the shipping macOS app has stored on disk has **no `connectMode` key at
-all** — it predates the field. `nil` means `singleUser`. Your importer must not assume the key is
-present, or AC-03 fails against a real exported profile rather than a synthetic one.
+When I wrote the first draft of this document I implied macOS could already export a profile. It
+could not. §6.1 says both clients MUST support export and import of the portable document, and
+**neither client implemented it** — the schema existed and nothing produced or consumed a document
+conforming to it, so AC-03 was unmeetable by either side.
+
+The macOS half is now done: `SSMConnectKit/Sources/SSMConnectKit/Models/PortableProfile.swift`, with
+`PortableProfileTests` round-tripping all three `contracts/fixtures/profiles/*.json` documents. Yours
+is Phase 4. Three things cost me real time and will cost you the same if you mirror your native
+model instead of writing a separate document type:
+
+1. **Do not serialize `ConnectionProfile` directly.** On macOS `ConnectAction` has no raw value, so
+   the synthesized encoder emits `{"dcvViewer":{}}` where the schema demands `"dcvViewer"`. A naive
+   export is schema-invalid in a way no unit test on the native model would catch. Check what
+   `System.Text.Json` does with your `ConnectAction` and `ConnectMode` enums before trusting them —
+   by default it writes enums as **numbers**, so you would emit `"connectAction": 0`.
+2. **An absent `connectMode` must stay absent on re-export.** The single-user profile the shipping
+   macOS app has stored has no `connectMode` key at all — it predates the field, and `null` means
+   `singleUser`. Resolving it to `"singleUser"` while writing silently rewrites the document and
+   makes AC-03 pass against synthetic data only. Same for `agentRemotePort` and its 8444 default.
+3. **Preserve unknown optional fields, except the forbidden ones.** The schema asks for preservation
+   on round-trip, but its security clause forbids `accessKeyId`, `password`, `authToken` and a dozen
+   more. Preserve-everything plus that clause means a document carrying a secret must be *rejected*,
+   not carried through. `ProfilePortability.forbiddenKeys` is the list I enforce; mirror it.
+
+AC-03 stays open until a document actually crosses between the two clients. The cheapest close: your
+importer reads `contracts/fixtures/profiles/*.json` in a test, and one of the documents in that
+directory is one the macOS app really exported.
 
 ## Your task 1: Phase 4, Windows adapters
 
@@ -162,6 +187,9 @@ Phase 0 proved the mechanism end to end in a clean Sandbox. What remains is prod
 - **The rest of Phase 2** (MR-05, MR-07, MR-08). Swift target extraction and moving `Observation`
   out of the workflow. macOS work, on a macOS host. The one place it touches you is the `EventSink`
   decision above, which is why that is yours to settle and theirs to implement.
+- **The macOS export/import UI.** The document codec is done and tested; the Settings menu item and
+  file picker that call it are not. That is macOS UI work and does not affect interchange — do not
+  wait on it, and do not assume a macOS agent has produced an exported file by hand yet.
 - **Release signing on macOS.** Separate certificate, separate AC-09 half.
 
 ## Still open, and carried by an acceptance criterion rather than forgotten
@@ -181,7 +209,7 @@ Phase 0 proved the mechanism end to end in a clean Sandbox. What remains is prod
 ```bash
 python3 contracts/validate.py            # schemas and fixtures as documents
 dotnet test windows/SSMConnect.slnx      # 63 tests, includes all 28 fixtures
-swift test --package-path SSMConnectKit  # 156 tests, includes the same 28 fixtures
+swift test --package-path SSMConnectKit  # 173 tests, includes the same 28 fixtures
 ```
 
 The first two run anywhere with Python 3 and the .NET 10 SDK. The third needs macOS.

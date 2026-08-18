@@ -226,6 +226,26 @@ Each client MAY retain native storage internally. Both clients MUST support expo
 portable profile document. Unknown optional fields MUST be preserved where practical, and newer
 unsupported required schema versions MUST fail with an actionable message.
 
+**Status (2026-08-18): the document format is implemented on macOS; no client has a user-facing
+export/import surface yet.** `PortableProfile.swift` reads and writes the document and
+`PortableProfileTests` round-trips all three `contracts/fixtures/profiles/*.json` documents through
+it, so the macOS half of AC-03 is met against the shared contract rather than against a
+locally-authored sample. What is missing on macOS is only the Settings affordance that calls it — a
+menu item and a file picker — which is UI work with no bearing on interchange. Three points bind the
+implementation and are worth stating normatively, because each was a way to produce a document that
+looks right and is not:
+
+- The portable document MUST NOT be a serialization of a client's native profile model. On macOS
+  `ConnectAction` has no raw value, so the synthesized encoding emits `{"dcvViewer":{}}` where the
+  schema requires the string `"dcvViewer"`. The document is a separate type for this reason.
+- An absent `connectMode` MUST stay absent on re-export. Resolving it to `singleUser` while writing
+  turns "this profile predates the field" into "this profile chose single-user", which is a
+  different statement and defeats the round-trip AC-03 tests.
+- Unknown-field preservation MUST NOT extend to the keys the security clause forbids. A document
+  carrying `accessKeyId`, `password`, `authToken`, or any other denied key MUST be rejected
+  outright, not preserved — otherwise preservation becomes a channel for smuggling credentials
+  through a format defined to exclude them.
+
 ### 6.2 Workflow conformance fixtures
 
 Fixtures MUST describe inputs, provider outcomes, expected calls, emitted states, and terminal
@@ -613,6 +633,9 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   ServiceManagement, UserNotifications, or Darwin.
 - **AC-03:** A versioned profile exported on macOS imports on Windows and produces equivalent
   validated values; the reverse direction also passes.
+  *Half met (2026-08-18): macOS exports and imports the document and round-trips the shared profile
+  fixtures. The criterion stays open until Windows does the same and a document actually crosses
+  between the two clients.*
 - **AC-04:** Swift and .NET pass the same required conformance fixtures and emit the same ordered
   states and terminal error categories.
 - **AC-05:** Windows completes a single-user connection from SSO through DCV auto-login without a

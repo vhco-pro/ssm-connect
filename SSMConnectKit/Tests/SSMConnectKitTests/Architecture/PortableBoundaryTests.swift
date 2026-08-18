@@ -23,6 +23,7 @@ struct PortableBoundaryTests {
         "Models/ConnectionProfile.swift",
         "Models/DCVConnectionFile.swift",
         "Models/EC2Instance.swift",
+        "Models/PortableProfile.swift",
         "Models/ProfileConfigError.swift",
         "Models/SSMSessionResponse.swift",
         "Settings/ProfileEditorValidation.swift",
