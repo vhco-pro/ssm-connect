@@ -1,5 +1,9 @@
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // MARK: - State-machine test doubles (Phase F)
 
@@ -157,3 +161,20 @@ final class MockNotifier: Notifying, @unchecked Sendable {
     }
 }
 
+
+/// Multi-user identity double. These tests cover the single-user path, so the values only need to
+/// be well-formed, not meaningful — the multi-user flow is pinned by the conformance fixtures.
+struct StubIdentityProvider: IdentityProviding {
+    var username = "example.user"
+    var token = "synthetic-presigned-token"
+
+    func resolveIdentity(region: String, credentials: AWSCredentials) async throws -> String { username }
+    func presignedIdentityToken(region: String, credentials: AWSCredentials) -> String { token }
+}
+
+/// Workstation-agent double, for the same reason as `StubIdentityProvider`.
+struct StubAgentClient: AgentClienting {
+    var result = EnsureSessionResult(sessionId: "example-session", user: "example.user")
+
+    func ensureSession(port: Int, authToken: String) async throws -> EnsureSessionResult { result }
+}

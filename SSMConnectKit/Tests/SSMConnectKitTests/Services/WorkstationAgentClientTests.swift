@@ -1,6 +1,10 @@
 import Testing
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 @Suite("WorkstationAgentClient")
 struct WorkstationAgentClientTests {
@@ -28,7 +32,7 @@ struct WorkstationAgentClientTests {
     @Test("401 -> unauthorized")
     func unauthorized() async {
         let client = WorkstationAgentClient(baseURL: Self.base) { _, _ in (Data(), Self.response(401)) }
-        await #expect(throws: WorkstationAgentClient.AgentError.unauthorized) {
+        await #expect(throws: AgentError.unauthorized) {
             try await client.ensureSession(authToken: "t")
         }
     }
@@ -36,7 +40,7 @@ struct WorkstationAgentClientTests {
     @Test("500 -> provisioningFailed")
     func failed() async {
         let client = WorkstationAgentClient(baseURL: Self.base) { _, _ in (Data(), Self.response(500)) }
-        await #expect(throws: WorkstationAgentClient.AgentError.provisioningFailed(status: 500)) {
+        await #expect(throws: AgentError.provisioningFailed(status: 500)) {
             try await client.ensureSession(authToken: "t")
         }
     }

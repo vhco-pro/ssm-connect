@@ -1,6 +1,10 @@
 import Foundation
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// In-memory `LoginItemControlling` for tests (G9). Records the desired state without touching
 /// the real `SMAppService` registration.

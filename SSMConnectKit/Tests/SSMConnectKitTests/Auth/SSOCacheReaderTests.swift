@@ -1,6 +1,10 @@
 import Foundation
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // Task B7 — SSOCacheReader fixture tests (F-05).
 // Verifies parsing/matching of ~/.aws/sso/cache/*.json: valid, expired, expired-with-refresh,

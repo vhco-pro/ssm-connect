@@ -2,7 +2,11 @@ import AWSSSO
 import AWSSSOOIDC
 import Foundation
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // Task B7 — AWSAuthProvider orchestration tests with mocked SDK clients (F-04, F-05).
 // Covers: valid-cache path, silent-refresh path, device-auth (incl. pending polling),

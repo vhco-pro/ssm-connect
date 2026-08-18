@@ -1,6 +1,10 @@
 import AWSSSM
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Configurable `SSMClienting` double for `SSMService` unit tests.
 final class MockSSMClient: SSMClienting, @unchecked Sendable {

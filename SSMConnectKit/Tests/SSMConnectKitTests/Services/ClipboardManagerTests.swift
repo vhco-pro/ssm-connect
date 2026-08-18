@@ -1,9 +1,13 @@
 import Foundation
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
-/// In-memory `Pasteboard` for clipboard tests.
-final class FakePasteboard: Pasteboard, @unchecked Sendable {
+/// In-memory `PasteboardWriting` for clipboard tests.
+final class FakePasteboard: PasteboardWriting, @unchecked Sendable {
     private let lock = NSLock()
     private var value: String?
 

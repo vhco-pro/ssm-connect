@@ -1,5 +1,9 @@
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// These cases mirror the agent's Go tests (vhco-pro/workstation-agent,
 /// internal/identity) so the two implementations provably agree (reject-based).

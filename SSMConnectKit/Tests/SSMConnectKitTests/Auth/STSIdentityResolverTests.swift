@@ -1,6 +1,10 @@
 import Testing
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 @Suite("STSIdentityResolver")
 struct STSIdentityResolverTests {
@@ -23,8 +27,8 @@ struct STSIdentityResolverTests {
     @Test("STS rejection surfaces as an error")
     func rejection() async {
         var resolver = STSIdentityResolver(presigner: STSPresigner(region: "eu-central-1"))
-        resolver.fetch = { _ in throw STSIdentityResolver.IdentityResolveError.stsRejected }
-        await #expect(throws: STSIdentityResolver.IdentityResolveError.stsRejected) {
+        resolver.fetch = { _ in throw IdentityResolveError.stsRejected }
+        await #expect(throws: IdentityResolveError.stsRejected) {
             try await resolver.resolve(credentials: creds)
         }
     }

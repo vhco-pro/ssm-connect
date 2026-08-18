@@ -3,7 +3,11 @@ import AWSSSO
 import AWSSSOOIDC
 import Foundation
 import SmithyHTTPAPI
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // Test doubles for the SSO/OIDC client seams + cache (B7, ADR-P2).
 

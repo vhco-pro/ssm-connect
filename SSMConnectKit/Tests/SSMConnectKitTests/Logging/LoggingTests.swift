@@ -1,6 +1,10 @@
 import Foundation
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 @Suite("RingBuffer")
 struct RingBufferTests {

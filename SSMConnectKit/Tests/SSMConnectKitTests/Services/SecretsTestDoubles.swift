@@ -1,6 +1,10 @@
 import AWSSecretsManager
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Configurable `SecretsClienting` double for `SecretsService` unit tests.
 final class MockSecretsClient: SecretsClienting, @unchecked Sendable {

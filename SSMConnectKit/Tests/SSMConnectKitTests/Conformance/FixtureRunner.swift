@@ -1,5 +1,9 @@
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Locates `contracts/` by walking up from this source file, so the fixtures are read from the one
 /// copy in the repository. Copying them into the test bundle would let the two drift.
@@ -72,6 +76,11 @@ final class FixtureRunner {
             tunnelListener: FixtureTunnelListenerProbe(recorder: recorder),
             instanceIds: FixtureInstanceIdStore(recorder: recorder, seed: fixture.given.lastInstanceId),
             clipboard: ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
+            // Never send a real signal. `processIdentifier` is a synthetic number from the fixture
+            // and would otherwise name an unrelated live process on the host.
+            terminateProcess: { [weak tunnels] pid in
+                tunnels?.handles.first { $0.processIdentifier == pid }?.terminateByProcessKill()
+            },
             log: ConnectionLog(),
             notifier: MockNotifier(),
             profile: profile,
@@ -81,12 +90,7 @@ final class FixtureRunner {
             reconnectBackoff: .seconds(fixture.harness?.reconnectBackoffSeconds ?? 5),
             // Every backoff collapses to nothing: fixtures assert ordering, never wall-clock time.
             reconnectSleep: { _ in },
-            stateObserver: { [weak self] state in self?.onStateChanged(state) },
-            // Never send a real signal. `processIdentifier` is a synthetic number from the fixture
-            // and would otherwise name an unrelated live process on the host.
-            terminateProcess: { [weak tunnels] pid in
-                tunnels?.handles.first { $0.processIdentifier == pid }?.terminateByProcessKill()
-            }
+            stateObserver: { [weak self] state in self?.onStateChanged(state) }
         )
 
         // Steps with no `afterState` run in order, each settling before the next. Steps that name a

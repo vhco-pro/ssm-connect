@@ -1,5 +1,9 @@
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // Verifies: Fix opaque region-failure on Connect, Criterion: "For region inputs `eu-central-1`, `us-east-1` (valid) and ``, ` `, `eu-central-1 `, `-eu`, `eu-`, `eu_central_1`, a 64-char string (invalid), `AWSRegion.isValid`/`normalize` verdicts match the SDK regex `^(?!.*-$)(?!-)[a-zA-Z0-9-]{1,63}$` semantics."
 @Suite("AWSRegion")

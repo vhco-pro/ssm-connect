@@ -1,6 +1,10 @@
 import AWSSSM
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Unit tests for `SSMService` with a mocked `SSMClient` (D9).
 @Suite("SSMService")

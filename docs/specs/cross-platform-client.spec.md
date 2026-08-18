@@ -230,8 +230,11 @@ unsupported required schema versions MUST fail with an actionable message.
 export/import surface yet.** `PortableProfile.swift` reads and writes the document and
 `PortableProfileTests` round-trips all three `contracts/fixtures/profiles/*.json` documents through
 it, so the macOS half of AC-03 is met against the shared contract rather than against a
-locally-authored sample. What is missing on macOS is only the Settings affordance that calls it — a
-menu item and a file picker — which is UI work with no bearing on interchange. Three points bind the
+locally-authored sample. Settings → Profiles now exposes it: export writes the selected profile through a save panel, and
+import reads a document, assigns a fresh profile ID so importing twice yields two profiles, and
+opens the editor for confirmation rather than saving silently. A rejected document surfaces the
+`ProfilePortabilityError` message verbatim, because those messages name the offending field and
+value. Three points bind the
 implementation and are worth stating normatively, because each was a way to produce a document that
 looks right and is not:
 
@@ -576,29 +579,50 @@ two clients agree by inspection only.
 Create the Swift domain, workflow, AWS, and macOS targets. Move one dependency boundary at a time,
 running the existing focused tests after every move. Keep the released app behavior unchanged.
 
-**Status (2026-08-18): in progress — dependency boundaries moved, targets not yet split.**
+**Status (2026-08-18): the five targets exist and the app builds on them. MR-05 and MR-08 remain.**
 
-Done, each behaviour-preserving and verified against the full suite:
+`SSMConnectKit/Sources/` now holds `SSMConnectDomain`, `SSMConnectWorkflow`, `SSMConnectAWS`,
+`SSMConnectMacOS`, `SSMConnectUI`, and `SSMConnectKit` — the last being an umbrella that
+`@_exported import`s the other five and holds the composition root. The app shell still contains a
+single `import SSMConnectKit` and needed no change, which is AC-10 holding through the refactor.
 
 | Requirement | What moved |
 |---|---|
 | MR-02 | `ConnectionState` split into a domain value and a presentation extension. Its SwiftUI `Color` was what pulled SwiftUI into the state machine. |
 | MR-04 | The SIGTERM/SIGKILL sequence moved to `PluginProcessTerminator`; `AppQuitHandler` registration moved to the composition root. The flow no longer imports `Darwin`. |
 | MR-06 | AWS SDK error inspection moved behind an `ErrorInterpreting` port, implemented by `AWSErrorInterpreter`. The flow no longer imports `ClientRuntime`, `Smithy`, or `SmithyHTTPAPI`. |
-| MR-03 | Partially: the multi-user path no longer constructs `STSPresigner`, `STSIdentityResolver`, or `WorkstationAgentClient` inline. Other defaults are still constructed in the designated initializer. |
+| MR-03 | **Complete.** The workflow's initializer takes every adapter as a required argument; `ConnectionStateMachine.init(profile:settings:)` in `SSMConnectKit` names the production adapters exactly once. |
+| MR-07 | **Complete.** The five targets exist. Several files were split along the seam: the agent and identity ports keep their result and error types while the HTTP and STS adapters moved out, `ConnectionLog` kept its ring buffer and gained a `LogSink` port so `os.Logger` could leave, and the SSM document name moved to the domain so neither adapter depends on the other. |
 
-Every file destined for the domain and workflow targets now imports Foundation and nothing
-forbidden, so **AC-02 holds by content**. Because there is not yet a compiler barrier,
-`PortableBoundaryTests` asserts it per file and fails the build on a regression; it should be
-deleted once the targets exist.
+#### What the split does and does not enforce
+
+This matters more than it looks, and the obvious reading is wrong. The split gives a **real compiler
+barrier for the AWS SDK**: the portable targets do not depend on `aws-sdk-swift`, so `import AWSEC2`
+in `SSMConnectWorkflow` fails to build. That was verified by trying it, not assumed.
+
+It gives **no barrier at all for Apple frameworks.** `AppKit`, `SwiftUI`, `Darwin`,
+`ServiceManagement`, `UserNotifications`, `Network`, and `os` come from the platform SDK rather than
+from a package dependency, so any target compiled on macOS can import them no matter what
+`Package.swift` says. `import SwiftUI` added to `SSMConnectWorkflow` compiles cleanly — also
+verified by trying it.
+
+Since AC-02 names five Apple frameworks and no AWS ones, **the target split alone does not satisfy
+AC-02.** `PortableBoundaryTests` therefore stays, rewritten to scan the two portable target
+directories rather than a hand-maintained file list, so a file added later cannot slip past it. AC-02
+is met by the compiler and that test together.
+
+The genuinely stronger check is compiling `SSMConnectDomain` and `SSMConnectWorkflow` for Linux,
+where the Apple frameworks do not exist. That is not wired up. It is worth doing and it is close:
+the one known obstacle was `PortableProfile`'s use of `JSONSerialization`, whose `NSNumber`
+bridging needs a `CFBoolean` check to tell `true` from `1`, which is Darwin-shaped. That has been
+removed — the import path now decodes through `JSONDecoder` and a portable `JSONValue` — so a Linux
+build is believed to be within reach but has not been attempted.
 
 Outstanding:
 
 - **MR-05.** `ConnectionStateMachine` still imports `Observation`. `Observation` is not on AC-02's
   forbidden list and is available off-Apple platforms, so this does not block AC-02, but the
   requirement stands. It needs an observable presenter and touches every SwiftUI binding site.
-- **MR-07.** The physical five-target split. Mostly access-control churn: nearly every type is
-  `internal` today and the single `@testable import SSMConnectKit` in the tests becomes several.
 - **MR-08.** Converting existing state-machine tests to fixture-backed ones where possible.
 
 ### Phase 3: Windows domain and workflow
@@ -631,6 +655,9 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   regression in connect, reconnect, stop, wake, login item, settings, or DCV launch behavior.
 - **AC-02:** Swift workflow/domain targets contain no imports of AppKit, SwiftUI,
   ServiceManagement, UserNotifications, or Darwin.
+  *Met (2026-08-18), by two mechanisms rather than one: the target split makes an AWS SDK import a
+  build failure, and `PortableBoundaryTests` rejects the Apple frameworks, which the split cannot
+  because platform SDK modules are importable regardless of package dependencies. See Phase 2.*
 - **AC-03:** A versioned profile exported on macOS imports on Windows and produces equivalent
   validated values; the reverse direction also passes.
   *Half met (2026-08-18): macOS exports and imports the document and round-trips the shared profile

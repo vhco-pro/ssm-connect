@@ -1,7 +1,7 @@
 # Handoff: Windows work for Phases 4 and 5
 
 - **Date:** 2026-08-18
-- **Branch:** `chore/windows-phase-0-spikes` (three new commits on top of yours: `d14e645`, `1466853`, `616d437`)
+- **Branch:** `chore/windows-phase-0-spikes` (new commits on top of yours, from `d14e645` onward)
 - **Written by:** an agent on a macOS host, which cannot build, run, or package anything for Windows
 - **For:** an agent on a real Windows 11 24H2 x64 host with the .NET 10 SDK, WiX, and Windows Sandbox
 
@@ -25,7 +25,7 @@ object (see below). `dotnet test windows/SSMConnect.slnx` passes exactly as you 
 | Phase 1 contracts | **Complete.** 28 fixtures pass against .NET *and* Swift. AC-04 met. |
 | §15 question 6 | **Closed.** Profiles only; `preferences` removed from the profile schema. |
 | Both schema tightenings | **Confirmed against real stored profiles.** Neither relaxed. |
-| Phase 2 Swift separation | **Partly done.** Four dependency boundaries moved; the target split is not done. |
+| Phase 2 Swift separation | **Target split done** (five Swift targets, composition root, app unchanged). MR-05 and MR-08 remain. |
 | §6.1 profile export/import | **macOS half done**, Windows half is yours. Neither client had it before. AC-03 half met. |
 | Phase 3 Windows domain/workflow | Complete, unchanged, still 63 tests. |
 | Phase 4–5 Windows adapters, shell, packaging | **Not started. Yours.** |
@@ -49,7 +49,7 @@ could not. §6.1 says both clients MUST support export and import of the portabl
 **neither client implemented it** — the schema existed and nothing produced or consumed a document
 conforming to it, so AC-03 was unmeetable by either side.
 
-The macOS half is now done: `SSMConnectKit/Sources/SSMConnectKit/Models/PortableProfile.swift`, with
+The macOS half is now done: `SSMConnectKit/Sources/SSMConnectDomain/PortableProfile.swift`, with
 `PortableProfileTests` round-tripping all three `contracts/fixtures/profiles/*.json` documents. Yours
 is Phase 4. Three things cost me real time and will cost you the same if you mirror your native
 model instead of writing a separate document type:
@@ -209,7 +209,7 @@ Phase 0 proved the mechanism end to end in a clean Sandbox. What remains is prod
 ```bash
 python3 contracts/validate.py            # schemas and fixtures as documents
 dotnet test windows/SSMConnect.slnx      # 63 tests, includes all 28 fixtures
-swift test --package-path SSMConnectKit  # 173 tests, includes the same 28 fixtures
+swift test --package-path SSMConnectKit  # 172 tests, includes the same 28 fixtures
 ```
 
 The first two run anywhere with Python 3 and the .NET 10 SDK. The third needs macOS.
@@ -224,10 +224,21 @@ your handoff, and it is the main thing that got easier.
 
 ## Two notes on the macOS changes, in case they mislead you
 
-- `SSMConnectKit` is still one Swift target. `PortableBoundaryTests` asserts per file that the
-  domain and workflow files import nothing forbidden, which is why AC-02 can be claimed without the
-  target split existing. It is a stand-in for a compiler barrier and should be deleted when the real
-  targets land. Do not read it as evidence the split is done.
+- `SSMConnectKit` is now six Swift targets: `SSMConnectDomain`, `SSMConnectWorkflow`,
+  `SSMConnectAWS`, `SSMConnectMacOS`, `SSMConnectUI`, and an umbrella `SSMConnectKit` that
+  re-exports them and holds the composition root. The app shell was not touched.
+
+  One result is worth carrying over to how you think about your own boundary, because it surprised
+  me: **the target split enforces less than it looks like it does.** It makes `import AWSEC2` in the
+  portable targets a build failure, because the AWS SDK is a package dependency they do not have.
+  It does nothing about `import SwiftUI` or `import Darwin`, because platform SDK frameworks are
+  importable by any target compiled on the platform regardless of `Package.swift`. I verified both
+  by trying them. Since AC-02 names five Apple frameworks and no AWS ones, `PortableBoundaryTests`
+  had to stay — it now scans the portable target directories instead of a file list.
+
+  Your side does not have this hole: `SSMConnect.Domain` and `SSMConnect.Workflow` target plain
+  `net10.0`, so a WPF or Win32 reference genuinely cannot compile there. That asymmetry is worth
+  knowing when comparing the two clients' "enforced by the compiler" claims — yours is stronger.
 - `ConnectionStateMachine` gained a `terminateProcess` seam. That is not gold-plating: the app-quit
   path calls `kill(2)` on a PID, and a fixture's synthetic `processIdentifier` would otherwise have
   signalled an unrelated live process on the developer's machine. Your Job Object equivalent has no

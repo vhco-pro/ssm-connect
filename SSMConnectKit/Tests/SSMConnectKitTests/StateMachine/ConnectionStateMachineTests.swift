@@ -2,7 +2,11 @@ import Foundation
 import Smithy
 import SmithyHTTPAPI
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 @Suite("ConnectionStateMachine")
 @MainActor
@@ -34,14 +38,22 @@ struct ConnectionStateMachineTests {
             ssm: ssm,
             tunnel: tunnel,
             secrets: secrets,
+            identity: StubIdentityProvider(),
+            agent: StubAgentClient(),
             dcv: dcv,
             readiness: readiness,
             tunnelListener: tunnelListener,
             instanceIds: instanceIds,
             clipboard: clipboard,
+            // These tests never exercise the quit path; a real signal here would reach whatever
+            // process happens to hold the mock handle's PID.
+            terminateProcess: { _ in },
             notifier: notifier,
             profile: profile,
             settings: settings,
+            // Kept explicit: these tests assert the app's real AWS error rendering (#20), which is
+            // exactly what the portable default interpreter does not do.
+            errorInterpreter: AWSErrorInterpreter(),
             isExpiredCredentials: isExpired,
             maxReconnectAttempts: 3,
             reconnectBackoff: .zero,

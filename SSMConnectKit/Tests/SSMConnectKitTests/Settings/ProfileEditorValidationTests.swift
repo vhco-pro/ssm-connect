@@ -1,5 +1,9 @@
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // Verifies: Fix opaque region-failure on Connect, Criterion: "An empty or malformed region entered in the Profile Editor disables Save (and shows a field-level error when non-empty-but-malformed); a valid region re-enables Save and clears the error."
 @Suite("ProfileEditorValidation")

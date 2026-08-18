@@ -1,5 +1,9 @@
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Fakes for every injected port, driven entirely by the fixture's declared outcomes.
 ///
@@ -139,10 +143,10 @@ struct FixtureIdentityProvider: IdentityProviding {
 struct FixtureAgentClient: AgentClienting {
     let recorder: PortRecorder
 
-    func ensureSession(port: Int, authToken: String) async throws -> WorkstationAgentClient.EnsureSessionResult {
+    func ensureSession(port: Int, authToken: String) async throws -> EnsureSessionResult {
         try Task.checkCancellation()
         let result = try recorder.invoke("AgentClient", "ensureSession", ["port": .number(Double(port))])
-        return WorkstationAgentClient.EnsureSessionResult(
+        return EnsureSessionResult(
             sessionId: result?["sessionId"]?.stringValue ?? "example-session",
             user: result?["user"]?.stringValue ?? "example.user"
         )

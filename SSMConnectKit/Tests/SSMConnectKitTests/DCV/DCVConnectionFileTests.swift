@@ -1,5 +1,9 @@
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 @Suite("DCVConnectionFile")
 struct DCVConnectionFileTests {

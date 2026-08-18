@@ -1,5 +1,9 @@
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// One recorded call to an injected port.
 struct RecordedCall: CustomStringConvertible {
@@ -77,7 +81,7 @@ final class PortRecorder: @unchecked Sendable {
         case "dcvServerNotReady":
             return DCVReadinessError.dcvServerNotReady(port: 8443)
         case "agentUnauthorized":
-            return WorkstationAgentClient.AgentError.unauthorized
+            return AgentError.unauthorized
         case "agentUnreachable":
             // A transport failure, NOT an `AgentError`: the flow retries this while the freshly
             // opened agent tunnel settles, and treats a real agent response as final.

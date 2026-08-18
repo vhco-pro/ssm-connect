@@ -1,0 +1,145 @@
+import SwiftUI
+import SSMConnectDomain
+import SSMConnectWorkflow
+import SSMConnectMacOS
+
+/// Form editor for a single `ConnectionProfile` (G7, F-18). Validates required fields and
+/// port ranges before allowing Save. Used for both add and edit (the caller decides which).
+public struct ProfileEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: ConnectionProfile
+    private let onSave: (ConnectionProfile) -> Void
+
+    public init(profile: ConnectionProfile, onSave: @escaping (ConnectionProfile) -> Void) {
+        _draft = State(initialValue: profile)
+        self.onSave = onSave
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section("General") {
+                    TextField("Display name", text: $draft.name)
+                }
+
+                Section("AWS SSO") {
+                    TextField("SSO start URL", text: $draft.ssoStartUrl)
+                    TextField("SSO region", text: $draft.ssoRegion)
+                    regionError(for: draft.ssoRegion)
+                    TextField("Account ID", text: $draft.accountId)
+                    TextField("Role name", text: $draft.roleName)
+                }
+
+                Section("Workstation") {
+                    TextField("Resource region", text: $draft.resourceRegion)
+                    regionError(for: draft.resourceRegion)
+                    TextField("Instance tag key", text: $draft.instanceTagKey)
+                    TextField("Instance tag value", text: $draft.instanceTagValue)
+                    TextField("DCV password secret id (optional)", text: secretIdBinding)
+                }
+
+                Section("Tunnel") {
+                    portField("Local port", value: $draft.localPort)
+                    portField("Remote port", value: $draft.remotePort)
+                    LabeledContent("Connect action", value: draft.connectAction.displayName)
+                }
+
+                Section("Connect mode") {
+                    Picker("Mode", selection: connectModeBinding) {
+                        ForEach(ConnectMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    if draft.resolvedConnectMode == .multiUser {
+                        portField("Agent port", value: agentPortBinding)
+                        Text("You log in with your own AWS SSO identity into your own desktop. "
+                            + "Requires a workstation deployed in multi-user mode (on-box agent + virtual sessions). "
+                            + "No password is used.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("Vanilla ec2-user + Secrets-Manager password — the default. "
+                            + "Works against a standard single-user workstation.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    // Trim region fields on commit so stored profiles are clean.
+                    draft.resourceRegion = AWSRegion.normalize(draft.resourceRegion)
+                    draft.ssoRegion = AWSRegion.normalize(draft.ssoRegion)
+                    onSave(draft)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!isValid)
+            }
+            .padding(12)
+        }
+        .frame(width: 460, height: 520)
+    }
+
+    // MARK: Validation
+
+    private var isValid: Bool {
+        !trimmed(draft.name).isEmpty
+            && !trimmed(draft.ssoStartUrl).isEmpty
+            && ProfileEditorValidation.regionState(draft.ssoRegion).isValid
+            && !trimmed(draft.accountId).isEmpty
+            && !trimmed(draft.roleName).isEmpty
+            && ProfileEditorValidation.regionState(draft.resourceRegion).isValid
+            && !trimmed(draft.instanceTagKey).isEmpty
+            && !trimmed(draft.instanceTagValue).isEmpty
+            && (1...65535).contains(draft.localPort)
+            && (1...65535).contains(draft.remotePort)
+    }
+
+    private func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Inline field-level error shown only when a region field is non-empty but malformed, so a
+    /// fresh empty form stays quiet while Save remains disabled until it is valid.
+    @ViewBuilder
+    private func regionError(for value: String) -> some View {
+        if ProfileEditorValidation.regionState(value).showError {
+            Text("Not a valid AWS region (e.g. eu-central-1).")
+                .font(.caption).foregroundStyle(.red)
+        }
+    }
+
+    /// Bridges the optional `secretId` to a non-optional text binding (empty == nil).
+    private var secretIdBinding: Binding<String> {
+        Binding(
+            get: { draft.secretId ?? "" },
+            set: { draft.secretId = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    /// Bridges the optional `connectMode` to a non-optional picker selection (nil == singleUser).
+    private var connectModeBinding: Binding<ConnectMode> {
+        Binding(
+            get: { draft.resolvedConnectMode },
+            set: { draft.connectMode = $0 }
+        )
+    }
+
+    /// Bridges the optional `agentRemotePort` to a non-optional port field (nil == 8444).
+    private var agentPortBinding: Binding<Int> {
+        Binding(
+            get: { draft.resolvedAgentRemotePort },
+            set: { draft.agentRemotePort = $0 }
+        )
+    }
+
+    private func portField(_ title: String, value: Binding<Int>) -> some View {
+        TextField(title, value: value, format: .number.grouping(.never))
+    }
+}

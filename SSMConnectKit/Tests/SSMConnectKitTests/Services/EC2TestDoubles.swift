@@ -1,6 +1,10 @@
 import AWSEC2
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Configurable `EC2Clienting` double for `EC2Service` unit tests (C5).
 final class MockEC2Client: EC2Clienting, @unchecked Sendable {

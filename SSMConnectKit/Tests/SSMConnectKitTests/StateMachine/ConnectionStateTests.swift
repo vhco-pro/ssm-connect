@@ -1,5 +1,9 @@
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 // Task A7, ADR-P2 — Swift Testing placeholder test for ConnectionState
 // Verifies: SSM Connect Plan, Criterion: "ConnectionState has 8 cases"

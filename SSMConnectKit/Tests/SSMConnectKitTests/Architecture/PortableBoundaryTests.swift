@@ -1,119 +1,94 @@
 import Foundation
 import Testing
 
-/// Enforces the portable-layer import boundary (AC-02, spec §5.2, MR-07).
+/// Enforces the half of AC-02 the target split cannot enforce.
 ///
-/// Phase 2 splits `SSMConnectKit` into `SSMConnectDomain` / `SSMConnectWorkflow` / `SSMConnectAWS`
-/// / `SSMConnectMacOS` / `SSMConnectUI`. That split is not finished — everything still compiles as
-/// one target — so nothing yet *stops* a domain type from importing AppKit and quietly undoing the
-/// work. Until the targets exist, this test is the boundary: the files listed below are the ones
-/// destined for the portable targets, and they may not import an Apple UI/lifecycle framework, an
-/// AWS SDK module, or platform networking.
+/// Phase 2 split the package into `SSMConnectDomain` / `SSMConnectWorkflow` / `SSMConnectAWS` /
+/// `SSMConnectMacOS` / `SSMConnectUI`. That split gives a real compiler barrier for the AWS SDK:
+/// the portable targets do not depend on `aws-sdk-swift`, so `import AWSEC2` in either of them
+/// fails to build. Verified, not assumed.
 ///
-/// When the physical targets land, delete this test — the compiler enforces it better.
+/// It does **not** give one for Apple frameworks. `AppKit`, `SwiftUI`, `Darwin`,
+/// `ServiceManagement`, `UserNotifications`, `Network`, and `os` come from the platform SDK rather
+/// than from a package dependency, so they are importable by any target compiled on macOS
+/// regardless of what `Package.swift` declares. Adding `import SwiftUI` to `SSMConnectWorkflow`
+/// compiles cleanly today; only this test stops it.
+///
+/// So the boundary is enforced in two places, and this is the second one. It scans directories
+/// rather than a hand-maintained file list on purpose: a list silently stops covering anything
+/// added after it was written, which is the failure mode that would let the boundary rot unnoticed.
+///
+/// The genuinely stronger check is compiling these two targets for Linux, where the Apple
+/// frameworks do not exist at all. That is not wired up — see the Phase 2 notes in the
+/// specification for what currently blocks it.
 @Suite("Portable layer import boundary")
 struct PortableBoundaryTests {
-    /// Files destined for `SSMConnectDomain`: values, states, validation, typed errors.
-    static let domainFiles = [
-        "Models/AWSCredentials.swift",
-        "Models/AWSRegion.swift",
-        "Models/AppSettings.swift",
-        "Models/ConnectAction.swift",
-        "Models/ConnectMode.swift",
-        "Models/ConnectionProfile.swift",
-        "Models/DCVConnectionFile.swift",
-        "Models/EC2Instance.swift",
-        "Models/PortableProfile.swift",
-        "Models/ProfileConfigError.swift",
-        "Models/SSMSessionResponse.swift",
-        "Settings/ProfileEditorValidation.swift",
-        "Auth/IdentityMapper.swift",
-        "Logging/RingBuffer.swift",
-        "StateMachine/ConnectionState.swift",
-        "StateMachine/ErrorCategory.swift",
-    ]
+    /// The targets §5.2 requires to stay portable.
+    static let portableTargets = ["SSMConnectDomain", "SSMConnectWorkflow"]
 
-    /// Files destined for `SSMConnectWorkflow`: the orchestration plus the ports it depends on.
-    static let workflowFiles = [
-        "StateMachine/ConnectionStateMachine.swift",
-        "StateMachine/ConnectionStateMachine+Menu.swift",
-        "StateMachine/ConnectionTimeouts.swift",
-        "Auth/AuthProviding.swift",
-        "Auth/IdentityProviding.swift",
-        "Services/AgentClienting.swift",
-        "Services/EC2Providing.swift",
-        "Services/SSMProviding.swift",
-        "Services/SecretsProviding.swift",
-        "Services/InstanceIdStore.swift",
-        "Services/AWSErrorInterpreter.swift",
-        "Tunnel/TunnelProvider.swift",
-        "DCV/DCVLaunching.swift",
-        "DCV/WorkstationReadiness.swift",
-    ]
-
-    /// Apple UI and lifecycle frameworks AC-02 names explicitly, plus the platform networking and
-    /// AWS SDK modules §5.2 rules out of the workflow.
+    /// Everything AC-02 names, plus the platform networking and logging modules §5.2 rules out,
+    /// plus the AWS SDK modules (belt and braces — the compiler already rejects those).
     static let forbiddenImports: Set<String> = [
         "AppKit", "SwiftUI", "ServiceManagement", "UserNotifications", "Darwin",
-        "Network", "os",
+        "Network", "os", "CoreFoundation", "CryptoKit",
         "AWSEC2", "AWSSSM", "AWSSSO", "AWSSSOOIDC", "AWSSecretsManager",
         "AWSClientRuntime", "ClientRuntime", "Smithy", "SmithyHTTPAPI", "SmithyIdentity",
     ]
 
-    /// `AWSErrorInterpreter.swift` holds the one deliberate exception: it declares the
-    /// `ErrorInterpreting` port *and* the SDK-facing adapter behind it. The adapter moves to
-    /// `SSMConnectAWS` when the targets land; the protocol stays with the workflow.
-    static let knownExceptions: Set<String> = ["Services/AWSErrorInterpreter.swift"]
-
-    static let sourceRoot: URL = {
+    static let sourcesRoot: URL = {
         var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         while directory.path != "/" {
-            let candidate = directory.appendingPathComponent("Sources/SSMConnectKit")
-            if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Models").path) {
+            let candidate = directory.appendingPathComponent("Sources")
+            if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("SSMConnectDomain").path) {
                 return candidate
             }
             directory = directory.deletingLastPathComponent()
         }
-        fatalError("Could not locate Sources/SSMConnectKit above \(#filePath).")
+        fatalError("Could not locate Sources/ above \(#filePath).")
     }()
 
-    static func imports(of relativePath: String) throws -> Set<String> {
-        let url = sourceRoot.appendingPathComponent(relativePath)
-        let contents = try String(contentsOf: url, encoding: .utf8)
-        let pattern = try NSRegularExpression(pattern: #"^\s*(?:@[^\s]+\s+)*import\s+([A-Za-z_][A-Za-z0-9_]*)"#, options: [.anchorsMatchLines])
+    static func swiftFiles(in target: String) -> [URL] {
+        let directory = sourcesRoot.appendingPathComponent(target)
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)) ?? []
+        return contents.filter { $0.pathExtension == "swift" }.sorted { $0.path < $1.path }
+    }
+
+    static func imports(of file: URL) throws -> Set<String> {
+        let contents = try String(contentsOf: file, encoding: .utf8)
+        let pattern = try NSRegularExpression(
+            pattern: #"^\s*(?:@[^\s]+\s+)*import\s+(?:struct|class|enum|protocol|func|var|let|typealias\s+)?\s*([A-Za-z_][A-Za-z0-9_]*)"#,
+            options: [.anchorsMatchLines]
+        )
         let range = NSRange(contents.startIndex..., in: contents)
         return Set(pattern.matches(in: contents, range: range).compactMap { match in
             Range(match.range(at: 1), in: contents).map { String(contents[$0]) }
         })
     }
 
-    @Test("every listed portable file exists, so a rename cannot silently empty this check")
-    func listedFilesExist() {
-        for path in Self.domainFiles + Self.workflowFiles {
-            let url = Self.sourceRoot.appendingPathComponent(path)
-            #expect(
-                FileManager.default.fileExists(atPath: url.path),
-                "Portable file '\(path)' no longer exists. Update PortableBoundaryTests, do not delete the entry."
-            )
-        }
-    }
-
-    @Test("domain files import no UI, lifecycle, networking, or AWS SDK module", arguments: domainFiles)
-    func domainStaysPortable(path: String) throws {
-        let offending = try Self.imports(of: path).intersection(Self.forbiddenImports)
+    @Test("each portable target has sources, so a moved directory cannot empty this check",
+          arguments: portableTargets)
+    func targetHasSources(target: String) {
         #expect(
-            offending.isEmpty,
-            "[AC-02] Domain file '\(path)' imports \(offending.sorted().joined(separator: ", ")). A domain value cannot depend on a platform framework — move the platform part into an adapter."
+            !Self.swiftFiles(in: target).isEmpty,
+            "No Swift files found in Sources/\(target). If the target was renamed, update this test rather than letting the boundary check silently pass over nothing."
         )
     }
 
-    @Test("workflow files import no UI, lifecycle, networking, or AWS SDK module", arguments: workflowFiles)
-    func workflowStaysPortable(path: String) throws {
-        guard !Self.knownExceptions.contains(path) else { return }
-        let offending = try Self.imports(of: path).intersection(Self.forbiddenImports)
+    @Test("no portable source imports a platform or AWS module", arguments: portableTargets)
+    func portableTargetsStayPortable(target: String) throws {
+        var offenders: [String] = []
+        for file in Self.swiftFiles(in: target) {
+            let forbidden = try Self.imports(of: file).intersection(Self.forbiddenImports)
+            if !forbidden.isEmpty {
+                offenders.append("\(file.lastPathComponent) imports \(forbidden.sorted().joined(separator: ", "))")
+            }
+        }
+
+        let detail = offenders.joined(separator: "\n  ")
         #expect(
-            offending.isEmpty,
-            "[AC-02] Workflow file '\(path)' imports \(offending.sorted().joined(separator: ", ")). The workflow depends on domain types and injected ports only — put the platform code behind a port."
+            offenders.isEmpty,
+            "[AC-02] \(target) must depend on Foundation and the domain only. Put the platform code behind a port and implement it in an adapter target.\n  \(detail)"
         )
     }
 }

@@ -1,6 +1,10 @@
 import Foundation
 import Testing
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Unit tests for `BundledPluginTunnel` provider + handle lifecycle (D9).
 @Suite("BundledPluginTunnel")

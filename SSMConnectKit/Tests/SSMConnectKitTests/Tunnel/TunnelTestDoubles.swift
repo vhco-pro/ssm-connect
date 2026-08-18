@@ -1,5 +1,9 @@
 import Foundation
-@testable import SSMConnectKit
+@testable import SSMConnectDomain
+@testable import SSMConnectWorkflow
+@testable import SSMConnectAWS
+@testable import SSMConnectMacOS
+@testable import SSMConnectUI
 
 /// Controllable `SpawnedPluginProcess` for tunnel lifecycle tests — drive exit/running manually.
 final class FakePluginProcess: SpawnedPluginProcess, @unchecked Sendable {
