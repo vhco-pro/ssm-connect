@@ -1,5 +1,13 @@
 # Handoff: macOS work for Phases 1 and 2
 
+> **Discharged 2026-08-18.** Tasks 1, 2 and 3 are complete; task 4 (Phase 2) is partly complete and
+> its remainder is recorded in the specification's Phase 2 status table. See
+> [`windows-phase-4-5-handoff.plan.md`](./windows-phase-4-5-handoff.plan.md) for what came back the
+> other way. Kept as the historical record of what was asked for and why.
+>
+> Outcome in one line: the 28 fixtures passed against Swift **with no fixture changes**, so none of
+> the four "likely wrong" areas below were in fact wrong.
+
 - **Date:** 2026-08-18
 - **Branch:** `chore/windows-phase-0-spikes` (three commits: `c372fcb`, `0ae0277`, `cd1f322`)
 - **Written by:** an agent working on Windows, which cannot build or run any Swift in this repository

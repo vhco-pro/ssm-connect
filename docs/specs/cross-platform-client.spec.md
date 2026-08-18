@@ -533,19 +533,53 @@ This table is the evidence record. The requirements the spikes produced are norm
 Create the versioned profile schema and extract representative conformance fixtures from current
 Swift tests. Add schema validation and fixture checks to CI.
 
-**Status (2026-08-18): executed against .NET, not against Swift.** `contracts/` holds the v1 profile
-schema, the fixture format, 28 workflow fixtures covering all ten required case groups in §6.2, and
-a `validate.py` document check wired into CI. All 28 pass against the .NET workflow.
+**Status (2026-08-18): complete.** `contracts/` holds the v1 profile schema, the fixture format, 28
+workflow fixtures covering all ten required case groups in §6.2, and a `validate.py` document check
+wired into CI. All 28 pass against **both** implementations: the .NET workflow via
+`windows/tests/SSMConnect.Workflow.Tests`, and the shipping Swift `ConnectionStateMachine` via
+`SSMConnectKit/Tests/SSMConnectKitTests/Conformance`. AC-04 is met and §15 question 6 is closed.
 
-They were derived by *reading* the Swift implementation on a Windows host, so the shipping client
-has not confirmed them. Phase 1 is complete only when a fixture runner executes all cases against
-the Swift implementation and every disagreement is reconciled, treating shipping macOS behavior as
-the reference. Until then §15 question 6 stays open and AC-04 is half met.
+The fixtures were derived by *reading* the Swift implementation on a Windows host, and then passed
+against it with **no fixture changes** — every state sequence, call ordering and terminal category
+in them was a prediction, and all 28 held. What the Swift run needed was production seams, not
+behaviour changes: an `ErrorCategory` (the flow had only a message string), and injectable
+`IdentityProvider` / `AgentClient` ports, which the multi-user path had been constructing inline.
+
+Known coverage gaps, recorded so they are not mistaken for agreement: 9 of the 13 `errorKind`
+values and 4 of the 10 `errorCategory` values are never exercised by a fixture, `EventSink` has no
+fixture coverage, and the `reconnect` action and the `systemWake`/`applicationWillTerminate`
+*injected events* are only reached through `when` steps. Where no fixture touches a mapping, the
+two clients agree by inspection only.
 
 ### Phase 2: Behavior-preserving Swift separation
 
 Create the Swift domain, workflow, AWS, and macOS targets. Move one dependency boundary at a time,
 running the existing focused tests after every move. Keep the released app behavior unchanged.
+
+**Status (2026-08-18): in progress — dependency boundaries moved, targets not yet split.**
+
+Done, each behaviour-preserving and verified against the full suite:
+
+| Requirement | What moved |
+|---|---|
+| MR-02 | `ConnectionState` split into a domain value and a presentation extension. Its SwiftUI `Color` was what pulled SwiftUI into the state machine. |
+| MR-04 | The SIGTERM/SIGKILL sequence moved to `PluginProcessTerminator`; `AppQuitHandler` registration moved to the composition root. The flow no longer imports `Darwin`. |
+| MR-06 | AWS SDK error inspection moved behind an `ErrorInterpreting` port, implemented by `AWSErrorInterpreter`. The flow no longer imports `ClientRuntime`, `Smithy`, or `SmithyHTTPAPI`. |
+| MR-03 | Partially: the multi-user path no longer constructs `STSPresigner`, `STSIdentityResolver`, or `WorkstationAgentClient` inline. Other defaults are still constructed in the designated initializer. |
+
+Every file destined for the domain and workflow targets now imports Foundation and nothing
+forbidden, so **AC-02 holds by content**. Because there is not yet a compiler barrier,
+`PortableBoundaryTests` asserts it per file and fails the build on a regression; it should be
+deleted once the targets exist.
+
+Outstanding:
+
+- **MR-05.** `ConnectionStateMachine` still imports `Observation`. `Observation` is not on AC-02's
+  forbidden list and is available off-Apple platforms, so this does not block AC-02, but the
+  requirement stands. It needs an observable presenter and touches every SwiftUI binding site.
+- **MR-07.** The physical five-target split. Mostly access-control churn: nearly every type is
+  `internal` today and the single `@testable import SSMConnectKit` in the tests becomes several.
+- **MR-08.** Converting existing state-machine tests to fixture-backed ones where possible.
 
 ### Phase 3: Windows domain and workflow
 
