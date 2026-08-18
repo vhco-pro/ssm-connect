@@ -113,7 +113,7 @@ defines is never exercised:
 |---|---|---|
 | `errorKind` | 4 of 13 | `signInRequired`, `invalidRegion`, `instanceTerminated`, `dcvServerNotReady`, `tunnelNotEstablished`, `agentUnreachable`, `viewerNotInstalled`, `awsServiceError`, `unknown` |
 | `errorCategory` | 6 of 10 | `authentication`, `agent`, `aws`, `unknown` |
-| `portName` | 10 of 11 | `EventSink` |
+| `portName` | 11 of 11 | — (`EventSink` now exists on both sides; see below) |
 | `step.action` | 6 of 7 | `reconnect` |
 | `event.kind` | 1 of 3 | `systemWake`, `applicationWillTerminate` (reachable as `when` steps, never as injected events) |
 
@@ -136,23 +136,39 @@ Write these as new fixtures, run them against .NET, and expect to have to fix th
 where they fail. A macOS agent then runs the same fixtures — that direction is cheap now that
 `SSMConnectKit/Tests/SSMConnectKitTests/Conformance` exists.
 
-### The `EventSink` question you should settle rather than inherit
+### The `EventSink` question — settled, and not the way I first proposed
 
-`EventSink` is in §7 and in the schema's `portName` enum, and .NET implements it. Swift has no
-equivalent: state is observed through `@Observable`, and the fixture runner uses a narrow
-`stateObserver` closure added for exactly that purpose. So the port is real on one side and a
-different shape on the other, and no fixture forces the issue.
+My earlier draft handed you this as an open decision: either `EventSink` is a genuine shared port
+and Swift needs one, or it is a .NET detail and it comes out of the schema. I have since settled it
+as **a genuine shared port**, and implemented it on Swift, because a piece of evidence turned up
+that made the second option untenable.
 
-Decide which it is and record it in §7:
+§5.2 says the workflow must "not open browsers, update clipboards, post notifications, or send
+operating-system signals directly". The Swift flow was doing two of those: it called
+`ClipboardManager.copy` the moment a secret arrived, and posted a notification at each lifecycle
+event. Injecting those adapters made it testable, but the *decision* to put a password on a
+clipboard is shell policy, and it was being made in the portable layer. So the macOS workflow was in
+violation of §5.2 independently of anything to do with the contract, and the fix for that violation
+is exactly an event sink.
 
-- a genuine shared port, in which case Swift needs one and MR-05 should introduce it while removing
-  `Observation` from the workflow; or
-- a .NET implementation detail, in which case it comes out of the schema's `portName` enum and §7
-  stops naming it.
+`SSMConnectWorkflow.ConnectionEventSink` now carries `stateChanged`, `notify`, `passwordAvailable`,
+and `settingsChanged`; `MacConnectionEventSink` in the macOS target acts on them. It is deliberately
+close to your `IEventSink` — I took your shape as the reference rather than inventing a second one.
 
-The second is the smaller change, and it is defensible — §7's own wording says clipboard and
-notifications are *shell services invoked in response to workflow events*, which is satisfied by
-any observation mechanism. Do not just add an `EventSink` fixture; that would freeze an
+**This costs you nothing and removes a task.** `EventSink` was already real on .NET, so the change
+was Swift catching up to you. Two small differences worth knowing:
+
+- Mine has `settingsChanged(AppSettings)`, which yours does not. It exists because the clipboard
+  auto-clear preference has to reach the shell that owns the clipboard, and reporting it beats
+  having the flow act on it. If you find your shell reading `AppSettings` directly for the same
+  purpose, the two are equivalent and neither needs to change.
+- Mine has no `Log` method; the in-memory `ConnectionLog` is a separate injected dependency because
+  the log window renders it. Yours folds logging into the sink. That is a shape difference in a
+  place no fixture asserts, so it does not need reconciling.
+
+`portName` is therefore fully exercised in principle, but note that **no fixture asserts `EventSink`
+yet** — it is now implementable on both sides, which it was not before. A fixture that pins the
+ordered notification sequence would be worth having, and unlike before it would no longer freeze an
 inconsistency into the contract.
 
 ## Your task 3: close §15 question 2, the plugin redistribution licence
@@ -209,7 +225,7 @@ Phase 0 proved the mechanism end to end in a clean Sandbox. What remains is prod
 ```bash
 python3 contracts/validate.py            # schemas and fixtures as documents
 dotnet test windows/SSMConnect.slnx      # 63 tests, includes all 28 fixtures
-swift test --package-path SSMConnectKit  # 172 tests, includes the same 28 fixtures
+swift test --package-path SSMConnectKit  # 176 tests, includes the same 28 fixtures
 ```
 
 The first two run anywhere with Python 3 and the .NET 10 SDK. The third needs macOS.

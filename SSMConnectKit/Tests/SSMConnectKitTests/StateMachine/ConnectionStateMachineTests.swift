@@ -26,8 +26,7 @@ struct ConnectionStateMachineTests {
         readiness: WorkstationReadinessProbing = StubReadinessProbe(),
         tunnelListener: TunnelListenerProbing = StubTunnelListenerProbe(),
         instanceIds: InstanceIdPersisting = MockInstanceIdStore(),
-        clipboard: ClipboardManager = ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
-        notifier: Notifying = MockNotifier(),
+        events: RecordingEventSink? = nil,
         profile: ConnectionProfile = .example,
         settings: AppSettings = .default,
         isExpired: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck
@@ -44,11 +43,10 @@ struct ConnectionStateMachineTests {
             readiness: readiness,
             tunnelListener: tunnelListener,
             instanceIds: instanceIds,
-            clipboard: clipboard,
             // These tests never exercise the quit path; a real signal here would reach whatever
             // process happens to hold the mock handle's PID.
             terminateProcess: { _ in },
-            notifier: notifier,
+            events: events ?? RecordingEventSink(),
             profile: profile,
             settings: settings,
             // Kept explicit: these tests assert the app's real AWS error rendering (#20), which is
@@ -82,13 +80,8 @@ struct ConnectionStateMachineTests {
         let ec2 = runningEC2(id: "i-warm")
         let secrets = MockSecretsService(); secrets.result = .success("s3cr3t")
         let dcv = MockDCVLauncher()
-        let pb = FakePasteboard()
-        let machine = makeMachine(
-            ec2: ec2,
-            secrets: secrets,
-            dcv: dcv,
-            clipboard: ClipboardManager(pasteboard: pb, autoClearAfter: nil)
-        )
+        let events = RecordingEventSink()
+        let machine = makeMachine(ec2: ec2, secrets: secrets, dcv: dcv, events: events)
 
         machine.connect()
         await machine.awaitInFlightTask()
@@ -98,7 +91,9 @@ struct ConnectionStateMachineTests {
         #expect(machine.tunnelPID == 4242)
         #expect(machine.localPort == ConnectionProfile.template.localPort)
         #expect(machine.password == "s3cr3t")
-        #expect(pb.currentString() == "s3cr3t")
+        // The flow reports the secret; putting it on the pasteboard is the shell's job now
+        // and is covered by MacConnectionEventSinkTests.
+        #expect(events.passwords == ["s3cr3t"])
         #expect(dcv.launchCount == 1)
         #expect(dcv.lastConnectionFile?.password == "s3cr3t")
         #expect(ec2.startCount == 0)
@@ -603,40 +598,41 @@ struct ConnectionStateMachineTests {
 
     @Test("a successful connect posts a Connected notification and logs transitions")
     func connectNotifiesAndLogs() async {
-        let notifier = MockNotifier()
-        let machine = makeMachine(ec2: runningEC2(), notifier: notifier)
+        let events = RecordingEventSink()
+        let machine = makeMachine(ec2: runningEC2(), events: events)
 
         machine.connect()
         await machine.awaitInFlightTask()
 
-        #expect(notifier.events.contains(.connected))
+        #expect(events.notifications.contains(.connected))
         #expect(machine.log.entries.contains { $0.message.contains("State:") })
     }
 
     @Test("stop workstation posts a Stopped notification")
     func stopNotifies() async {
-        let notifier = MockNotifier()
-        let machine = makeMachine(ec2: runningEC2(), notifier: notifier)
+        let events = RecordingEventSink()
+        let machine = makeMachine(ec2: runningEC2(), events: events)
         machine.connect()
         await machine.awaitInFlightTask()
 
         machine.stopWorkstation()
         await machine.awaitInFlightTask()
 
-        #expect(notifier.events.contains(.stopped))
+        #expect(events.notifications.contains(.stopped))
     }
 
-    @Test("onLaunch requests notification authorization once")
-    func onLaunchRequestsAuthorization() async {
-        let notifier = MockNotifier()
-        let machine = makeMachine(ec2: runningEC2(), notifier: notifier)
+    @Test("onLaunch does not ask for notification authorization: that is the shell's job")
+    func onLaunchDoesNotRequestAuthorization() async {
+        let events = RecordingEventSink()
+        let machine = makeMachine(ec2: runningEC2(), events: events)
 
         machine.onLaunch()
         await machine.awaitInFlightTask()
-        // The auth request is fired on a detached Task; wait for it to run.
-        await waitUntil { notifier.authorizationRequests >= 1 }
 
-        #expect(notifier.authorizationRequests >= 1)
+        // Prompting for notification permission is app-lifecycle policy, not a connection rule
+        // (§5.2), so it moved to the composition root. Asserted here as a pinned absence, because
+        // putting it back would be an easy and invisible regression.
+        #expect(events.notifications.isEmpty)
     }
 
     @Test("an expired-credentials recovery posts a sign-in-required notification")
@@ -645,14 +641,14 @@ struct ConnectionStateMachineTests {
             .failure(StubExpiredError()),
             .success(.stub(id: "i-reauth", state: .running)),
         ])
-        let notifier = MockNotifier()
-        let machine = makeMachine(ec2: ec2, notifier: notifier, isExpired: { $0 is StubExpiredError })
+        let events = RecordingEventSink()
+        let machine = makeMachine(ec2: ec2, events: events, isExpired: { $0 is StubExpiredError })
 
         machine.connect()
         await machine.awaitInFlightTask()
 
         #expect(machine.state == .connected)
-        #expect(notifier.events.contains(.signInRequired))
+        #expect(events.notifications.contains(.signInRequired))
     }
 }
 

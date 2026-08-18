@@ -17,6 +17,7 @@ public extension ConnectionStateMachine {
     /// policy rather than a connection rule (MR-04), so it belongs to the composition root — which
     /// additionally keeps every test-constructed machine from mutating a global singleton.
     convenience init(profile: ConnectionProfile, settings: AppSettings) {
+        let sink = MacConnectionEventSink()
         self.init(
             authProvider: AWSAuthProvider(),
             ec2: EC2Service(),
@@ -29,17 +30,19 @@ public extension ConnectionStateMachine {
             readiness: HTTPSReadinessProbe(),
             tunnelListener: TCPListenerProbe(),
             instanceIds: UserDefaultsInstanceIdStore(),
-            clipboard: ClipboardManager(pasteboard: NSPasteboardAdapter()),
             terminateProcess: PluginProcessTerminator.signalSequence,
             // Mirrors the in-memory ring buffer to Apple Unified Logging (NF-14).
             log: ConnectionLog(sink: OSLogSink()),
-            notifier: UserNotificationService(),
+            events: sink,
             profile: profile,
             settings: settings,
             timeouts: .default,
             // Without this the app would render AWS SDK failures as "Smithy.ClientError error 4".
             errorInterpreter: AWSErrorInterpreter()
         )
+        // Notification permission is an app-lifecycle concern, so it is requested here rather
+        // than by the connection flow on launch.
+        sink.requestNotificationAuthorization()
         AppQuitHandler.shared.register { [weak self] in self?.terminateTunnelForQuit() }
     }
 }

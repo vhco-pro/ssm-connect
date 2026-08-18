@@ -620,10 +620,22 @@ build is believed to be within reach but has not been attempted.
 
 Outstanding:
 
-- **MR-05.** `ConnectionStateMachine` still imports `Observation`. `Observation` is not on AC-02's
-  forbidden list and is available off-Apple platforms, so this does not block AC-02, but the
-  requirement stands. It needs an observable presenter and touches every SwiftUI binding site.
-- **MR-08.** Converting existing state-machine tests to fixture-backed ones where possible.
+- **MR-05, in part.** The event-output half is done: `ConnectionEventSink` now carries state
+  changes, lifecycle notifications, the retrieved password, and settings changes out to the shell,
+  and `MacConnectionEventSink` acts on them. This was not cosmetic — the flow was calling
+  `ClipboardManager.copy` and posting notifications itself, which §5.2 forbids in as many words, so
+  the workflow was in violation until now. It also settles §7's `EventSink`, which was previously
+  real on .NET and absent on Swift.
+
+  What remains of MR-05 is that `ConnectionStateMachine` still imports `Observation` for the UI's
+  benefit. `Observation` is not on AC-02's forbidden list and ships cross-platform with the Swift
+  toolchain, so this blocks nothing; removing it means introducing an observable presenter and
+  touching every SwiftUI binding site, which is churn with real regression surface and no
+  portability gain.
+- **MR-08.** Converting existing state-machine tests to fixture-backed ones where possible. Held
+  deliberately: the fixtures it would convert to are the coverage gaps assigned to the Windows
+  agent (terminal `authentication` and `agent` categories, injected `agentUnreachable`), and
+  writing them twice would be wasted work.
 
 ### Phase 3: Windows domain and workflow
 

@@ -321,3 +321,20 @@ final class FixtureInstanceIdStore: InstanceIdPersisting, @unchecked Sendable {
         lock.lock(); value = instanceId; lock.unlock()
     }
 }
+
+/// The fixture's view of the shell: it records the ordered state sequence the flow emits, which is
+/// what `expect.states` asserts.
+///
+/// The callback fires synchronously inside the flow, which is the property the harness depends on —
+/// a step pinned to `afterState` has to land before the flow makes its next port call, not after.
+@MainActor
+final class FixtureEventSink: ConnectionEventSink {
+    var onState: ((ConnectionState) -> Void)?
+    private(set) var notifications: [NotificationEvent] = []
+    private(set) var passwords: [String] = []
+
+    func stateChanged(_ state: ConnectionState) { onState?(state) }
+    func notify(_ event: NotificationEvent) { notifications.append(event) }
+    func passwordAvailable(_ password: String) { passwords.append(password) }
+    func settingsChanged(_ settings: AppSettings) {}
+}

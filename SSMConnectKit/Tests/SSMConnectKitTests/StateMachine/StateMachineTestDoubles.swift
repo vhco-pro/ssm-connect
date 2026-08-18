@@ -178,3 +178,21 @@ struct StubAgentClient: AgentClienting {
 
     func ensureSession(port: Int, authToken: String) async throws -> EnsureSessionResult { result }
 }
+
+/// Records everything the flow reports to its shell.
+///
+/// Replaces the previous `MockNotifier` + `FakePasteboard` assertions on the state machine: the
+/// flow no longer touches a clipboard or a notification centre, so what it can be held to is what
+/// it *reported*. That the report then reaches the pasteboard is `MacConnectionEventSinkTests`.
+@MainActor
+final class RecordingEventSink: ConnectionEventSink {
+    private(set) var states: [ConnectionState] = []
+    private(set) var notifications: [NotificationEvent] = []
+    private(set) var passwords: [String] = []
+    private(set) var settings: [AppSettings] = []
+
+    func stateChanged(_ state: ConnectionState) { states.append(state) }
+    func notify(_ event: NotificationEvent) { notifications.append(event) }
+    func passwordAvailable(_ password: String) { passwords.append(password) }
+    func settingsChanged(_ settings: AppSettings) { self.settings.append(settings) }
+}

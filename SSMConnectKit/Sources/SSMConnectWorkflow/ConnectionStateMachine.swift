@@ -20,7 +20,7 @@ public final class ConnectionStateMachine {
         didSet {
             guard oldValue != state else { return }
             log.log(.ui, "State: \(oldValue.rawValue) \u{2192} \(state.rawValue)")
-            stateObserver(state)
+            events.stateChanged(state)
         }
     }
     public private(set) var errorMessage: String?
@@ -57,10 +57,11 @@ public final class ConnectionStateMachine {
     private let tunnelListener: TunnelListenerProbing
     /// Persists last-connected instance-id per profile for instance-replacement detection (#9, RVL-4).
     private let instanceIds: InstanceIdPersisting
-    private let clipboard: ClipboardManager
     /// In-memory connection log (F-19) + Apple Unified Logging (NF-14). Exposed for the log window.
     public let log: ConnectionLog
-    private let notifier: Notifying
+    /// Where the flow reports state, lifecycle events, and retrieved secrets. The shell acts on
+    /// them; the flow never touches the clipboard, notifications, or the OS itself (§5.2).
+    private let events: any ConnectionEventSink
     /// Active connection profile + global settings. Updatable via `apply(profile:settings:)`
     /// while disconnected so an active-profile switch in Settings takes effect on next connect.
     public private(set) var profile: ConnectionProfile
@@ -74,11 +75,6 @@ public final class ConnectionStateMachine {
     /// Sleep used for the auto-reconnect backoff (injectable so tests don't wait). Stage timeouts
     /// use the real clock with their long real budgets, so they never fire under fast mocks.
     private let reconnectSleep: @Sendable (Duration) async throws -> Void
-    /// Called on every *distinct* state transition, synchronously, before control returns to the
-    /// flow. The app shell observes `state` through `@Observable`; this exists so a conformance
-    /// fixture can record the ordered state sequence and inject an action "once state X is
-    /// reached" without racing the next port call.
-    private let stateObserver: @MainActor (ConnectionState) -> Void
     /// Terminates the tunnel child process by PID, used only on the synchronous app-quit path.
     /// Injectable because the default sends real POSIX signals (MR-04): a fixture must be able to
     /// model "the process is gone" without `kill(2)` reaching an unrelated PID on the host.
@@ -116,10 +112,9 @@ public final class ConnectionStateMachine {
         readiness: WorkstationReadinessProbing,
         tunnelListener: TunnelListenerProbing,
         instanceIds: InstanceIdPersisting,
-        clipboard: ClipboardManager,
         terminateProcess: @escaping @Sendable (Int32) -> Void,
         log: ConnectionLog? = nil,
-        notifier: Notifying = SilentNotificationService(),
+        events: (any ConnectionEventSink)? = nil,
         profile: ConnectionProfile = .template,
         settings: AppSettings = .default,
         timeouts: ConnectionTimeouts = .default,
@@ -127,8 +122,7 @@ public final class ConnectionStateMachine {
         isExpiredCredentials: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck,
         maxReconnectAttempts: Int = 3,
         reconnectBackoff: Duration = .seconds(5),
-        reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        stateObserver: @escaping @MainActor (ConnectionState) -> Void = { _ in }
+        reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.authProvider = authProvider
         self.ec2 = ec2
@@ -141,9 +135,8 @@ public final class ConnectionStateMachine {
         self.readiness = readiness
         self.tunnelListener = tunnelListener
         self.instanceIds = instanceIds
-        self.clipboard = clipboard
         self.log = log ?? ConnectionLog()
-        self.notifier = notifier
+        self.events = events ?? NoopEventSink()
         self.profile = profile
         self.settings = settings
         self.timeouts = timeouts
@@ -152,9 +145,7 @@ public final class ConnectionStateMachine {
         self.maxReconnectAttempts = maxReconnectAttempts
         self.reconnectBackoff = reconnectBackoff
         self.reconnectSleep = reconnectSleep
-        self.stateObserver = stateObserver
         self.terminateProcess = terminateProcess
-        clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
     }
 
     /// Synchronous best-effort plugin teardown for app termination (F-13). `applicationWillTerminate`
@@ -174,7 +165,6 @@ public final class ConnectionStateMachine {
     /// Apply a new active profile / settings. Ignored while a connection is in flight so we
     /// never swap the target out from under an active tunnel (takes effect on next connect).
     public func apply(profile: ConnectionProfile, settings: AppSettings) {
-        clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
         guard state == .disconnected else {
             self.settings = settings // settings (e.g. auto-reconnect) are safe to update live
             return
@@ -186,7 +176,6 @@ public final class ConnectionStateMachine {
     /// Called once on app launch: sweep stale DCV files and auto-connect if configured (F-03).
     public func onLaunch() {
         dcv.sweepOrphanedFiles()
-        Task { await notifier.requestAuthorization() }
         // Only auto-connect a fully configured profile — a fresh install has none yet (F-03/F-18).
         if settings.autoConnect, state == .disconnected, profile.isConfigured {
             connect()
@@ -246,7 +235,7 @@ public final class ConnectionStateMachine {
                 self.log.log(.ec2, "Stopping instance \(instanceId)…")
                 try await self.ec2.stopInstance(instanceId: instanceId, region: self.profile.resourceRegion, credentials: credentials)
                 self.resetToDisconnected()
-                await self.notifier.post(.stopped)
+                self.events.notify(.stopped)
             } catch {
                 self.fail(error)
             }
@@ -268,7 +257,7 @@ public final class ConnectionStateMachine {
     /// Copy the in-memory DCV password to the clipboard (F-11).
     public func copyPassword() {
         guard let password else { return }
-        clipboard.copy(password)
+        events.passwordAvailable(password)
     }
 
     /// Test hook: await the most recent connect/disconnect/reconnect/stop task to completion.
@@ -396,7 +385,7 @@ public final class ConnectionStateMachine {
             connectedAt = Date()
             log.log(.tunnel, "Connected: 127.0.0.1:\(profile.localPort) → \(instance.id):\(profile.remotePort).")
             startTunnelMonitor(handle: handle)
-            await notifier.post(.connected)
+            events.notify(.connected)
         } catch is CancellationError {
             // disconnect()/reconnect() cancelled us; they own the resulting state.
             return
@@ -482,7 +471,7 @@ public final class ConnectionStateMachine {
                 try await secrets.fetchSecret(secretId: secretId, region: profile.resourceRegion, credentials: creds)
             }
             password = pw
-            clipboard.copy(pw)
+            events.passwordAvailable(pw)
 
             guard dcv.isViewerInstalled() else {
                 warningMessage = DCVError.viewerNotInstalled.errorDescription
@@ -634,7 +623,7 @@ public final class ConnectionStateMachine {
         // unreachable in practice (a drop implies a connect resolved an instance first).
         guard let instanceId else { errorCategory = .tunnel; state = .error; return }
         log.log(.tunnel, "Tunnel dropped (\(detail)); reconnecting…")
-        await notifier.post(.reconnecting)
+        events.notify(.reconnecting)
         for attempt in 1...maxReconnectAttempts {
             do {
                 try await reconnectSleep(reconnectBackoff)
@@ -644,7 +633,7 @@ public final class ConnectionStateMachine {
                 connectedAt = Date()
                 startTunnelMonitor(handle: handle)
                 log.log(.tunnel, "Reconnected after \(attempt) attempt(s).")
-                await notifier.post(.connected)
+                events.notify(.connected)
                 return
             } catch is CancellationError {
                 return
@@ -670,7 +659,7 @@ public final class ConnectionStateMachine {
         } catch {
             guard isExpiredCredentials(error) else { throw error }
             log.log(.auth, "SSO session expired; re-authenticating…")
-            await notifier.post(.signInRequired)
+            events.notify(.signInRequired)
             let fresh = try await authProvider.authenticate(profile: profile)
             setCredentials(fresh)
             return try await op(fresh)

@@ -1,4 +1,5 @@
 import Foundation
+import SSMConnectWorkflow
 import SSMConnectDomain
 
 /// Abstraction over the macOS pasteboard so `ClipboardManager` is testable without AppKit (E8).

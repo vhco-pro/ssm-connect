@@ -52,6 +52,7 @@ final class FixtureRunner {
 
     private var recorder: PortRecorder!
     private var tunnels: FixtureTunnelProvider!
+    private var sink: FixtureEventSink!
     private var machine: ConnectionStateMachine!
 
     init(fixture: Fixture) { self.fixture = fixture }
@@ -60,8 +61,10 @@ final class FixtureRunner {
         let profile = try Self.loadProfile(fixture)
         let recorder = PortRecorder(given: fixture.given)
         let tunnels = FixtureTunnelProvider(recorder: recorder)
+        let sink = FixtureEventSink()
         self.recorder = recorder
         self.tunnels = tunnels
+        self.sink = sink
 
         machine = ConnectionStateMachine(
             authProvider: FixtureAuthProvider(recorder: recorder),
@@ -75,23 +78,25 @@ final class FixtureRunner {
             readiness: FixtureReadinessProbe(recorder: recorder),
             tunnelListener: FixtureTunnelListenerProbe(recorder: recorder),
             instanceIds: FixtureInstanceIdStore(recorder: recorder, seed: fixture.given.lastInstanceId),
-            clipboard: ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
             // Never send a real signal. `processIdentifier` is a synthetic number from the fixture
             // and would otherwise name an unrelated live process on the host.
             terminateProcess: { [weak tunnels] pid in
                 tunnels?.handles.first { $0.processIdentifier == pid }?.terminateByProcessKill()
             },
             log: ConnectionLog(),
-            notifier: MockNotifier(),
+            events: sink,
             profile: profile,
             settings: buildSettings(),
             timeouts: buildTimeouts(),
             maxReconnectAttempts: fixture.harness?.maxReconnectAttempts ?? 3,
             reconnectBackoff: .seconds(fixture.harness?.reconnectBackoffSeconds ?? 5),
             // Every backoff collapses to nothing: fixtures assert ordering, never wall-clock time.
-            reconnectSleep: { _ in },
-            stateObserver: { [weak self] state in self?.onStateChanged(state) }
+            reconnectSleep: { _ in }
         )
+        // The sink is what feeds the fixture its ordered state sequence, and it fires synchronously
+        // inside the flow — which is what lets a step pinned to `afterState` land before the next
+        // port call instead of racing it.
+        sink.onState = { [weak self] state in self?.onStateChanged(state) }
 
         // Steps with no `afterState` run in order, each settling before the next. Steps that name a
         // state are dispatched from the state callback, which fires synchronously inside the flow,
