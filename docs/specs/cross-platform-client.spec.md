@@ -212,7 +212,12 @@ Create a JSON Schema with an explicit `schemaVersion`. Version 1 MUST cover:
 - Local and remote DCV ports.
 - Single-user secret ID.
 - Multi-user agent remote port.
-- Connect action and non-secret client preferences that are supported on both platforms.
+- Connect action.
+
+Version 1 MUST NOT carry application preferences. Both clients hold `autoConnect`, `autoReconnect`,
+and `clipboardAutoClearSeconds` as global settings rather than per-profile ones, so exporting them
+inside a profile would describe a structure neither implementation has (§15 question 6). If
+preferences ever become portable they get their own document and `schemaVersion`.
 
 The schema MUST NOT contain cached AWS credentials, access tokens, DCV passwords, presigned STS
 URLs, tunnel session responses, or local temporary-file paths.
@@ -606,12 +611,31 @@ These questions MUST be answered in Phase 0 rather than guessed during implement
    unanticipated requirement: the certificate-validation policy in §9.2.
 4. **Answered.** WiX/MSI, not MSIX (§9.4).
 5. **Answered.** Windows 11 24H2, build 10.0.26100, x64 (§11.2).
-6. **Open.** Should profile export include app preferences, or only connection profiles? Proposed:
-   profiles only in schema v1. This is a contract decision, not a spike; it MUST be settled in
-   Phase 1 before the schema is versioned.
+6. **Answered.** Profile export carries **connection profiles only**. Schema v1 does not carry
+   application preferences, and `connection-profile.schema.json` no longer defines a per-profile
+   `preferences` object.
 
-Questions 2 and 6 are the only ones still open. Neither blocks Phase 1 from starting; question 6
-MUST be closed within it, and question 2 before packaging work in Phase 5.
+   The deciding evidence is that neither client stores preferences per profile. Both hold
+   `autoConnect`, `autoReconnect`, and `clipboardAutoClearSeconds` as *global* application
+   settings — macOS under a separate `ssmconnect.settings.v1` key alongside, not inside,
+   `ssmconnect.profiles.v1`, and .NET as an `AppSettings` value distinct from `ConnectionProfile`.
+   A per-profile `preferences` object would therefore have exported a structure that neither
+   implementation has, and importing one would have raised a question with no good answer: which
+   profile's preferences win when several are imported at once.
+
+   Consequences, so this is not re-litigated later:
+
+   - Exporting a profile does not carry preferences; importing one leaves the importing client's
+     settings untouched.
+   - Preferences remain per-installation. A user moving between machines re-picks three booleans,
+     which is a smaller cost than the merge ambiguity above.
+   - If preferences ever need to travel, they get their own document with its own `schemaVersion`,
+     which is also what lets them be imported independently of any profile.
+   - Unknown optional fields are still preserved on round-trip (§6.1), so a v1 client will not
+     destroy a `preferences` object written by some future version.
+
+Question 2 is the only one still open. It does not block Phase 1 and MUST be closed before
+packaging work in Phase 5.
 
 ## 16. Planning Gate
 

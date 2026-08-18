@@ -14,10 +14,5 @@
   "localPort": 8443,
   "remotePort": 8443,
   "agentRemotePort": 8444,
-  "secretId": null,
-  "preferences": {
-    "autoConnect": false,
-    "autoReconnect": true,
-    "clipboardAutoClearSeconds": 30
-  }
+  "secretId": null
 }

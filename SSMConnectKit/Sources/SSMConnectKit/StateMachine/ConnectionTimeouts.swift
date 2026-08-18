@@ -20,6 +20,11 @@ struct ConnectionTimeouts: Sendable {
     var establishRetryAttempts: Int = 2
     /// Base backoff between RVL-5 re-establish attempts; multiplied by the attempt number (2s, 4s).
     var establishRetryBackoff: Duration = .seconds(2)
+    /// How many times to call the multi-user agent's `/ensure-session` while the freshly-opened
+    /// agent tunnel becomes listening. The call is idempotent, so retrying is safe (CL-02b).
+    var ensureSessionAttempts: Int = 15
+    /// Delay between `/ensure-session` attempts.
+    var ensureSessionRetryInterval: Duration = .seconds(1)
 
     static let `default` = ConnectionTimeouts()
 }

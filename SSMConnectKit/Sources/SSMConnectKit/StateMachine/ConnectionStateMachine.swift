@@ -23,9 +23,14 @@ public final class ConnectionStateMachine {
         didSet {
             guard oldValue != state else { return }
             log.log(.ui, "State: \(oldValue.rawValue) \u{2192} \(state.rawValue)")
+            stateObserver(state)
         }
     }
     private(set) var errorMessage: String?
+    /// Portable classification of the current failure (AC-04). `errorMessage` is what the user
+    /// reads and is free to differ between clients; this is what the two clients must agree on,
+    /// and what `contracts/fixtures/workflows` asserts.
+    private(set) var errorCategory: ErrorCategory = .none
     /// Non-fatal note shown while still Connected (e.g. DCV Viewer missing, F-16).
     private(set) var warningMessage: String?
     private(set) var instanceId: String?
@@ -45,6 +50,10 @@ public final class ConnectionStateMachine {
     private let ssm: SSMProviding
     private let tunnel: TunnelProvider
     private let secrets: SecretsProviding
+    /// Resolves the caller's identity + mints presigned tokens in multi-user mode (CL-01/CL-03).
+    private let identity: IdentityProviding
+    /// Talks to the on-box workstation agent in multi-user mode (CL-02b).
+    private let agent: AgentClienting
     private let dcv: DCVLaunching
     private let readiness: WorkstationReadinessProbing
     /// Asserts the local tunnel port is actually listening before the readiness probe (#9, RVL-3).
@@ -66,6 +75,15 @@ public final class ConnectionStateMachine {
     /// Sleep used for the auto-reconnect backoff (injectable so tests don't wait). Stage timeouts
     /// use the real clock with their long real budgets, so they never fire under fast mocks.
     private let reconnectSleep: @Sendable (Duration) async throws -> Void
+    /// Called on every *distinct* state transition, synchronously, before control returns to the
+    /// flow. The app shell observes `state` through `@Observable`; this exists so a conformance
+    /// fixture can record the ordered state sequence and inject an action "once state X is
+    /// reached" without racing the next port call.
+    private let stateObserver: @MainActor (ConnectionState) -> Void
+    /// Terminates the tunnel child process by PID, used only on the synchronous app-quit path.
+    /// Injectable because the default sends real POSIX signals (MR-04): a fixture must be able to
+    /// model "the process is gone" without `kill(2)` reaching an unrelated PID on the host.
+    private let terminateProcess: @Sendable (Int32) -> Void
 
     // MARK: Working state
 
@@ -90,6 +108,8 @@ public final class ConnectionStateMachine {
         ssm: SSMProviding = SSMService(),
         tunnel: TunnelProvider = BundledPluginTunnel(),
         secrets: SecretsProviding = SecretsService(),
+        identity: IdentityProviding = STSIdentityProvider(),
+        agent: AgentClienting = HTTPAgentClient(),
         dcv: DCVLaunching = DCVLauncher(),
         readiness: WorkstationReadinessProbing = HTTPSReadinessProbe(),
         tunnelListener: TunnelListenerProbing = TCPListenerProbe(),
@@ -103,13 +123,17 @@ public final class ConnectionStateMachine {
         isExpiredCredentials: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck,
         maxReconnectAttempts: Int = 3,
         reconnectBackoff: Duration = .seconds(5),
-        reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        stateObserver: @escaping @MainActor (ConnectionState) -> Void = { _ in },
+        terminateProcess: @escaping @Sendable (Int32) -> Void = ConnectionStateMachine.defaultTerminateProcess
     ) {
         self.authProvider = authProvider
         self.ec2 = ec2
         self.ssm = ssm
         self.tunnel = tunnel
         self.secrets = secrets
+        self.identity = identity
+        self.agent = agent
         self.dcv = dcv
         self.readiness = readiness
         self.tunnelListener = tunnelListener
@@ -124,6 +148,8 @@ public final class ConnectionStateMachine {
         self.maxReconnectAttempts = maxReconnectAttempts
         self.reconnectBackoff = reconnectBackoff
         self.reconnectSleep = reconnectSleep
+        self.stateObserver = stateObserver
+        self.terminateProcess = terminateProcess
         clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
         // Kill the plugin child on app quit so it isn't orphaned holding the local port (F-13).
         AppQuitHandler.shared.register { [weak self] in self?.terminateTunnelForQuit() }
@@ -134,10 +160,20 @@ public final class ConnectionStateMachine {
     func terminateTunnelForQuit() {
         monitorTask?.cancel()
         guard let pid = tunnelPID, pid > 0 else { return }
+        terminateProcess(pid)
+    }
+
+    /// The real signal sequence: SIGTERM, a short grace period, then SIGKILL. The only place this
+    /// package touches `Darwin`; injecting it is what lets the flow be exercised off-platform.
+    nonisolated static let defaultTerminateProcess: @Sendable (Int32) -> Void = { pid in
         kill(pid, SIGTERM)
         usleep(300_000) // 0.3s grace
         kill(pid, SIGKILL)
     }
+
+    /// Whether a supervised tunnel process is still running. Asserted by the conformance fixtures,
+    /// which need to distinguish "we returned to disconnected" from "the tunnel is still up".
+    var tunnelActive: Bool { currentHandle?.isActive ?? false }
 
     // MARK: - Public API (F1)
 
@@ -251,6 +287,7 @@ public final class ConnectionStateMachine {
 
     private func runConnect() async {
         errorMessage = nil
+        errorCategory = .none
         warningMessage = nil
         log.log(.ui, "Connecting to \(profile.name) (\(profile.resourceRegion))…")
 
@@ -478,11 +515,10 @@ public final class ConnectionStateMachine {
     private func ensureSessionAndLaunchMultiUser(instanceId: String) async {
         do {
             guard let creds = credentials else { throw AuthError.signInRequired }
-            let presigner = STSPresigner(region: profile.resourceRegion)
+            let region = profile.resourceRegion
 
             // 1. Resolve our own AWS identity -> Linux username (CL-01).
-            let resolver = STSIdentityResolver(presigner: presigner)
-            let (_, username) = try await resolver.resolve(credentials: creds)
+            let username = try await identity.resolveIdentity(region: region, credentials: creds)
             log.log(.auth, "Multi-user identity resolved to '\(username)'.")
 
             // 2. Ensure our virtual session exists, via the agent over a transient tunnel (R1/CL-02b).
@@ -490,10 +526,9 @@ public final class ConnectionStateMachine {
             //    locally on the box, not through the client — so we close it right after.
             let agentPort = profile.resolvedAgentRemotePort
             let agentHandle = try await openAgentTunnel(instanceId: instanceId, port: agentPort)
-            let agent = WorkstationAgentClient(baseURL: URL(string: "http://127.0.0.1:\(agentPort)")!)
             let provisioned: WorkstationAgentClient.EnsureSessionResult
             do {
-                provisioned = try await ensureSessionWithRetry(agent: agent, presigner: presigner, credentials: creds)
+                provisioned = try await ensureSessionWithRetry(port: agentPort, region: region, credentials: creds)
             } catch {
                 // Always tear down the transient agent tunnel — otherwise a failed
                 // ensure-session leaks the session-manager-plugin holding the agent port.
@@ -509,7 +544,7 @@ public final class ConnectionStateMachine {
                 warningMessage = DCVError.viewerNotInstalled.errorDescription
                 return
             }
-            let freshToken = presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
+            let freshToken = identity.presignedIdentityToken(region: region, credentials: creds)
             let file = DCVConnectionFile.multiUser(
                 port: profile.localPort,
                 user: provisioned.user,
@@ -528,21 +563,20 @@ public final class ConnectionStateMachine {
     /// `ensureSession` is idempotent, so retrying is safe. A real agent response (401/5xx) is *not*
     /// transient and propagates immediately. A fresh token is minted per attempt to avoid expiry.
     private func ensureSessionWithRetry(
-        agent: WorkstationAgentClient,
-        presigner: STSPresigner,
-        credentials: AWSCredentials,
-        attempts: Int = 15
+        port: Int,
+        region: String,
+        credentials: AWSCredentials
     ) async throws -> WorkstationAgentClient.EnsureSessionResult {
         var lastError: Error = AuthError.signInRequired
-        for _ in 1...attempts {
+        for _ in 1...max(1, timeouts.ensureSessionAttempts) {
             do {
-                let token = presigner.presignedGetCallerIdentityURL(credentials: credentials, now: Date())
-                return try await agent.ensureSession(authToken: token)
+                let token = identity.presignedIdentityToken(region: region, credentials: credentials)
+                return try await agent.ensureSession(port: port, authToken: token)
             } catch let agentError as WorkstationAgentClient.AgentError {
                 throw agentError // the agent responded — not transient
             } catch {
                 lastError = error
-                try? await Task.sleep(for: .seconds(1))
+                try? await reconnectSleep(timeouts.ensureSessionRetryInterval)
             }
         }
         throw lastError
@@ -596,14 +630,15 @@ public final class ConnectionStateMachine {
             if settings.autoReconnect {
                 await attemptAutoReconnect(detail: stderr.isEmpty ? "exit code \(code)" : stderr)
             } else {
-                errorMessage = "The SSM tunnel dropped (exit code \(code))."
-                state = .error
+                failDropped("The SSM tunnel dropped (exit code \(code)).")
             }
         }
     }
 
     private func attemptAutoReconnect(detail: String) async {
-        guard let instanceId else { state = .error; return }
+        // No instance to reconnect to. Left without a message, as it always has been: this is
+        // unreachable in practice (a drop implies a connect resolved an instance first).
+        guard let instanceId else { errorCategory = .tunnel; state = .error; return }
         log.log(.tunnel, "Tunnel dropped (\(detail)); reconnecting…")
         await notifier.post(.reconnecting)
         for attempt in 1...maxReconnectAttempts {
@@ -622,8 +657,9 @@ public final class ConnectionStateMachine {
             } catch {
                 if attempt == maxReconnectAttempts {
                     await teardownTunnel() // don't leave a half-open plugin process behind (F-13)
-                    errorMessage = "Auto-reconnect failed after \(maxReconnectAttempts) attempts (\(detail)): \(describe(error))"
-                    state = .error
+                    failDropped(
+                        "Auto-reconnect failed after \(maxReconnectAttempts) attempts (\(detail)): \(describe(error))"
+                    )
                 }
             }
         }
@@ -667,6 +703,7 @@ public final class ConnectionStateMachine {
     private func resetToDisconnected() {
         state = .disconnected
         errorMessage = nil
+        errorCategory = .none
         warningMessage = nil
         instanceId = nil
         instanceState = nil
@@ -678,7 +715,19 @@ public final class ConnectionStateMachine {
     private func fail(_ error: Error) {
         let message = describe(error)
         errorMessage = message
+        errorCategory = ErrorCategory.classify(error)
         log.log(.ui, "Error: \(message)")
+        state = .error
+    }
+
+    /// Fail with an already-rendered message and an explicit category, without an extra log line.
+    ///
+    /// Used by the tunnel-drop paths, which already logged their own narrative and whose message
+    /// describes the *drop* rather than the last error thrown — classifying that error would
+    /// report the wrong kind of failure.
+    private func failDropped(_ message: String) {
+        errorMessage = message
+        errorCategory = .tunnel
         state = .error
     }
 

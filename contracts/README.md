@@ -16,46 +16,53 @@ contracts/
 
 ## Status
 
-**Executed against .NET. Not yet executed against Swift.**
+**Executed against both implementations. AC-04 is closed.**
 
 | Implementation | State |
 |---|---|
 | .NET (`windows/`) | All 28 fixtures pass, via `windows/tests/SSMConnect.Workflow.Tests`. |
-| Swift (`SSMConnectKit/`) | Not yet run. No fixture runner exists. |
+| Swift (`SSMConnectKit/`) | All 28 fixtures pass, via `SSMConnectKit/Tests/SSMConnectKitTests/Conformance`. |
 
 The fixtures were derived by reading the Swift implementation — principally
 `ConnectionStateMachine.swift`, the models under `Models/`, and the existing test suite — on a
 Windows host with no Swift toolchain, and the .NET workflow was then written to satisfy them.
 
-That ordering matters when reading a disagreement. These fixtures describe **intended** behavior
-that two implementations now agree on, but only one of those implementations is the shipping
-product. Running them against Swift is the remaining half of AC-04, and until that happens a
-mismatch is more likely to be a fixture error than a macOS bug.
+**They then passed against Swift with no fixture changes.** That is a stronger result than it
+looks: the fixtures were written from reading the source rather than from running it, so every
+state sequence, call ordering, and terminal category in them was a prediction. All 28 held. The
+areas the macOS handoff flagged as inferred rather than observed — emitted-state sequences,
+`setLastInstanceId` ordering around instance-replacement, `disconnect`/`stopWorkstation`
+cancellation, and the warning-versus-failure boundary — were all confirmed correct.
 
-Running them against .NET has already earned its keep: it caught three ordering errors in the
-fixtures, all in the `expect.calls` ordering rather than in the behavior itself. The correct order
-is now recorded, and the same class of mistake would otherwise have been discovered as a spurious
-"macOS is wrong" failure later.
+Running them against .NET had already caught three ordering errors in the fixtures, all in
+`expect.calls` ordering rather than in the behavior itself. Those were fixed before this run, which
+is likely why the Swift run was clean.
 
-The remaining Phase 1 task, on a macOS machine:
-
-1. Build a fixture runner against the existing Swift implementation.
-2. Run all 28 cases and reconcile every disagreement, treating shipping macOS behavior as the
-   reference — a mismatch means the fixture is wrong unless it exposes a genuine macOS bug.
-3. Where a fixture changes, re-run the .NET suite, which must then be brought back into agreement.
-
-`windows/tests/SSMConnect.Workflow.Tests` is a working reference for step 1: the fixture model, the
-outcome-queue semantics, and the assertion rules are all implemented there.
+What the Swift run *did* require was production seams, not behavior changes. `ConnectionStateMachine`
+had no `errorCategory` concept and constructed its identity and agent collaborators inline, so the
+`IdentityProvider` and `AgentClient` ports could not be injected. See the Phase 2 notes in the
+specification's §10; the behavior itself was already correct.
 
 ## Deliberate tightenings
 
 Two places where the schema is stricter than today's Swift code. Both are intentional, and both
-need confirming during step 2 above, because either could make an existing profile fail to export.
+were checked against real stored profiles before being kept, because either could have made an
+existing profile fail to export.
 
 | Field | Swift today | Schema here | Why |
 |-------|-------------|-------------|-----|
 | `accountId` | any non-empty string | `^[0-9]{12}$` | AWS account IDs are always 12 digits. Catching a typo at export beats an opaque SDK failure at connect. |
 | `secretId` on a multi-user profile | unconstrained | must be `null` | A multi-user host is identity-only (specification MU-00a). A secret ID there indicates a mistaken expectation of a shared-password fallback. |
+
+**Both confirmed, and kept as-is.** Checked against the real profiles stored by the shipping macOS
+app (`ssmconnect.profiles.v1` in `UserDefaults`): both stored profiles carry a 12-digit
+`accountId`, and the one profile in `multiUser` mode carries no `secretId`. Neither tightening
+breaks a real profile, so neither was relaxed.
+
+Worth recording for whoever revisits this: the single-user profile stored by the shipping app has
+**no** `connectMode` key at all, because it predates the field. `nil` maps to `singleUser`
+(`ConnectionProfile.resolvedConnectMode`), and the schema treats `connectMode` as optional for the
+same reason. An importer MUST NOT assume the key is present.
 
 The region pattern is *not* a tightening: it is byte-for-byte the rule the AWS SDK's endpoint
 resolver applies, kept identical on purpose so a bad region is rejected with an actionable message

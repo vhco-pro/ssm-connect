@@ -101,35 +101,14 @@
     "secretId": {
       "type": ["string", "null"],
       "description": "Single-user only. Secrets Manager secret ID holding the DCV password. This is an identifier, never the secret value."
-    },
-
-    "preferences": {
-      "type": "object",
-      "description": "Non-secret client preferences supported on both platforms.",
-      "properties": {
-        "autoConnect": {
-          "type": "boolean",
-          "default": false,
-          "description": "Connect automatically at application launch, only when the profile is fully configured."
-        },
-        "autoReconnect": {
-          "type": "boolean",
-          "default": true,
-          "description": "Re-establish the tunnel automatically if it drops unexpectedly."
-        },
-        "clipboardAutoClearSeconds": {
-          "type": "integer",
-          "minimum": 0,
-          "default": 30,
-          "description": "Seconds before the clipboard clears after copying the DCV password. 0 disables auto-clear."
-        }
-      }
     }
   },
 
+  "$comment": "Specification section 15 question 6 is closed: schema v1 carries connection profiles only, not application preferences. Both clients store autoConnect, autoReconnect, and clipboardAutoClearSeconds as global application settings rather than per profile, so a per-profile 'preferences' object would have invented a coupling neither implementation has. Preferences travel, if ever, in a separate document with its own schemaVersion.",
+
   "allOf": [
     {
-      "$comment": "Security boundary, specification sections 6.1 and 12: the portable document carries identifiers and preferences only. It MUST NOT carry live authentication material or machine-local paths.",
+      "$comment": "Security boundary, specification sections 6.1 and 12: the portable document carries identifiers only. It MUST NOT carry live authentication material or machine-local paths.",
       "not": {
         "anyOf": [
           { "required": ["accessKeyId"] },

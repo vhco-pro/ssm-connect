@@ -13,10 +13,5 @@
   "connectAction": "dcvViewer",
   "localPort": 8443,
   "remotePort": 8443,
-  "secretId": "example/dcv/password",
-  "preferences": {
-    "autoConnect": false,
-    "autoReconnect": true,
-    "clipboardAutoClearSeconds": 30
-  }
+  "secretId": "example/dcv/password"
 }
