@@ -1,0 +1,87 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+#
+# Builds and tests the macOS client. The counterpart to windows-client.yml, and the job that was
+# missing while the Windows client got one: the conformance suite runs the fixtures in contracts/
+# against the real ConnectionStateMachine, so a change that makes the macOS client diverge from the
+# shared behavioral contract fails the build rather than shipping (AC-04).
+#
+# It also runs PortableBoundaryTests, which fails if a domain or workflow file starts importing
+# AppKit, SwiftUI, Darwin or an AWS SDK module (AC-02). Until the five-target split lands there is
+# no compiler barrier, so this job is the barrier.
+
+name: macOS client
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'SSMConnectKit/**'
+      - 'SSMConnect/**'
+      - 'contracts/**'
+      - 'project.yml'
+      - '.github/workflows/macos-client.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'SSMConnectKit/**'
+      - 'SSMConnect/**'
+      - 'contracts/**'
+      - 'project.yml'
+      - '.github/workflows/macos-client.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Build and run conformance
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      # The package is the whole test surface: unit tests, the conformance fixtures, and the
+      # import-boundary checks all live in SSMConnectKitTests. The fixtures are read from
+      # contracts/ on disk rather than copied into the bundle, so the two cannot drift.
+      - name: Test SSMConnectKit
+        run: swift test --package-path SSMConnectKit
+
+  build-app:
+    name: Build the app bundle
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # AC-10: the macOS app MUST stay independently buildable throughout the Phase 2 refactor.
+      # Debug, because a Release build re-signs the bundle and the signing identity is a
+      # release-time concern (AC-09), not something to gate every pull request on.
+      #
+      # The plugin/macro validation flags are needed because aws-sdk-swift pulls in
+      # smithy-swift's build plugin, which otherwise waits on an interactive trust prompt that
+      # cannot be answered on a runner.
+      - name: Build
+        run: |
+          xcodebuild \
+            -project SSMConnect.xcodeproj \
+            -scheme SSMConnect \
+            -configuration Debug \
+            -derivedDataPath .build/DerivedData \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            build
