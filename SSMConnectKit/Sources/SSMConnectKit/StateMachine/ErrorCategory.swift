@@ -1,6 +1,4 @@
-import ClientRuntime
 import Foundation
-import Smithy
 
 /// Portable classification of a terminal failure (contract §6.2, AC-04).
 ///
@@ -37,11 +35,12 @@ enum ErrorCategory: String, Equatable, Sendable {
 }
 
 extension ErrorCategory {
-    /// Classify any error thrown inside the connection flow.
+    /// Classify an error the connection flow models itself.
     ///
-    /// Ordering matters: the concrete domain errors are matched before the AWS SDK's protocols,
-    /// because a domain error is the more specific statement about what went wrong.
-    static func classify(_ error: Error) -> ErrorCategory {
+    /// Returns `nil` for anything unrecognised, which the caller resolves through an injected
+    /// `ErrorInterpreting`. That split is MR-06: identifying an AWS SDK error needs the SDK, and
+    /// this type must stay importable by the portable workflow.
+    static func classify(_ error: Error) -> ErrorCategory? {
         switch error {
         case is ProfileConfigError:
             return .configuration
@@ -98,11 +97,9 @@ extension ErrorCategory {
             return .none
 
         default:
-            // AWS SDK errors are `Error`-only, so they are matched by protocol rather than type.
-            if error is ClientError || error is ServiceError {
-                return .aws
-            }
-            return .unknown
+            // Not modelled here. An AWS SDK error lands in this branch and is resolved by the
+            // injected interpreter, which is the only thing that may import the SDK.
+            return nil
         }
     }
 }

@@ -1,9 +1,13 @@
-import SwiftUI
+import Foundation
 
-// Task A4 — 8-state connection lifecycle enum per spec §5 icon table
-// Each case maps to an SF Symbol name + color + tooltip string.
-// The enum is CaseIterable for exhaustive iteration (e.g. placeholder menu, tests).
-public enum ConnectionState: String, CaseIterable {
+// Task A4 — 8-state connection lifecycle enum per spec §5.
+//
+// This is a domain value and nothing else. Its presentation — SF Symbol, colour, tooltip — lives
+// in `App/ConnectionState+Presentation.swift`, because a domain state enum cannot own how it is
+// drawn (spec §5.2, MR-02): the `Color` property is what pulled SwiftUI into the workflow.
+// The raw values are the wire strings used by `contracts/state-machine.schema.json`.
+// `CaseIterable` supports exhaustive iteration (e.g. the placeholder menu, tests).
+public enum ConnectionState: String, CaseIterable, Sendable {
     case disconnected    // F-01: idle / not connected
     case authenticating  // F-04, F-05: SSO login in progress
     case resolving       // F-06: DescribeInstances by tag
@@ -12,44 +16,6 @@ public enum ConnectionState: String, CaseIterable {
     case tunneling       // F-09: StartSession + plugin launch
     case connected       // F-09, F-10: tunnel active
     case error           // any failure state
-
-    // Spec §5: SF Symbol per state
-    public var sfSymbol: String {
-        switch self {
-        case .disconnected:   "desktopcomputer"
-        case .authenticating: "person.badge.key"
-        case .resolving:      "magnifyingglass"
-        case .starting:       "power"
-        case .waitingForSSM:  "antenna.radiowaves.left.and.right"
-        case .tunneling:      "link"
-        case .connected:      "desktopcomputer.and.arrow.down"
-        case .error:          "exclamationmark.triangle"
-        }
-    }
-
-    // Spec §5: Color per state
-    var color: Color {
-        switch self {
-        case .disconnected:   .gray
-        case .authenticating, .resolving, .starting, .waitingForSSM, .tunneling: .yellow
-        case .connected:      .green
-        case .error:          .red
-        }
-    }
-
-    // Spec §5: Tooltip per state
-    var tooltip: String {
-        switch self {
-        case .disconnected:   "Workstation — Disconnected"
-        case .authenticating: "Workstation — Signing in…"
-        case .resolving:      "Workstation — Finding instance…"
-        case .starting:       "Workstation — Starting instance…"
-        case .waitingForSSM:  "Workstation — Waiting for SSM…"
-        case .tunneling:      "Workstation — Opening tunnel…"
-        case .connected:      "Workstation — Connected"
-        case .error:          "Workstation — Error"
-        }
-    }
 
     /// Whether this state represents an in-progress (transitional) phase.
     var isTransitioning: Bool {

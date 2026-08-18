@@ -1,9 +1,5 @@
-import ClientRuntime
-import Darwin
 import Foundation
 import Observation
-import Smithy
-import SmithyHTTPAPI
 
 /// Orchestrates the full connection lifecycle across all service layers (Phase F, spec §5).
 ///
@@ -69,6 +65,8 @@ public final class ConnectionStateMachine {
     private(set) var profile: ConnectionProfile
     private(set) var settings: AppSettings
     private let timeouts: ConnectionTimeouts
+    /// Renders and classifies errors the flow does not model itself, so the SDK stays out (MR-06).
+    private let errorInterpreter: ErrorInterpreting
     private let isExpiredCredentials: @Sendable (Error) -> Bool
     private let maxReconnectAttempts: Int
     private let reconnectBackoff: Duration
@@ -98,8 +96,14 @@ public final class ConnectionStateMachine {
     /// Public entry point for the app shell: a state machine for a profile + settings, wired with
     /// the default production dependencies. The full dependency-injecting init stays internal so the
     /// provider protocols don't leak into the package's public API.
+    ///
+    /// This is the macOS composition root, and the only place app lifecycle is wired up. Killing
+    /// the plugin child on quit is macOS lifecycle policy, not a connection rule (MR-04), so it is
+    /// registered here rather than in the designated initializer — which also stops every
+    /// test-constructed machine from mutating a global singleton.
     public convenience init(profile: ConnectionProfile, settings: AppSettings) {
         self.init(profile: profile, settings: settings, timeouts: .default)
+        AppQuitHandler.shared.register { [weak self] in self?.terminateTunnelForQuit() }
     }
 
     init(
@@ -120,12 +124,13 @@ public final class ConnectionStateMachine {
         profile: ConnectionProfile = .template,
         settings: AppSettings = .default,
         timeouts: ConnectionTimeouts = .default,
+        errorInterpreter: ErrorInterpreting = AWSErrorInterpreter(),
         isExpiredCredentials: @escaping @Sendable (Error) -> Bool = ConnectionStateMachine.defaultExpiredCredentialsCheck,
         maxReconnectAttempts: Int = 3,
         reconnectBackoff: Duration = .seconds(5),
         reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         stateObserver: @escaping @MainActor (ConnectionState) -> Void = { _ in },
-        terminateProcess: @escaping @Sendable (Int32) -> Void = ConnectionStateMachine.defaultTerminateProcess
+        terminateProcess: @escaping @Sendable (Int32) -> Void = PluginProcessTerminator.signalSequence
     ) {
         self.authProvider = authProvider
         self.ec2 = ec2
@@ -144,6 +149,7 @@ public final class ConnectionStateMachine {
         self.profile = profile
         self.settings = settings
         self.timeouts = timeouts
+        self.errorInterpreter = errorInterpreter
         self.isExpiredCredentials = isExpiredCredentials
         self.maxReconnectAttempts = maxReconnectAttempts
         self.reconnectBackoff = reconnectBackoff
@@ -151,8 +157,6 @@ public final class ConnectionStateMachine {
         self.stateObserver = stateObserver
         self.terminateProcess = terminateProcess
         clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
-        // Kill the plugin child on app quit so it isn't orphaned holding the local port (F-13).
-        AppQuitHandler.shared.register { [weak self] in self?.terminateTunnelForQuit() }
     }
 
     /// Synchronous best-effort plugin teardown for app termination (F-13). `applicationWillTerminate`
@@ -161,14 +165,6 @@ public final class ConnectionStateMachine {
         monitorTask?.cancel()
         guard let pid = tunnelPID, pid > 0 else { return }
         terminateProcess(pid)
-    }
-
-    /// The real signal sequence: SIGTERM, a short grace period, then SIGKILL. The only place this
-    /// package touches `Darwin`; injecting it is what lets the flow be exercised off-platform.
-    nonisolated static let defaultTerminateProcess: @Sendable (Int32) -> Void = { pid in
-        kill(pid, SIGTERM)
-        usleep(300_000) // 0.3s grace
-        kill(pid, SIGKILL)
     }
 
     /// Whether a supervised tunnel process is still running. Asserted by the conformance fixtures,
@@ -715,7 +711,7 @@ public final class ConnectionStateMachine {
     private func fail(_ error: Error) {
         let message = describe(error)
         errorMessage = message
-        errorCategory = ErrorCategory.classify(error)
+        errorCategory = ErrorCategory.classify(error) ?? errorInterpreter.classify(error)
         log.log(.ui, "Error: \(message)")
         state = .error
     }
@@ -731,53 +727,14 @@ public final class ConnectionStateMachine {
         state = .error
     }
 
+    /// Render an error for the user. Anything with a `LocalizedError` conformance — which is every
+    /// error this flow raises itself — speaks for itself; the rest is handed to the injected
+    /// interpreter, because unwrapping an AWS SDK error requires the SDK (MR-06).
     private func describe(_ error: Error) -> String {
         if let localized = (error as? LocalizedError)?.errorDescription {
             return localized
         }
-        // AWS SDK errors like `Smithy.ClientError` are `Error`-only (no `LocalizedError` /
-        // `CustomNSError`), so `localizedDescription` would drop their informative payload and
-        // yield the opaque bridge string "The operation couldn't be completed. (Smithy.ClientError
-        // error 4.)". Surface the associated message instead so, e.g., a region rejection reads
-        // "Invalid region: ..." rather than "error 4".
-        if let clientError = error as? ClientError {
-            return Self.message(from: clientError)
-        }
-        // Errors *returned by an AWS service* have the same problem one layer up. Any response
-        // whose error shape is absent from the operation's Smithy model becomes an
-        // `UnknownAWSHTTPServiceError`, which is likewise `Error`-only and bridges to the
-        // useless "(AWSClientRuntime.UnknownAWSHTTPServiceError error 1.)" (#20). It does carry
-        // `typeName`/`message`, so match the `ServiceError` protocol: that covers unmodeled and
-        // modeled service errors alike, for every AWS API this app calls.
-        if let serviceError = error as? ServiceError {
-            return Self.message(from: serviceError, httpStatus: (error as? HTTPError)?.httpResponse.statusCode)
-        }
-        return error.localizedDescription
-    }
-
-    /// Extract the human-readable payload from a `Smithy.ClientError` (all cases carry a `String`).
-    private static func message(from error: ClientError) -> String {
-        switch error {
-        case let .serializationFailed(message),
-             let .dataNotFound(message),
-             let .unknownError(message),
-             let .authError(message),
-             let .invalidValue(message):
-            return message
-        }
-    }
-
-    /// Render an AWS service error as "<message> (<TypeName>, HTTP <status>)", degrading
-    /// gracefully as fields are missing. The type name and status are what make an otherwise
-    /// generic message ("No access") actionable in a bug report.
-    static func message(from error: ServiceError, httpStatus: HTTPStatusCode?) -> String {
-        let detail = [error.typeName, httpStatus.map { "HTTP \($0.rawValue)" }]
-            .compactMap { $0 }
-            .joined(separator: ", ")
-        let summary = error.message ?? error.typeName.map { "AWS returned a \($0)." }
-            ?? "AWS returned an unrecognized error."
-        guard !detail.isEmpty, error.message != nil else { return summary }
-        return "\(summary) (\(detail))"
+        return errorInterpreter.describe(error)
     }
 
     /// Default heuristic for detecting expired/unauthorized SSO credentials across SDK services.
