@@ -3,10 +3,17 @@
     Publishes the app, builds the per-user MSI, and generates the WinGet manifest.
 
 .DESCRIPTION
-    Everything a release needs except signing, which requires a purchased certificate. The script
-    stops short of that deliberately rather than producing an unsigned artifact that looks final:
-    an unsigned MSI must not reach the WinGet manifest, because the manifest pins a SHA-256 and
-    signing changes it.
+    Builds a complete, publishable release.
+
+    The release is deliberately unsigned. WinGet only requires a signature for MSIX, and this ships
+    a WiX MSI, so nothing about distribution is blocked. What is lost is the SmartScreen publisher
+    name: users see an "unknown publisher" warning on first download, and no metadata changes that,
+    because only a signature does.
+
+    Attribution therefore rests on two things this script produces: publisher fields carried in the
+    MSI and in every assembly, and a checksum file users can verify the download against. If a
+    certificate is obtained later, sign the payload and the MSI and re-run this script, because the
+    manifest pins a SHA-256 and signing changes it.
 
 .PARAMETER Version
     Product version for the MSI and the manifest.
@@ -57,7 +64,10 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 $msi = Join-Path $output "SSMConnect-$Version-x64.msi"
 
 Write-Host 'Building the MSI…'
+# Without -arch the MSI is built x86, which lands the product in WOW6432Node and contradicts the
+# x64 the WinGet manifest declares. The payload is x64-only, so the package must say so.
 wix build (Join-Path $packaging 'Package.wxs') `
+    -arch x64 `
     -d PackageVersion=$Version `
     -d PayloadDirectory=$payload `
     -d PluginDirectory=$PluginDirectory `
@@ -69,6 +79,12 @@ $hash = (Get-FileHash $msi -Algorithm SHA256).Hash
 $sizeMb = [math]::Round((Get-Item $msi).Length / 1MB, 1)
 Write-Host "Built $msi ($sizeMb MB)"
 Write-Host "SHA-256: $hash"
+
+# The checksum is how a user confirms the download is the file this build produced. On an unsigned
+# release it is the only such mechanism, so it is published as a file rather than only printed.
+$checksums = Join-Path $output "SSMConnect-$Version-x64.msi.sha256"
+"$hash  $(Split-Path -Leaf $msi)" | Set-Content $checksums -Encoding ascii
+Write-Host "Wrote $checksums"
 
 # The manifest is generated from the artifact that was actually built, so its hash can never drift
 # from the file it describes. It is written next to the MSI rather than into the repository,
@@ -141,6 +157,45 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
     if ($LASTEXITCODE -ne 0) { throw 'winget validate failed.' }
 }
 
+$releaseNotes = Join-Path $output "RELEASE-NOTES-$Version.md"
+@"
+# SSM Connect $Version
+
+From **vhco-pro** (https://github.com/vhco-pro/ssm-connect), Apache-2.0.
+
+## This release is not code-signed
+
+Windows will show **"Windows protected your PC"** the first time you run the installer, and the
+publisher will read as unknown. That is expected. Choose **More info**, then **Run anyway**.
+
+Verify you have the file this build produced before you do:
+
+``````powershell
+Get-FileHash .\$(Split-Path -Leaf $msi) -Algorithm SHA256
+``````
+
+Expected SHA-256:
+
+``````
+$hash
+``````
+
+Once installed, Windows Settings > Installed apps lists the publisher as **VHCo**, and the
+executable's Properties > Details tab carries the same identity.
+
+## What it installs
+
+- SSM Connect itself, per-user under ``%LOCALAPPDATA%\Programs\SSM Connect`` (no administrator
+  rights needed).
+- The AWS Session Manager plugin, redistributed under the Apache License 2.0 with its LICENSE,
+  NOTICE, and THIRD-PARTY files.
+
+Amazon DCV Viewer is a separate prerequisite and is not bundled.
+"@ | Set-Content $releaseNotes -Encoding utf8
+
+Write-Host "Wrote $releaseNotes"
 Write-Host ''
-Write-Host 'NOT DONE: the MSI and the payload are unsigned.' -ForegroundColor Yellow
-Write-Host 'Authenticode-sign both, then re-run this script so the manifest hash matches the signed file.'
+Write-Host 'Release is complete and unsigned by design.' -ForegroundColor Yellow
+Write-Host 'Users will see a SmartScreen warning on first run; the release notes explain it and'
+Write-Host 'the .sha256 file lets them verify the download.'
+Write-Host 'If a certificate is obtained later, sign both artifacts and re-run this script.'

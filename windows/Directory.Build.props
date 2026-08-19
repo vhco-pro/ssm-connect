@@ -8,6 +8,23 @@
     SDK, and the surest way to enforce that is to make those references impossible to compile
     rather than to rely on review. Only the shell and adapter projects raise their target.
   -->
+  <!--
+    Publisher identity, carried by every assembly. The release is unsigned, so this metadata and the
+    published checksums are the only things telling a user where the binary came from: Explorer's
+    Details tab, Task Manager, and the MSI's entry in Installed Apps all read it. SmartScreen will
+    still say "unknown publisher", because only a signature changes that, which is exactly why the
+    rest of the attribution has to be right.
+  -->
+  <PropertyGroup>
+    <Company>VHCo</Company>
+    <Authors>vhco-pro</Authors>
+    <Product>SSM Connect</Product>
+    <Copyright>Copyright 2026 vhco-pro. Licensed under the Apache License 2.0.</Copyright>
+    <PackageProjectUrl>https://github.com/vhco-pro/ssm-connect</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/vhco-pro/ssm-connect</RepositoryUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>

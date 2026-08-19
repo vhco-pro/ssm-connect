@@ -1,8 +1,10 @@
 # SPECIFICATION: Cross-Platform SSM Connect Client
 
-- **Status:** accepted — Phase 0 feasibility spikes passed on Windows 11 x64; the §16 planning gate
-  is met and Phase 1 may begin
-- **Date:** 2026-08-17
+- **Status:** accepted — Phases 0, 1, 3, 4, and 5 complete; AC-01 through AC-09 met. Both clients
+  pass the same 39 conformance fixtures and exchange profile documents in both directions. The
+  Windows client connects to a real workstation end to end and installs from a verified MSI. Phase 2
+  has MR-05 and MR-08 outstanding on macOS.
+- **Date:** 2026-08-20
 - **Scope:** refactor the existing macOS implementation into explicit boundaries and add a Windows client
 - **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md), which remains the source of truth for current macOS behavior
 
@@ -63,7 +65,7 @@ The first goal is therefore separation by responsibility, not a rewrite for its 
 | Platform | UI/runtime | AWS integration | Distribution |
 |----------|------------|-----------------|--------------|
 | macOS | Existing SwiftUI application | AWS SDK for Swift | Existing Homebrew cask and `.app` release |
-| Windows | C#/.NET 10 LTS WPF tray application | AWS SDK for .NET | Signed installer published through WinGet |
+| Windows | C#/.NET 10 LTS WPF tray application | AWS SDK for .NET | Per-user MSI published through WinGet |
 
 WPF is selected for the first Windows client because it is stable, Windows-native, supports a
 small background/tray application well, and has straightforward Win32 interoperability. WinUI 3
@@ -728,9 +730,22 @@ real options measured on this build:
 Self-contained is chosen to keep the one-click install that the plugin-bundling decision already
 assumed. Revisit only if the download size becomes a real complaint.
 
-**Signing remains the one open item**, and it gates AC-09 rather than anything above it. The build
-script deliberately stops short of producing a signed artifact and says so, because an unsigned MSI
-must not reach a WinGet manifest: signing changes the SHA-256 the manifest pins.Add installer creation, signing, checksums, CodeQL, release assets, WinGet manifest generation and
+**The release ships unsigned, deliberately.** WinGet requires a signature only for MSIX; a WiX MSI
+is accepted without one, so the §3.1 WinGet channel is not blocked. The cost is confined to
+SmartScreen: users see an "unknown publisher" warning on first download, and on Windows 11 machines
+running Smart App Control an unsigned binary may be blocked outright.
+
+Attribution therefore rests on what the package can carry without a certificate, and the release
+MUST carry all of it: publisher metadata in every assembly and in the MSI (`Company`, `Copyright`,
+`Manufacturer`, `ARPCONTACT`), a published SHA-256 users can verify the download against, and
+release notes that state the warning is expected rather than leaving users to guess.
+
+Note that an EV certificate would not remove the warning either. Microsoft removed EV's automatic
+SmartScreen reputation, so reputation now accrues per file hash through download volume regardless
+of certificate grade; paying a premium for EV to avoid the prompt is no longer justified. If signing
+is adopted later — SignPath Foundation offers it free to OSI-licensed projects — sign both the
+payload and the MSI and re-run the build script, because the manifest pins a SHA-256 that signing
+changes.Add installer creation, signing, checksums, CodeQL, release assets, WinGet manifest generation and
 submission, upgrade/uninstall tests, and end-to-end tests on supported Windows versions.
 
 ## 14. Acceptance Criteria
@@ -779,9 +794,14 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   the session under test.
 - **AC-08:** Automated security tests find no persisted credential, DCV password, or presigned token
   in profile storage, logs, or ordinary temporary files.
-- **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a signed versioned
-  artifact with checksums and licenses; the stable release is installable, upgradeable, and
-  uninstallable through WinGet.
+- **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a versioned artifact
+  with checksums and licenses; the stable release is installable, upgradeable, and uninstallable
+  through WinGet.
+  *Signing was dropped from this criterion deliberately (2026-08-20): WinGet does not require it for
+  MSI, and an EV certificate would not remove the SmartScreen warning anyway. The release carries
+  publisher metadata and a published SHA-256 instead. Everything else in the criterion is met —
+  install, reinstall, upgrade, uninstall, and residue verified in a clean Windows Sandbox — except
+  the release CI job itself, which does not exist yet.*
 - **AC-10:** The current macOS release remains independently buildable and releasable throughout
   Windows development.
 

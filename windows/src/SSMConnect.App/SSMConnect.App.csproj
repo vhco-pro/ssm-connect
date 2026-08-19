@@ -8,6 +8,11 @@
     <AssemblyName>SSMConnect</AssemblyName>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyTitle>SSM Connect</AssemblyTitle>
+    <Description>Connect to EC2 workstations through AWS Systems Manager. From vhco-pro.</Description>
+    <Version>0.1.0</Version>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

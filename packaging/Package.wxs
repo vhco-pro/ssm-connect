@@ -17,10 +17,20 @@
     Scope="perUser"
     Compressed="yes">
 
-    <SummaryInformation Description="Connect to EC2 workstations through AWS Systems Manager." />
+    <SummaryInformation
+      Description="Connect to EC2 workstations through AWS Systems Manager. From vhco-pro."
+      Manufacturer="VHCo" />
 
+    <!--
+      Schedule matters more than it looks. The default removes the previous product late, after the
+      new files are laid down, and because components use derived GUIDs the removal then deletes the
+      files that were just installed. Reinstalling 0.1.0 over 0.1.0 left the directory with the
+      licence and the plugin but no executable, and still reported success. Removing the old product
+      immediately after InstallInitialize avoids that entirely.
+    -->
     <MajorUpgrade
       AllowSameVersionUpgrades="yes"
+      Schedule="afterInstallInitialize"
       DowngradeErrorMessage="A newer version of SSM Connect is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
@@ -46,6 +56,8 @@
     </Property>
 
     <Property Id="ARPHELPLINK" Value="https://github.com/vhco-pro/ssm-connect" />
+    <Property Id="ARPCONTACT" Value="vhco-pro" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/vhco-pro/ssm-connect/releases" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/vhco-pro/ssm-connect" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
