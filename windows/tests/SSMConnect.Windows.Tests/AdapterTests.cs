@@ -202,10 +202,39 @@ public sealed class WorkstationAgentClientTests
         Assert.True(error.Responded);
     }
 
+    /// <summary>
+    /// The agent's wire contract, pinned. It reads a form field named authenticationToken; a JSON
+    /// body or a different field name is answered with 401, because the agent simply never finds
+    /// the token. That is not a hypothetical — it is what this client did against the real agent
+    /// until the shape was corrected to match the macOS client and the Phase 0 spike.
+    /// </summary>
+    [Fact]
+    public async Task PostsTheTokenAsAFormFieldTheAgentReads()
+    {
+        using var listener = new StubAgent(
+            HttpStatusCode.OK, "{\"user\":\"example.user\",\"sessionId\":\"example.user-session\"}");
+        using var client = new WorkstationAgentClient();
+
+        await client.EnsureSessionAsync(
+            listener.Port, "synthetic token/with+reserved=chars", TestContext.Current.CancellationToken);
+
+        Assert.Equal("application/x-www-form-urlencoded", listener.ReceivedContentType);
+        Assert.StartsWith($"{WorkstationAgentClient.TokenField}=", listener.ReceivedBody, StringComparison.Ordinal);
+
+        // The token is a presigned URL full of reserved characters; unencoded it would be truncated
+        // at the first ampersand and rejected.
+        Assert.DoesNotContain(" ", listener.ReceivedBody, StringComparison.Ordinal);
+        Assert.Contains("%2F", listener.ReceivedBody, StringComparison.Ordinal);
+    }
+
     /// <summary>A loopback HTTP listener standing in for the on-box agent.</summary>
     private sealed class StubAgent : IDisposable
     {
         private readonly HttpListener _listener = new();
+
+        internal string? ReceivedBody { get; private set; }
+
+        internal string? ReceivedContentType { get; private set; }
 
         internal StubAgent(HttpStatusCode status, string body)
         {
@@ -218,6 +247,12 @@ public sealed class WorkstationAgentClientTests
                 try
                 {
                     HttpListenerContext context = await _listener.GetContextAsync().ConfigureAwait(false);
+                    using (var reader = new StreamReader(context.Request.InputStream))
+                    {
+                        ReceivedBody = await reader.ReadToEndAsync().ConfigureAwait(false);
+                    }
+
+                    ReceivedContentType = context.Request.ContentType?.Split(';')[0];
                     context.Response.StatusCode = (int)status;
                     context.Response.ContentType = "application/json";
                     byte[] payload = System.Text.Encoding.UTF8.GetBytes(body);

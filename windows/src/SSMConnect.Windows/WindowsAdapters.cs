@@ -494,16 +494,25 @@ public sealed class FileInstanceIdStore : IInstanceIdStore
 /// <summary>Calls the on-box workstation agent through its transient tunnel.</summary>
 public sealed class WorkstationAgentClient(HttpClient? httpClient = null) : IAgentClient, IDisposable
 {
+    /// <summary>The form field the agent reads the presigned identity token from.</summary>
+    public const string TokenField = "authenticationToken";
+
     private readonly HttpClient _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
     private readonly bool _ownsClient = httpClient is null;
 
     public async Task<EnsureSessionResult> EnsureSessionAsync(
         int port, string authToken, CancellationToken cancellationToken)
     {
+        // Form-encoded, with the field named authenticationToken. This is the agent's wire contract,
+        // shared with the macOS client and proven by the Phase 0 spike; a JSON body or a different
+        // field name is rejected with 401 because the agent simply never finds the token.
         var request = new HttpRequestMessage(
             HttpMethod.Post, $"http://{DcvConnectionFile.LoopbackHost}:{port}/ensure-session")
         {
-            Content = JsonContent.Create(new EnsureSessionRequest(authToken)),
+            Content = new StringContent(
+                $"{TokenField}={Uri.EscapeDataString(authToken)}",
+                System.Text.Encoding.UTF8,
+                "application/x-www-form-urlencoded"),
         };
 
         HttpResponseMessage response;
@@ -548,8 +557,6 @@ public sealed class WorkstationAgentClient(HttpClient? httpClient = null) : IAge
             _http.Dispose();
         }
     }
-
-    private sealed record EnsureSessionRequest([property: JsonPropertyName("authToken")] string AuthToken);
 
     private sealed record EnsureSessionResponse(
         [property: JsonPropertyName("user")] string User,
