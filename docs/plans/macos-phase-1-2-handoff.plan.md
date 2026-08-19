@@ -8,6 +8,13 @@
 > Outcome in one line: the 28 fixtures passed against Swift **with no fixture changes**, so none of
 > the four "likely wrong" areas below were in fact wrong.
 
+
+> **Verification commands changed (2026-08-19).** `dotnet test windows/SSMConnect.slnx` is
+> Windows-only now: the tray shell, adapters, and harness target `net10.0-windows`. Off Windows use
+> `dotnet test windows/SSMConnect.Portable.slnf`, which runs the Domain and Workflow projects and
+> their tests — 142 tests including all 39 conformance fixtures. A CI job builds that subset on
+> Linux so it cannot silently become Windows-only again.
+
 - **Date:** 2026-08-18
 - **Branch:** `chore/windows-phase-0-spikes` (three commits: `c372fcb`, `0ae0277`, `cd1f322`)
 - **Written by:** an agent working on Windows, which cannot build or run any Swift in this repository

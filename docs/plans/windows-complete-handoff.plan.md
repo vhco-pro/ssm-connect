@@ -5,6 +5,13 @@
 - **Written by:** an agent on Windows 11 24H2 x64
 - **For:** whoever picks up the macOS side
 
+
+> **Verification commands changed (2026-08-19).** `dotnet test windows/SSMConnect.slnx` is
+> Windows-only now: the tray shell, adapters, and harness target `net10.0-windows`. Off Windows use
+> `dotnet test windows/SSMConnect.Portable.slnf`, which runs the Domain and Workflow projects and
+> their tests — 142 tests including all 39 conformance fixtures. A CI job builds that subset on
+> Linux so it cannot silently become Windows-only again.
+
 Every Windows phase is complete. This is the closing summary, and the list of what now needs a Mac
 or a purchase rather than a Windows host.
 
@@ -13,7 +20,7 @@ or a purchase rather than a Windows host.
 | Phase | State |
 |---|---|
 | 0 — Feasibility spikes | Complete |
-| 1 — Contracts and fixtures | Complete. 39 fixtures pass against .NET; 28 of them also pass against Swift |
+| 1 — Contracts and fixtures | Complete. All 39 fixtures pass against both clients |
 | 2 — Swift target separation | **Partly done. macOS work.** Target split done; MR-05, MR-07, MR-08 remain |
 | 3 — Windows domain and workflow | Complete |
 | 4 — Windows adapters and tray shell | Complete |
@@ -23,8 +30,9 @@ or a purchase rather than a Windows host.
 
 ```bash
 python3 contracts/validate.py --profiles windows/tests/SSMConnect.Domain.Tests/bin/Release/net10.0/artifacts/exported-profiles
-dotnet test windows/SSMConnect.slnx
-swift test --package-path SSMConnectKit   # needs macOS
+dotnet test windows/SSMConnect.slnx            # Windows only
+dotnet test windows/SSMConnect.Portable.slnf   # anywhere: 142 tests, all 39 fixtures
+swift test --package-path SSMConnectKit        # needs macOS
 ```
 
 ## What the macOS side needs to do

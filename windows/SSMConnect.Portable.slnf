@@ -1,0 +1,11 @@
+{
+  "solution": {
+    "path": "SSMConnect.slnx",
+    "projects": [
+      "src\\SSMConnect.Domain\\SSMConnect.Domain.csproj",
+      "src\\SSMConnect.Workflow\\SSMConnect.Workflow.csproj",
+      "tests\\SSMConnect.Domain.Tests\\SSMConnect.Domain.Tests.csproj",
+      "tests\\SSMConnect.Workflow.Tests\\SSMConnect.Workflow.Tests.csproj"
+    ]
+  }
+}

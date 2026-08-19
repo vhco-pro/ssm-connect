@@ -6,6 +6,13 @@
   [`windows-phase-4-5-handoff.plan.md`](./windows-phase-4-5-handoff.plan.md)
 - **For:** an agent on macOS with the Swift toolchain
 
+
+> **Verification commands changed (2026-08-19).** `dotnet test windows/SSMConnect.slnx` is
+> Windows-only now: the tray shell, adapters, and harness target `net10.0-windows`. Off Windows use
+> `dotnet test windows/SSMConnect.Portable.slnf`, which runs the Domain and Workflow projects and
+> their tests — 142 tests including all 39 conformance fixtures. A CI job builds that subset on
+> Linux so it cannot silently become Windows-only again.
+
 ## The one thing that needs you
 
 **Ten new fixtures are in `contracts/fixtures/workflows/`. They pass against .NET and have never run

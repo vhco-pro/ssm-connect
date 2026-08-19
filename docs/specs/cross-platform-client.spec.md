@@ -734,8 +734,16 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   *Both clients now export and import the document, and macOS has committed real exporter output to
   `contracts/fixtures/exchange/` for the other side to consume (2026-08-19).
   `ExportedProfileExchangeTests` pins those files to what the exporter actually emits, so they
-  cannot quietly decay into hand-maintained fixtures, and CI schema-checks them. The criterion
-  closes when a .NET test imports them — the one step neither client can take on its own behalf.*
+  cannot quietly decay into hand-maintained fixtures, and CI schema-checks them.*
+
+  ***Met, both directions (2026-08-19).** `ExchangeImportTests` imports the macOS documents on
+  .NET and asserts the resulting profiles, and `ExchangeExportTests` commits this client's own
+  exporter output to the same directory under the same anti-rot rule, so the mirror test can be
+  added on Swift. The load-bearing case is a document where an optional key is **absent rather than
+  null**: the macOS multi-user export omits `secretId` entirely, and this client's legacy export
+  omits `connectMode` and `agentRemotePort`. Confirmed by mutation — making the importer require
+  `secretId` to be present fails only on the crossed documents and on nothing else, which is
+  precisely the class of defect that a client testing its own output cannot find.*
 - **AC-04:** Swift and .NET pass the same required conformance fixtures and emit the same ordered
   states and terminal error categories.
   *Met (2026-08-19). All 39 fixtures pass against both clients. Verified by mutation rather than by

@@ -5,6 +5,13 @@
 - **Written by:** an agent on a macOS host, which cannot build, run, or package anything for Windows
 - **For:** an agent on a real Windows 11 24H2 x64 host with the .NET 10 SDK, WiX, and Windows Sandbox
 
+
+> **Verification commands changed (2026-08-19).** `dotnet test windows/SSMConnect.slnx` is
+> Windows-only now: the tray shell, adapters, and harness target `net10.0-windows`. Off Windows use
+> `dotnet test windows/SSMConnect.Portable.slnf`, which runs the Domain and Workflow projects and
+> their tests — 142 tests including all 39 conformance fixtures. A CI job builds that subset on
+> Linux so it cannot silently become Windows-only again.
+
 This is the reply to [`macos-phase-1-2-handoff.plan.md`](./macos-phase-1-2-handoff.plan.md). Read
 it alongside [`cross-platform-client.spec.md`](../specs/cross-platform-client.spec.md), which is
 the source of truth. Where this document and the specification disagree, the specification wins.

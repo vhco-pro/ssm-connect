@@ -1,0 +1,17 @@
+{
+  "accountId": "000000000000",
+  "agentRemotePort": 8444,
+  "connectAction": "dcvViewer",
+  "connectMode": "multiUser",
+  "id": "77777777-7777-4777-8777-777777777777",
+  "instanceTagKey": "Name",
+  "instanceTagValue": "example-workstation-mu",
+  "localPort": 8443,
+  "name": "Exported From Windows (Multi-User)",
+  "remotePort": 8443,
+  "resourceRegion": "eu-central-1",
+  "roleName": "ExampleWorkstationRole",
+  "schemaVersion": 1,
+  "ssoRegion": "eu-west-1",
+  "ssoStartUrl": "https://d-0000000000.awsapps.com/start"
+}

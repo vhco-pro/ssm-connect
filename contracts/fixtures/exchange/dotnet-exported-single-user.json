@@ -1,0 +1,17 @@
+{
+  "accountId": "000000000000",
+  "connectAction": "dcvViewer",
+  "connectMode": "singleUser",
+  "id": "66666666-6666-4666-8666-666666666666",
+  "instanceTagKey": "Name",
+  "instanceTagValue": "example-workstation-su",
+  "localPort": 8443,
+  "name": "Exported From Windows",
+  "remotePort": 8443,
+  "resourceRegion": "eu-central-1",
+  "roleName": "ExampleWorkstationRole",
+  "schemaVersion": 1,
+  "secretId": "example/dcv/password",
+  "ssoRegion": "eu-west-1",
+  "ssoStartUrl": "https://d-0000000000.awsapps.com/start"
+}
