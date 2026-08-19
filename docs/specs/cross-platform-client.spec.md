@@ -681,10 +681,23 @@ tray and settings UI after one end-to-end connection succeeds from a development
 WPF tray shell.
 
 The harness reached `connected` against a real workstation before any UI was written, which is what
-this phase required. Multi-user auto-login could not be demonstrated because the workstation agent
-was not listening on its port — diagnosed as infrastructure with `dev-harness agent-check`, and the
-client behaved correctly throughout: it warned, kept the tunnel up, and did not fall back to a
-shared user, as MU-00a requires.
+this phase required, and **multi-user auto-login is now demonstrated end to end**: identity resolved,
+the agent provisioned the caller's own virtual session, a fresh token was minted, and the viewer
+launched. Confirmed on the workstation itself as
+`Session: 'dl6544-a' (owner:dl6544-a type:virtual)`.
+
+Getting there found two defects that only a live run against real infrastructure could surface, both
+now fixed and pinned by tests:
+
+- **The readiness gate proved nothing.** It used a bare TCP connect, and an SSM port-forward accepts
+  the local connection before it reaches the remote port, so it reported ready against an instance
+  whose DCV server was stopped. It now completes a TLS handshake and reads a response.
+- **The agent token was sent in the wrong shape.** The client posted JSON `authToken`; the agent
+  reads a form-encoded `authenticationToken`, so every call returned 401. Both the macOS client and
+  the Phase 0 spike had it right, and both were in the repository the whole time.
+
+Before that, when the agent was genuinely absent, the client behaved correctly throughout: it
+warned, kept the tunnel up, and did not fall back to a shared user, as MU-00a requires.
 
 The tray is built on `Shell_NotifyIcon` rather than Windows Forms' `NotifyIcon`, because referencing
 Windows Forms makes the application ineligible for trimming and cost 41 MB of payload for a control
