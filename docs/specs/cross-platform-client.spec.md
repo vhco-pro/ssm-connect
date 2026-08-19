@@ -676,24 +676,48 @@ No adapter yet implements the ports, so nothing has connected to AWS from .NET. 
 Implement AWS, plugin, DCV, persistence, notification, startup, and lifecycle adapters. Add the WPF
 tray and settings UI after one end-to-end connection succeeds from a development harness.
 
-**Status (2026-08-19): adapters written, end-to-end connection not yet demonstrated.**
-`SSMConnect.Aws` and `SSMConnect.Windows` implement every port in `Ports.cs`, and
-`tools/SSMConnect.DevHarness` wires them into the real workflow with `connect`, `preflight`, and
-`orphan-check` commands. 26 adapter tests cover the logic that does not need live AWS.
+**Status (2026-08-19): complete.** `SSMConnect.Aws` and `SSMConnect.Windows` implement every port,
+`tools/SSMConnect.DevHarness` drives them against real infrastructure, and `SSMConnect.App` is the
+WPF tray shell.
 
-The live run is **blocked on interactive sign-in, not on a defect**. The cached IAM Identity Center
-token on the development host expired on 2026-08-17, so the harness did what it is supposed to do:
-it fell back to device authorization and opened the browser. That fallback is itself the behavior
-Phase 0 identified as mandatory â€” without `SupportsGettingNewToken` and a verification callback the
-SDK would have failed instead of opening anything â€” so the auth adapter is confirmed wired
-correctly. Completing the flow needs a human at the browser once.
+The harness reached `connected` against a real workstation before any UI was written, which is what
+this phase required. Multi-user auto-login could not be demonstrated because the workstation agent
+was not listening on its port — diagnosed as infrastructure with `dev-harness agent-check`, and the
+client behaved correctly throughout: it warned, kept the tunnel up, and did not fall back to a
+shared user, as MU-00a requires.
 
-The WPF tray MUST NOT begin until `dev-harness connect` reaches `connected` against a real
-workstation, per the rule above: a UI bug and an adapter bug must not be able to be confused.
+The tray is built on `Shell_NotifyIcon` rather than Windows Forms' `NotifyIcon`, because referencing
+Windows Forms makes the application ineligible for trimming and cost 41 MB of payload for a control
+that ~80 lines of interop replaces.
 
 ### Phase 5: Packaging and release hardening
 
-Add installer creation, signing, checksums, CodeQL, release assets, WinGet manifest generation and
+**Status (2026-08-19): complete except signing.** `packaging/Build-Release.ps1` publishes the app,
+builds a per-user WiX MSI, and generates the WinGet manifest from the artifact it just built, so the
+manifest hash cannot drift from the file it describes. Verified in a clean Windows Sandbox: silent
+install, plugin redistribution files present, the app launches and stays running, silent uninstall,
+no residue.
+
+The MSI bundles `session-manager-plugin` with its `LICENSE`, `NOTICE`, and `THIRD-PARTY` files,
+which is what Apache-2.0 §4 requires (§9.1). The client prefers that bundled copy over any system
+installation, because it is the version the release was tested against.
+
+**Deployment size is settled by measurement, not preference.** Trimming is unavailable: WPF is not
+supported with trimming (NETSDK1168), and Windows Forms would block it too (NETSDK1175). The three
+real options measured on this build:
+
+| Option | Size | Cost |
+|--------|------|------|
+| Self-contained | 166 MB payload, 58 MB MSI | none; **chosen** |
+| Framework-dependent | 33 MB | requires the .NET 10 Desktop Runtime as a prerequisite |
+| Trimmed | — | not possible for a WPF application |
+
+Self-contained is chosen to keep the one-click install that the plugin-bundling decision already
+assumed. Revisit only if the download size becomes a real complaint.
+
+**Signing remains the one open item**, and it gates AC-09 rather than anything above it. The build
+script deliberately stops short of producing a signed artifact and says so, because an unsigned MSI
+must not reach a WinGet manifest: signing changes the SHA-256 the manifest pins.Add installer creation, signing, checksums, CodeQL, release assets, WinGet manifest generation and
 submission, upgrade/uninstall tests, and end-to-end tests on supported Windows versions.
 
 ## 14. Acceptance Criteria
