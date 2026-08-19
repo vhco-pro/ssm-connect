@@ -205,10 +205,22 @@ public sealed class PluginTunnelProvider(string? pluginPath = null) : ITunnelPro
 public sealed class LoopbackReadinessProbe : IReadinessProbe
 {
     /// <summary>
-    /// A successful probe connects to the loopback port, so it also proves the tunnel is listening.
-    /// TLS is not completed: the workstation certificate is self-signed for its private name, and
-    /// establishing that a TLS server is answering is all this needs to decide.
+    /// Polls until the workstation's DCV server actually answers.
     /// </summary>
+    /// <remarks>
+    /// This completes a TLS handshake and reads an HTTP response; a TCP connect is deliberately not
+    /// enough. An SSM port-forward accepts the local connection immediately and only then tries to
+    /// reach the remote port, so a bare connect succeeds against a workstation whose DCV server is
+    /// stopped — which makes the readiness gate report success and the viewer launch into nothing.
+    /// That is not hypothetical: it is what this adapter originally did, and it reported a healthy
+    /// connection to an instance with <c>dcvserver.service</c> dead.
+    /// <para>
+    /// The certificate is not validated, for the same narrowly scoped reason the viewer skips it:
+    /// the workstation's certificate is self-signed for its private name while this endpoint is
+    /// loopback, and the authenticity of the channel comes from the SSM session. Nothing here is
+    /// ever pointed at a user-supplied host.
+    /// </para>
+    /// </remarks>
     public async Task<bool> WaitUntilReadyAsync(
         int port, TimeSpan timeout, TimeSpan interval, CancellationToken cancellationToken)
     {
@@ -216,7 +228,7 @@ public sealed class LoopbackReadinessProbe : IReadinessProbe
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await IsListeningAsync(port, TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false))
+            if (await AnswersAsync(port, cancellationToken).ConfigureAwait(false))
             {
                 return true;
             }
@@ -225,6 +237,39 @@ public sealed class LoopbackReadinessProbe : IReadinessProbe
         }
 
         return false;
+    }
+
+    /// <summary>Whether a TLS server on the loopback port responds to a request.</summary>
+    private static async Task<bool> AnswersAsync(int port, CancellationToken cancellationToken)
+    {
+        using var handler = new SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = static (_, _, _, _) => true,
+            },
+            ConnectTimeout = TimeSpan.FromSeconds(3),
+        };
+
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+
+        try
+        {
+            using HttpResponseMessage response = await client
+                .GetAsync($"https://{DcvConnectionFile.LoopbackHost}:{port}/",
+                    HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Any HTTP status means a server answered. DCV may reject an unauthenticated request,
+            // and a rejection is still proof the server is up, which is all this gates on.
+            return true;
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException
+                                          or System.IO.IOException
+                                          && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     public async Task<bool> IsListeningAsync(int port, TimeSpan timeout, CancellationToken cancellationToken)

@@ -418,3 +418,93 @@ public sealed class PluginTunnelProviderTests
         Assert.Equal(ErrorCategory.Tunnel, ErrorCategories.Classify(error));
     }
 }
+
+public sealed class LoopbackReadinessProbeTests
+{
+    /// <summary>
+    /// The regression this exists for. An SSM port-forward accepts the local TCP connection
+    /// immediately and only then tries to reach the remote port, so a listener that accepts and
+    /// then says nothing is indistinguishable from a healthy tunnel by connect alone. The probe
+    /// originally used a bare connect, reported ready against a workstation whose DCV server was
+    /// dead, and would have launched the viewer into nothing.
+    /// </summary>
+    [Fact]
+    public async Task ASocketThatAcceptsButNeverAnswersIsNotReady()
+    {
+        using var listener = new AcceptOnlyListener();
+        var probe = new LoopbackReadinessProbe();
+
+        // Listening: true. Ready: false. Keeping these apart is the whole point.
+        Assert.True(await probe.IsListeningAsync(
+            listener.Port, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+
+        Assert.False(await probe.WaitUntilReadyAsync(
+            listener.Port, TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(200),
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task NothingListeningIsNeitherListeningNorReady()
+    {
+        int port = AcceptOnlyListener.FindFreePort();
+        var probe = new LoopbackReadinessProbe();
+
+        Assert.False(await probe.IsListeningAsync(
+            port, TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken));
+        Assert.False(await probe.WaitUntilReadyAsync(
+            port, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(200),
+            TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>Accepts connections and deliberately never writes a byte.</summary>
+    private sealed class AcceptOnlyListener : IDisposable
+    {
+        private readonly System.Net.Sockets.TcpListener _listener;
+        private readonly CancellationTokenSource _stopping = new();
+
+        internal AcceptOnlyListener()
+        {
+            _listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+            _ = Task.Run(async () =>
+            {
+                var held = new List<System.Net.Sockets.TcpClient>();
+                try
+                {
+                    while (!_stopping.IsCancellationRequested)
+                    {
+                        held.Add(await _listener.AcceptTcpClientAsync(_stopping.Token));
+                    }
+                }
+                catch (Exception)
+                {
+                    // Shutting down.
+                }
+                finally
+                {
+                    held.ForEach(client => client.Dispose());
+                }
+            });
+        }
+
+        internal int Port { get; }
+
+        internal static int FindFreePort()
+        {
+            using var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            probe.Start();
+            int port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+            return port;
+        }
+
+        public void Dispose()
+        {
+            _stopping.Cancel();
+            _listener.Stop();
+            _stopping.Dispose();
+        }
+    }
+}
