@@ -3,7 +3,8 @@
   "id": "stop-workstation-tears-down-and-stops",
   "title": "Stopping the workstation cancels the connection, tears the tunnel down, and stops the instance",
   "covers": [
-    "Stop-workstation cancellation"
+    "Stop-workstation cancellation",
+    "A graceful teardown closes the session server-side"
   ],
   "profile": {
     "$ref": "../profiles/single-user.json"
@@ -100,6 +101,11 @@
       "disconnected"
     ],
     "calls": [
+      {
+        "port": "SSMProvider",
+        "method": "terminateSession",
+        "times": 1
+      },
       {
         "port": "EC2Provider",
         "method": "stopInstance",

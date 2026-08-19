@@ -37,6 +37,7 @@ public sealed class ConnectionWorkflow
 
     private AwsCredentials? _credentials;
     private ITunnelHandle? _handle;
+    private SsmSession? _session;
     private CancellationTokenSource? _cancellation;
     private ConnectionState _state = ConnectionState.Disconnected;
 
@@ -355,13 +356,24 @@ public sealed class ConnectionWorkflow
                 cancellationToken).ConfigureAwait(false);
             _events.Log("ssm", "SSM agent is online.");
 
-            // 5. Open the tunnel and hard-gate on endpoint readiness. The viewer is never launched
+            // 5. Reap anything a previous run left behind. Local containment kills the plugin but
+            //    tells AWS nothing, so a crashed client leaves its session reported as connected
+            //    until it times out. Measured against real AWS, not assumed.
+            int reaped = await WithReauthAsync(
+                creds => _ssm.ReapOrphanedSessionsAsync(instance.Id, Profile.ResourceRegion, creds, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+            if (reaped > 0)
+            {
+                _events.Log("ssm", $"Terminated {reaped} session(s) left open by a previous run.");
+            }
+
+            // 6. Open the tunnel and hard-gate on endpoint readiness. The viewer is never launched
             //    into an endpoint that has not answered.
             State = ConnectionState.Tunneling;
             ITunnelHandle handle = await EstablishReadyTunnelAsync(instance.Id, cancellationToken)
                 .ConfigureAwait(false);
 
-            // 6. Auto-login. Failures here are non-fatal: the tunnel stays up and the user is warned.
+            // 7. Auto-login. Failures here are non-fatal: the tunnel stays up and the user is warned.
             if (Profile.ResolvedConnectMode == ConnectMode.SingleUser)
             {
                 await FetchSecretAndLaunchAsync(cancellationToken).ConfigureAwait(false);
@@ -371,7 +383,7 @@ public sealed class ConnectionWorkflow
                 await EnsureSessionAndLaunchMultiUserAsync(instance.Id, cancellationToken).ConfigureAwait(false);
             }
 
-            // 7. Connected.
+            // 8. Connected.
             State = ConnectionState.Connected;
             _events.Log("tunnel", $"Connected: 127.0.0.1:{Profile.LocalPort} → {instance.Id}:{Profile.RemotePort}.");
             StartTunnelMonitor(handle);
@@ -403,6 +415,7 @@ public sealed class ConnectionWorkflow
             cancellationToken).ConfigureAwait(false);
 
         _handle = handle;
+        _session = session;
         LocalPort = Profile.LocalPort;
         return handle;
     }
@@ -512,8 +525,8 @@ public sealed class ConnectionWorkflow
             // on the instance, not through the client — so it is always torn down straight after,
             // including on failure, or a rejected call leaks a plugin holding the agent port.
             int agentPort = Profile.ResolvedAgentRemotePort;
-            ITunnelHandle agentHandle = await OpenAgentTunnelAsync(instanceId, agentPort, cancellationToken)
-                .ConfigureAwait(false);
+            (ITunnelHandle agentHandle, SsmSession agentSession) =
+                await OpenAgentTunnelAsync(instanceId, agentPort, cancellationToken).ConfigureAwait(false);
 
             EnsureSessionResult provisioned;
             try
@@ -523,7 +536,10 @@ public sealed class ConnectionWorkflow
             }
             finally
             {
+                // Both ends: killing the plugin leaves the session reported as connected, so the
+                // transient agent tunnel would otherwise leak one session per connection.
                 await agentHandle.TerminateAsync().ConfigureAwait(false);
+                await CloseSessionQuietlyAsync(agentSession).ConfigureAwait(false);
             }
 
             _events.Log("tunnel", $"Agent ensured session '{provisioned.SessionId}' for '{provisioned.User}'.");
@@ -590,17 +606,20 @@ public sealed class ConnectionWorkflow
     /// Opens a transient tunnel to the on-box agent. Never stored as the monitored handle: the
     /// caller owns it and terminates it as soon as the agent call returns.
     /// </summary>
-    private async Task<ITunnelHandle> OpenAgentTunnelAsync(string instanceId, int port, CancellationToken cancellationToken)
+    private async Task<(ITunnelHandle Handle, SsmSession Session)> OpenAgentTunnelAsync(
+        string instanceId, int port, CancellationToken cancellationToken)
     {
         SsmSession session = await WithReauthAsync(
             creds => _ssm.StartSessionAsync(instanceId, Profile.ResourceRegion, creds, port, port, cancellationToken),
             cancellationToken).ConfigureAwait(false);
 
-        return await WithStageTimeoutAsync(
+        ITunnelHandle handle = await WithStageTimeoutAsync(
             "Opening agent tunnel",
             _timeouts.Tunnel,
             token => _tunnel.StartTunnelAsync(session, Profile.ResourceRegion, instanceId, port, port, token),
             cancellationToken).ConfigureAwait(false);
+
+        return (handle, session);
     }
 
     // MARK: Auto-reconnect
@@ -788,14 +807,43 @@ public sealed class ConnectionWorkflow
         }
     }
 
+    /// <summary>Closes a session server-side, best effort. The reap before the next tunnel is the backstop.</summary>
+    private async Task CloseSessionQuietlyAsync(SsmSession? session)
+    {
+        if (session is null || _credentials is not AwsCredentials credentials)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ssm.TerminateSessionAsync(
+                session.SessionId, Profile.ResourceRegion, credentials, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            _events.Log("ssm", $"Could not close the session server-side ({error.Message}); " +
+                               "the next connection will reap it.");
+        }
+    }
+
     private async Task TeardownTunnelAsync()
     {
         ITunnelHandle? handle = _handle;
+        SsmSession? session = _session;
         _handle = null;
+        _session = null;
+
         if (handle is not null)
         {
             await handle.TerminateAsync().ConfigureAwait(false);
         }
+
+        // Killing the plugin tells AWS nothing: a session stays reported as connected until it
+        // times out. Measured, not assumed. Closing it here keeps an ordinary disconnect tidy; the
+        // reap before the next tunnel is what covers a crash, where this never runs.
+        await CloseSessionQuietlyAsync(session).ConfigureAwait(false);
     }
 
     private void ResetToDisconnected()

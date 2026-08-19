@@ -57,6 +57,19 @@ public interface ISsmProvider
     Task WaitForSsmOnlineAsync(string instanceId, string region, AwsCredentials credentials, TimeSpan timeout, TimeSpan interval, CancellationToken cancellationToken);
 
     Task<SsmSession> StartSessionAsync(string instanceId, string region, AwsCredentials credentials, int localPort, int remotePort, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Terminates sessions this caller previously left open against the target, returning how many.
+    /// </summary>
+    /// <remarks>
+    /// Measured against real AWS: a hard-killed client leaves its session reported as Connected.
+    /// Local process containment reaps the plugin but tells AWS nothing, so without this a crash
+    /// leaks a session until it times out. It MUST terminate only sessions this caller owns.
+    /// </remarks>
+    Task<int> ReapOrphanedSessionsAsync(string instanceId, string region, AwsCredentials credentials, CancellationToken cancellationToken);
+
+    /// <summary>Closes a session server-side. Best effort: the reap is the backstop.</summary>
+    Task TerminateSessionAsync(string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken);
 }
 
 /// <summary>Retrieve the single-user DCV password.</summary>

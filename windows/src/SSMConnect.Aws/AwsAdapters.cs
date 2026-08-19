@@ -286,6 +286,46 @@ public sealed class SsmAdapter : ISsmProvider
     }
 
     /// <summary>
+    /// Terminates sessions this caller left open against the target.
+    /// </summary>
+    /// <remarks>
+    /// Only sessions whose owner matches this caller's identity are touched. Filtering on the target
+    /// alone would let one user tear down another user's session on a shared workstation, which on a
+    /// multi-user host is exactly the wrong outcome.
+    /// </remarks>
+    public async Task<int> ReapOrphanedSessionsAsync(
+        string instanceId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
+    {
+        using var sts = new AmazonSecurityTokenServiceClient(
+            AwsClients.Session(credentials), AwsClients.Region(region));
+        GetCallerIdentityResponse identity = await AwsErrors.GuardAsync(() =>
+            sts.GetCallerIdentityAsync(new GetCallerIdentityRequest(), cancellationToken)).ConfigureAwait(false);
+
+        using var client = new AmazonSimpleSystemsManagementClient(
+            AwsClients.Session(credentials), AwsClients.Region(region));
+        DescribeSessionsResponse response = await AwsErrors.GuardAsync(() =>
+            client.DescribeSessionsAsync(new DescribeSessionsRequest
+            {
+                State = SessionState.Active,
+                Filters = [new SessionFilter { Key = SessionFilterKey.Target, Value = instanceId }],
+            }, cancellationToken)).ConfigureAwait(false);
+
+        // The caller ARN is an assumed-role ARN; the session owner is reported in the same shape,
+        // so an ordinal comparison is the right test.
+        int reaped = 0;
+        foreach (Session session in response.Sessions.Where(
+                     candidate => string.Equals(candidate.Owner, identity.Arn, StringComparison.Ordinal)))
+        {
+            await AwsErrors.GuardAsync(() => client.TerminateSessionAsync(
+                new TerminateSessionRequest { SessionId = session.SessionId }, cancellationToken))
+                .ConfigureAwait(false);
+            reaped++;
+        }
+
+        return reaped;
+    }
+
+    /// <summary>
     /// Asks AWS what state a session is in. Used to establish whether an abnormally exited client
     /// leaves its session open, which local process containment cannot answer (AC-07).
     /// </summary>
@@ -318,7 +358,7 @@ public sealed class SsmAdapter : ISsmProvider
     /// Terminates a session server-side. The workflow's local process containment does not do this,
     /// so an abnormal exit can otherwise leave a session open until it times out (AC-07).
     /// </summary>
-    public static async Task TerminateSessionAsync(
+    public async Task TerminateSessionAsync(
         string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken = default)
     {
         using var client = new AmazonSimpleSystemsManagementClient(

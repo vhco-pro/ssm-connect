@@ -37,7 +37,8 @@ internal static class Program
             {
                 "connect" when args.Length >= 2 => await ConnectAsync(args[1], args.Contains("--keep")),
                 "preflight" when args.Length >= 2 => await PreflightAsync(args[1]),
-                "orphan-check" when args.Length >= 2 => await OrphanCheckAsync(args[1]),
+                "orphan-check" when args.Length >= 2 => await OrphanCheckAsync(args[1], args.Contains("--leave")),
+                "agent-check" when args.Length >= 2 => await AgentCheckAsync(args[1]),
                 _ => Fail($"Unknown command '{string.Join(' ', args)}'."),
             };
         }
@@ -143,7 +144,7 @@ internal static class Program
     /// proven, but nothing has shown whether the AWS-side session closes when the client dies.
     /// Opens a real session, kills the owning process tree the way a crash would, then asks AWS.
     /// </summary>
-    private static async Task<int> OrphanCheckAsync(string profilePath)
+    private static async Task<int> OrphanCheckAsync(string profilePath, bool leaveBehind = false)
     {
         ConnectionProfile profile = LoadProfile(profilePath);
         var auth = new SsoAuthProvider(OpenBrowser);
@@ -194,13 +195,103 @@ internal static class Program
             Console.WriteLine(
                 "\nRESULT: the AWS-side session SURVIVES an abnormal client exit. The client must " +
                 "reap its own sessions on next start; local containment is not sufficient (AC-07).");
-            await SsmAdapter.TerminateSessionAsync(session.SessionId, profile.ResourceRegion, credentials);
+            if (leaveBehind)
+            {
+                Console.WriteLine("Leaving the orphan in place (--leave) so a following connect can reap it.");
+                return 0;
+            }
+
+            await new SsmAdapter().TerminateSessionAsync(session.SessionId, profile.ResourceRegion, credentials);
             Console.WriteLine("Cleaned up the session left behind by this test.");
             return 0;
         }
 
         Console.WriteLine("\nRESULT: the AWS-side session closes on its own when the client dies.");
         return 0;
+    }
+
+    /// <summary>
+    /// Isolates the multi-user agent hop. The failure it exists to tell apart: an SSM port forward
+    /// accepts the local connection immediately and only then tries to reach the remote port, so a
+    /// workstation with no agent listening looks identical to a healthy tunnel until the first byte.
+    /// </summary>
+    private static async Task<int> AgentCheckAsync(string profilePath)
+    {
+        ConnectionProfile profile = LoadProfile(profilePath);
+        AwsCredentials credentials = await new SsoAuthProvider(OpenBrowser)
+            .AuthenticateAsync(profile, CancellationToken.None);
+
+        Ec2Instance instance = await new Ec2Adapter().ResolveInstanceAsync(
+            profile.InstanceTagKey, profile.InstanceTagValue, profile.ResourceRegion, credentials,
+            CancellationToken.None);
+        Console.WriteLine($"Workstation {instance.Id} is {instance.State.Wire()}.");
+
+        int agentPort = profile.ResolvedAgentRemotePort;
+        SsmSession session = await new SsmAdapter().StartSessionAsync(
+            instance.Id, profile.ResourceRegion, credentials, agentPort, agentPort, CancellationToken.None);
+        ITunnelHandle handle = await new PluginTunnelProvider().StartTunnelAsync(
+            session, profile.ResourceRegion, instance.Id, agentPort, agentPort, CancellationToken.None);
+
+        try
+        {
+            bool listening = await new LoopbackReadinessProbe().WaitUntilReadyAsync(
+                agentPort, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(1), CancellationToken.None);
+            Console.WriteLine($"Local forward on 127.0.0.1:{agentPort} accepts connections: {listening}");
+
+            // Accepting is not the same as reaching the workstation. Send a byte and see whether the
+            // far end answers or the stream dies.
+            using var probe = new System.Net.Sockets.TcpClient();
+            await probe.ConnectAsync(DcvConnectionFile.LoopbackHost, agentPort);
+            await using System.Net.Sockets.NetworkStream stream = probe.GetStream();
+            byte[] request = System.Text.Encoding.ASCII.GetBytes(
+                $"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1:{agentPort}\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(request);
+
+            var buffer = new byte[512];
+            using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            int read;
+            try
+            {
+                read = await stream.ReadAsync(buffer, readTimeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("Far end accepted but sent nothing within 10s.");
+                read = 0;
+            }
+
+            Console.WriteLine(read == 0
+                ? "RESULT: the forward is up locally but nothing is serving on the workstation's port " +
+                  $"{agentPort}. The agent is not running there; this is infrastructure, not the client."
+                : $"RESULT: the workstation answered with: " +
+                  System.Text.Encoding.ASCII.GetString(buffer, 0, read).Split('\r')[0]);
+
+            // Now the real call, so the exception chain is visible rather than summarised.
+            using var client = new WorkstationAgentClient();
+            try
+            {
+                EnsureSessionResult provisioned = await client.EnsureSessionAsync(
+                    agentPort, new StsIdentityAdapter().PresignedIdentityToken(profile.ResourceRegion, credentials),
+                    CancellationToken.None);
+                Console.WriteLine($"ensure-session succeeded for session '{provisioned.SessionId}'.");
+            }
+            catch (AgentException error)
+            {
+                Console.WriteLine($"ensure-session failed. responded={error.Responded}: {error.Message}");
+                for (Exception? inner = error.InnerException; inner is not null; inner = inner.InnerException)
+                {
+                    Console.WriteLine($"    caused by {inner.GetType().Name}: {inner.Message}");
+                }
+            }
+
+            return 0;
+        }
+        finally
+        {
+            await handle.TerminateAsync();
+            await new SsmAdapter().TerminateSessionAsync(session.SessionId, profile.ResourceRegion, credentials);
+            Console.WriteLine("Agent tunnel and SSM session cleaned up.");
+        }
     }
 
     private static async Task WaitForSettleAsync(ConnectionWorkflow workflow, TimeSpan budget)

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "disconnect-cancels-in-flight-connect",
-  "title": "Disconnecting mid-flow cancels the connect and settles disconnected",
+  "id": "orphaned-session-is-reaped-before-connecting",
+  "title": "Sessions a previous run left open are terminated before a new tunnel is opened",
   "covers": [
-    "Disconnect cancellation",
-    "A graceful teardown closes the session server-side"
+    "Abnormal exit does not leak an AWS-side session",
+    "Local process containment is not sufficient on its own"
   ],
   "profile": {
     "$ref": "../profiles/single-user.json"
@@ -37,10 +37,15 @@
             "result": null
           }
         ],
+        "reapOrphanedSessions": [
+          {
+            "result": 1
+          }
+        ],
         "startSession": [
           {
             "result": {
-              "sessionId": "example-session-0020"
+              "sessionId": "example-session-0060"
             }
           }
         ]
@@ -49,7 +54,7 @@
         "startTunnel": [
           {
             "result": {
-              "processIdentifier": 4260
+              "processIdentifier": 4400
             }
           }
         ]
@@ -80,10 +85,6 @@
   "when": [
     {
       "action": "connect"
-    },
-    {
-      "action": "disconnect",
-      "afterState": "waitingForSSM"
     }
   ],
   "expect": {
@@ -91,21 +92,38 @@
       "authenticating",
       "resolving",
       "waitingForSSM",
-      "disconnected"
+      "tunneling",
+      "connected"
     ],
-    "forbiddenCalls": [
+    "calls": [
       {
-        "port": "DCVLauncher",
-        "method": "launch"
+        "port": "SSMProvider",
+        "method": "waitForSSMOnline",
+        "times": 1
+      },
+      {
+        "port": "SSMProvider",
+        "method": "reapOrphanedSessions",
+        "times": 1,
+        "with": {
+          "instanceId": "i-0aaaaaaaaaaaaaaa1"
+        }
+      },
+      {
+        "port": "SSMProvider",
+        "method": "startSession",
+        "times": 1
+      },
+      {
+        "port": "TunnelProvider",
+        "method": "startTunnel",
+        "times": 1
       }
     ],
     "terminal": {
-      "state": "disconnected",
+      "state": "connected",
       "errorCategory": "none",
-      "instanceId": null,
-      "localPort": null,
-      "tunnelActive": false,
-      "passwordInMemory": false
+      "tunnelActive": true
     }
   }
 }

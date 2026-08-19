@@ -105,6 +105,21 @@ internal sealed class FakeSsmProvider(PortRecorder recorder) : ISsmProvider
             ("instanceId", instanceId), ("region", region), ("localPort", localPort), ("remotePort", remotePort));
         return Task.FromResult(new SsmSession(FakeJson.Property(result, "sessionId", "synthetic-session")));
     }
+
+    public Task<int> ReapOrphanedSessionsAsync(
+        string instanceId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        JsonElement? result = recorder.Invoke("SSMProvider", "reapOrphanedSessions", ("instanceId", instanceId));
+        return Task.FromResult(result is { ValueKind: JsonValueKind.Number } value ? value.GetInt32() : 0);
+    }
+
+    public Task TerminateSessionAsync(
+        string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
+    {
+        recorder.Invoke("SSMProvider", "terminateSession", ("sessionId", sessionId));
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class FakeSecretsProvider(PortRecorder recorder) : ISecretsProvider

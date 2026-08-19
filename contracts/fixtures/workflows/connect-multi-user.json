@@ -6,7 +6,8 @@
     "Multi-user identity resolution",
     "Agent provisioning",
     "Token refresh",
-    "Multi-user DCV launch"
+    "Multi-user DCV launch",
+    "The transient agent tunnel closes its session, not just its process"
   ],
   "profile": {
     "$ref": "../profiles/multi-user.json"
@@ -144,6 +145,11 @@
       {
         "port": "TunnelProvider",
         "method": "terminateTunnel",
+        "times": 1
+      },
+      {
+        "port": "SSMProvider",
+        "method": "terminateSession",
         "times": 1
       },
       {

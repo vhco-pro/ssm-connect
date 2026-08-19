@@ -4,7 +4,8 @@
   "title": "An agent that never answers warns, keeps the tunnel up, and leaks nothing",
   "covers": [
     "Agent provisioning failure",
-    "The transient agent tunnel is always torn down"
+    "The transient agent tunnel is always torn down",
+    "The transient agent tunnel closes its session, not just its process"
   ],
   "profile": {
     "$ref": "../profiles/multi-user.json"
@@ -121,6 +122,11 @@
       {
         "port": "TunnelProvider",
         "method": "terminateTunnel",
+        "times": 1
+      },
+      {
+        "port": "SSMProvider",
+        "method": "terminateSession",
         "times": 1
       }
     ],
