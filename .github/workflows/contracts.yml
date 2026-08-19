@@ -38,5 +38,8 @@ jobs:
       - name: Install the JSON Schema validator
         run: python3 -m pip install --user --disable-pip-version-check jsonschema
 
+      # The exchange documents are committed exporter output, not hand-authored fixtures, so they
+      # get the same schema check the fixtures do. This is the check neither client's own tests can
+      # make: an exporter can satisfy every in-language assertion and still emit a schema violation.
       - name: Validate contracts
-        run: python3 contracts/validate.py
+        run: python3 contracts/validate.py --profiles contracts/fixtures/exchange

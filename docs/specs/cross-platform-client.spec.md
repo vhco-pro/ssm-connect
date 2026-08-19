@@ -682,7 +682,7 @@ WPF tray shell.
 
 The harness reached `connected` against a real workstation before any UI was written, which is what
 this phase required. Multi-user auto-login could not be demonstrated because the workstation agent
-was not listening on its port � diagnosed as infrastructure with `dev-harness agent-check`, and the
+was not listening on its port — diagnosed as infrastructure with `dev-harness agent-check`, and the
 client behaved correctly throughout: it warned, kept the tunnel up, and did not fall back to a
 shared user, as MU-00a requires.
 
@@ -699,7 +699,7 @@ install, plugin redistribution files present, the app launches and stays running
 no residue.
 
 The MSI bundles `session-manager-plugin` with its `LICENSE`, `NOTICE`, and `THIRD-PARTY` files,
-which is what Apache-2.0 �4 requires (�9.1). The client prefers that bundled copy over any system
+which is what Apache-2.0 §4 requires (§9.1). The client prefers that bundled copy over any system
 installation, because it is the version the release was tested against.
 
 **Deployment size is settled by measurement, not preference.** Trimming is unavailable: WPF is not
@@ -710,7 +710,7 @@ real options measured on this build:
 |--------|------|------|
 | Self-contained | 166 MB payload, 58 MB MSI | none; **chosen** |
 | Framework-dependent | 33 MB | requires the .NET 10 Desktop Runtime as a prerequisite |
-| Trimmed | � | not possible for a WPF application |
+| Trimmed | — | not possible for a WPF application |
 
 Self-contained is chosen to keep the one-click install that the plugin-bundling decision already
 assumed. Revisit only if the download size becomes a real complaint.
@@ -731,11 +731,18 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   because platform SDK modules are importable regardless of package dependencies. See Phase 2.*
 - **AC-03:** A versioned profile exported on macOS imports on Windows and produces equivalent
   validated values; the reverse direction also passes.
-  *Half met (2026-08-18): macOS exports and imports the document and round-trips the shared profile
-  fixtures. The criterion stays open until Windows does the same and a document actually crosses
-  between the two clients.*
+  *Both clients now export and import the document, and macOS has committed real exporter output to
+  `contracts/fixtures/exchange/` for the other side to consume (2026-08-19).
+  `ExportedProfileExchangeTests` pins those files to what the exporter actually emits, so they
+  cannot quietly decay into hand-maintained fixtures, and CI schema-checks them. The criterion
+  closes when a .NET test imports them — the one step neither client can take on its own behalf.*
 - **AC-04:** Swift and .NET pass the same required conformance fixtures and emit the same ordered
   states and terminal error categories.
+  *Met (2026-08-19). All 39 fixtures pass against both clients. Verified by mutation rather than by
+  the green bar: six behaviours were broken deliberately on the Swift side — the reap, the agent
+  session close on the success path and again on the failure path, the session close on teardown,
+  the `reconnecting` notification, and the password event — and in every case exactly the covering
+  fixture failed and nothing else did.*
 - **AC-05:** Windows completes a single-user connection from SSO through DCV auto-login without a
   terminal command or inbound security-group rule.
 - **AC-06:** Windows completes a multi-user connection with the resolved identity, agent-created
@@ -744,8 +751,11 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   tunnel; startup safely handles any process or file residue. Local Job Object containment is proven
   and is not sufficient on its own — measurement showed the AWS-side session survives an abnormal
   exit — so the client closes sessions server-side on graceful teardown and reaps its own leftovers
-  before opening a new tunnel. **Met on Windows for disconnect and crash**; logoff and suspend/resume
-  remain unverified, because neither can be automated from inside the session under test.
+  before opening a new tunnel. **Met on Windows and macOS for disconnect and crash** — macOS gained
+  both behaviours on 2026-08-19, and `SSMService.reapOrphanedSessions` matches the session owner
+  against the caller ARN so a shared multi-user workstation is never disrupted. Logoff and
+  suspend/resume remain unverified on both platforms, because neither can be automated from inside
+  the session under test.
 - **AC-08:** Automated security tests find no persisted credential, DCV password, or presigned token
   in profile storage, logs, or ordinary temporary files.
 - **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a signed versioned

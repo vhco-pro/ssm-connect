@@ -84,6 +84,25 @@ struct FixtureEC2Provider: EC2Providing {
 struct FixtureSSMProvider: SSMProviding {
     let recorder: PortRecorder
 
+    func reapOrphanedSessions(
+        instanceId: String, region: String, credentials: AWSCredentials
+    ) async throws -> Int {
+        try Task.checkCancellation()
+        let result = try recorder.invoke("SSMProvider", "reapOrphanedSessions", [
+            "instanceId": .string(instanceId), "region": .string(region),
+        ])
+        // Absent means nothing was left behind, which is the ordinary case.
+        return result?.intValue ?? 0
+    }
+
+    func terminateSession(
+        sessionId: String, region: String, credentials: AWSCredentials
+    ) async throws {
+        try recorder.invoke("SSMProvider", "terminateSession", [
+            "sessionId": .string(sessionId), "region": .string(region),
+        ])
+    }
+
     func waitForSSMOnline(
         instanceId: String, region: String, credentials: AWSCredentials,
         timeout: Duration, interval: Duration
@@ -329,12 +348,23 @@ final class FixtureInstanceIdStore: InstanceIdPersisting, @unchecked Sendable {
 /// a step pinned to `afterState` has to land before the flow makes its next port call, not after.
 @MainActor
 final class FixtureEventSink: ConnectionEventSink {
+    let recorder: PortRecorder
     var onState: ((ConnectionState) -> Void)?
-    private(set) var notifications: [NotificationEvent] = []
-    private(set) var passwords: [String] = []
+
+    init(recorder: PortRecorder) { self.recorder = recorder }
 
     func stateChanged(_ state: ConnectionState) { onState?(state) }
-    func notify(_ event: NotificationEvent) { notifications.append(event) }
-    func passwordAvailable(_ password: String) { passwords.append(password) }
+
+    func notify(_ event: NotificationEvent) {
+        // The wire names are contract: both clients emit the same sequence for the same run, and
+        // `expect.calls` asserts them by name.
+        try? recorder.invoke("EventSink", "notify", ["notification": .string(event.wireName)])
+    }
+
+    func passwordAvailable(_ password: String) {
+        // Deliberately records only that a password was surfaced, never its value.
+        try? recorder.invoke("EventSink", "passwordAvailable", [:])
+    }
+
     func settingsChanged(_ settings: AppSettings) {}
 }

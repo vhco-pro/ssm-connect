@@ -84,6 +84,9 @@ public final class ConnectionStateMachine {
 
     private var credentials: AWSCredentials?
     private var currentHandle: TunnelHandle?
+    /// The SSM session behind `currentHandle`. Held so teardown can close it server-side: killing
+    /// the plugin process tells AWS nothing (AC-07).
+    private var currentSession: SSMSessionResponse?
     private var monitorTask: Task<Void, Never>?
     private var connectTask: Task<Void, Never>?
     /// Monotonic id for the current `connectTask`. A finishing task clears `connectTask` only if
@@ -363,7 +366,22 @@ public final class ConnectionStateMachine {
             try Task.checkCancellation()
             log.log(.ssm, "SSM agent is online.")
 
-            // 5. Open the port-forwarding tunnel (F-09) and hard-gate on endpoint readiness:
+            // 5. Reap anything a previous run left behind. Local containment kills the plugin but
+            //    tells AWS nothing, so a crashed client leaves its session reported as connected
+            //    until it times out. Measured against real AWS on the Windows client, not assumed.
+            let reaped = try await withReauth { [ssm, profile] creds in
+                try await ssm.reapOrphanedSessions(
+                    instanceId: instance.id,
+                    region: profile.resourceRegion,
+                    credentials: creds
+                )
+            }
+            if reaped > 0 {
+                log.log(.ssm, "Terminated \(reaped) session(s) left open by a previous run.")
+            }
+            try Task.checkCancellation()
+
+            // 6. Open the port-forwarding tunnel (F-09) and hard-gate on endpoint readiness:
             //    assert the tunnel is listening + the DCV server answers BEFORE launching the
             //    viewer, re-establishing a bounded number of times on a readiness miss (#9,
             //    RVL-1/2/3/5). On exhaustion this throws a distinct, retryable error — we never
@@ -372,7 +390,7 @@ public final class ConnectionStateMachine {
             let handle = try await establishReadyTunnel(instanceId: instance.id)
             try Task.checkCancellation()
 
-            // 6. Auto-login DCV — vanilla password (single-user) or identity token (multi-user).
+            // 7. Auto-login DCV — vanilla password (single-user) or identity token (multi-user).
             switch profile.resolvedConnectMode {
             case .singleUser:
                 await fetchSecretAndLaunchDCV()
@@ -380,7 +398,7 @@ public final class ConnectionStateMachine {
                 await ensureSessionAndLaunchMultiUser(instanceId: instance.id)
             }
 
-            // 7. Connected
+            // 8. Connected
             state = .connected
             connectedAt = Date()
             log.log(.tunnel, "Connected: 127.0.0.1:\(profile.localPort) → \(instance.id):\(profile.remotePort).")
@@ -419,6 +437,7 @@ public final class ConnectionStateMachine {
             )
         }
         currentHandle = handle
+        currentSession = session
         tunnelPID = handle.processIdentifier
         localPort = profile.localPort
         return handle
@@ -508,17 +527,19 @@ public final class ConnectionStateMachine {
             //    The agent tunnel is only needed for this one-shot call — DCV reaches its verifier
             //    locally on the box, not through the client — so we close it right after.
             let agentPort = profile.resolvedAgentRemotePort
-            let agentHandle = try await openAgentTunnel(instanceId: instanceId, port: agentPort)
+            let (agentHandle, agentSession) = try await openAgentTunnel(instanceId: instanceId, port: agentPort)
             let provisioned: EnsureSessionResult
             do {
                 provisioned = try await ensureSessionWithRetry(port: agentPort, region: region, credentials: creds)
             } catch {
-                // Always tear down the transient agent tunnel — otherwise a failed
-                // ensure-session leaks the session-manager-plugin holding the agent port.
+                // Always tear down the transient agent tunnel — otherwise a failed ensure-session
+                // leaks the session-manager-plugin holding the agent port, and its AWS-side session.
                 await agentHandle.terminate()
+                await closeSessionQuietly(agentSession)
                 throw error
             }
             await agentHandle.terminate()
+            await closeSessionQuietly(agentSession)
             log.log(.tunnel, "Agent ensured session '\(provisioned.sessionId)' for '\(provisioned.user)'.")
 
             // 3. Mint a FRESH token and auto-login with sessionid+authtoken (CL-03). Endpoint
@@ -567,7 +588,7 @@ public final class ConnectionStateMachine {
 
     /// Open a transient SSM tunnel to the on-box agent (`port`→`port`). Not stored as the
     /// monitored handle — the caller terminates it once `/ensure-session` returns.
-    private func openAgentTunnel(instanceId: String, port: Int) async throws -> TunnelHandle {
+    private func openAgentTunnel(instanceId: String, port: Int) async throws -> (TunnelHandle, SSMSessionResponse) {
         let session = try await withReauth { [ssm, profile] creds in
             try await ssm.startSession(
                 instanceId: instanceId,
@@ -579,7 +600,7 @@ public final class ConnectionStateMachine {
         }
         let tunnel = self.tunnel
         let profile = self.profile
-        return try await withStageTimeout("Opening agent tunnel", timeouts.tunnel) {
+        let handle = try await withStageTimeout("Opening agent tunnel", timeouts.tunnel) {
             try await tunnel.startTunnel(
                 session: session,
                 region: profile.resourceRegion,
@@ -588,6 +609,7 @@ public final class ConnectionStateMachine {
                 remotePort: port
             )
         }
+        return (handle, session)
     }
 
     // MARK: - Auto-reconnect (F4)
@@ -676,11 +698,34 @@ public final class ConnectionStateMachine {
     private func teardownTunnel() async {
         monitorTask?.cancel()
         monitorTask = nil
+        let session = currentSession
         if let handle = currentHandle {
             await handle.terminate()
         }
         currentHandle = nil
+        currentSession = nil
         tunnelPID = nil
+
+        // Killing the plugin tells AWS nothing: the session stays reported as connected until it
+        // times out. Closing it here keeps an ordinary disconnect tidy; the reap before the next
+        // tunnel is what covers a crash, where this never runs (AC-07).
+        await closeSessionQuietly(session)
+    }
+
+    /// Close a session server-side, best effort. A failure is logged rather than surfaced: the
+    /// reap before the next tunnel is the backstop, and a teardown that fails here has still torn
+    /// the local tunnel down.
+    private func closeSessionQuietly(_ session: SSMSessionResponse?) async {
+        guard let session, let credentials else { return }
+        do {
+            try await ssm.terminateSession(
+                sessionId: session.sessionId,
+                region: profile.resourceRegion,
+                credentials: credentials
+            )
+        } catch {
+            log.log(.ssm, "Could not close the session server-side (\(describe(error))); the next connection will reap it.")
+        }
     }
 
     private func resetToDisconnected() {

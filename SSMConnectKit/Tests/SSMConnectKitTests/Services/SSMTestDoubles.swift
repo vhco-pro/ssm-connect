@@ -25,6 +25,21 @@ final class MockSSMClient: SSMClienting, @unchecked Sendable {
         return try result.get()
     }
 
+    /// Sessions `describeSessions` reports, and the terminations it then receives (AC-07).
+    var describeSessionsResult: Result<DescribeSessionsOutput, Error> = .success(DescribeSessionsOutput(sessions: []))
+    private(set) var describeSessionsInputs: [DescribeSessionsInput] = []
+    private(set) var terminateSessionInputs: [TerminateSessionInput] = []
+
+    func describeSessions(_ input: DescribeSessionsInput) async throws -> DescribeSessionsOutput {
+        describeSessionsInputs.append(input)
+        return try describeSessionsResult.get()
+    }
+
+    func terminateSession(_ input: TerminateSessionInput) async throws -> TerminateSessionOutput {
+        terminateSessionInputs.append(input)
+        return TerminateSessionOutput(sessionId: input.sessionId)
+    }
+
     func startSession(_ input: StartSessionInput) async throws -> StartSessionOutput {
         startSessionInputs.append(input)
         return try startSessionResult.get()

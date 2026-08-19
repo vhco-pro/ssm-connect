@@ -34,6 +34,30 @@ public final class MockSSMService: SSMProviding, @unchecked Sendable {
         lastRemotePort = remotePort
         return try startSessionResult.get()
     }
+
+    /// How many sessions a reap should claim to have found. Zero is the normal case: nothing was
+    /// left behind by a previous run.
+    public var reapResult: Result<Int, Error> = .success(0)
+
+    private(set) var reapCount = 0
+    private(set) var terminatedSessionIds: [String] = []
+
+    public func reapOrphanedSessions(
+        instanceId: String,
+        region: String,
+        credentials: AWSCredentials
+    ) async throws -> Int {
+        reapCount += 1
+        return try reapResult.get()
+    }
+
+    public func terminateSession(
+        sessionId: String,
+        region: String,
+        credentials: AWSCredentials
+    ) async throws {
+        terminatedSessionIds.append(sessionId)
+    }
 }
 
 /// In-memory `TunnelProvider` / `TunnelHandle` test doubles (D8).

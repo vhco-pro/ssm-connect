@@ -24,6 +24,29 @@ public protocol SSMProviding: Sendable {
         localPort: Int,
         remotePort: Int
     ) async throws -> SSMSessionResponse
+
+    /// Terminate sessions this caller previously left open against `instanceId`, returning how many.
+    ///
+    /// Measured against real AWS on the Windows client (AC-07): a hard-killed client leaves its
+    /// session reported as `Connected`. Killing the local plugin — `PluginProcessTerminator`'s
+    /// signal sequence here, a Job Object there — reaps the process and tells AWS nothing, so
+    /// without this a crash leaks a session until it times out.
+    ///
+    /// It MUST terminate only sessions this caller owns. `DescribeSessions` filtered by target
+    /// returns every session against that instance from anyone in the account, and a multi-user
+    /// workstation is shared, so an unfiltered reap would tear down other people's connections.
+    func reapOrphanedSessions(
+        instanceId: String,
+        region: String,
+        credentials: AWSCredentials
+    ) async throws -> Int
+
+    /// Close a session server-side. Best effort: the reap before the next tunnel is the backstop.
+    func terminateSession(
+        sessionId: String,
+        region: String,
+        credentials: AWSCredentials
+    ) async throws
 }
 
 /// Errors surfaced by `SSMService` (spec §8 edge cases).

@@ -9,6 +9,8 @@ import SSMConnectWorkflow
 public protocol SSMClienting: Sendable {
     func describeInstanceInformation(_ input: DescribeInstanceInformationInput) async throws -> DescribeInstanceInformationOutput
     func startSession(_ input: StartSessionInput) async throws -> StartSessionOutput
+    func describeSessions(_ input: DescribeSessionsInput) async throws -> DescribeSessionsOutput
+    func terminateSession(_ input: TerminateSessionInput) async throws -> TerminateSessionOutput
 }
 
 extension SSMClient: SSMClienting {
@@ -17,6 +19,12 @@ extension SSMClient: SSMClienting {
     }
     public func startSession(_ input: StartSessionInput) async throws -> StartSessionOutput {
         try await startSession(input: input)
+    }
+    public func describeSessions(_ input: DescribeSessionsInput) async throws -> DescribeSessionsOutput {
+        try await describeSessions(input: input)
+    }
+    public func terminateSession(_ input: TerminateSessionInput) async throws -> TerminateSessionOutput {
+        try await terminateSession(input: input)
     }
 }
 

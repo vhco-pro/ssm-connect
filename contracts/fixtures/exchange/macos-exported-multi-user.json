@@ -1,0 +1,17 @@
+{
+  "accountId" : "000000000000",
+  "agentRemotePort" : 8444,
+  "connectAction" : "dcvViewer",
+  "connectMode" : "multiUser",
+  "id" : "55555555-5555-4555-8555-555555555555",
+  "instanceTagKey" : "Name",
+  "instanceTagValue" : "example-workstation-mu",
+  "localPort" : 8443,
+  "name" : "Exported From macOS (Multi-User)",
+  "remotePort" : 8443,
+  "resourceRegion" : "eu-central-1",
+  "roleName" : "ExampleWorkstationRole",
+  "schemaVersion" : 1,
+  "ssoRegion" : "eu-west-1",
+  "ssoStartUrl" : "https://d-0000000000.awsapps.com/start"
+}

@@ -61,7 +61,7 @@ final class FixtureRunner {
         let profile = try Self.loadProfile(fixture)
         let recorder = PortRecorder(given: fixture.given)
         let tunnels = FixtureTunnelProvider(recorder: recorder)
-        let sink = FixtureEventSink()
+        let sink = FixtureEventSink(recorder: recorder)
         self.recorder = recorder
         self.tunnels = tunnels
         self.sink = sink
@@ -88,6 +88,9 @@ final class FixtureRunner {
             profile: profile,
             settings: buildSettings(),
             timeouts: buildTimeouts(),
+            // The shipping app wires this interpreter, and the fixtures assert the categories it
+            // produces. The portable default would report every AWS failure as `unknown`.
+            errorInterpreter: AWSErrorInterpreter(),
             maxReconnectAttempts: fixture.harness?.maxReconnectAttempts ?? 3,
             reconnectBackoff: .seconds(fixture.harness?.reconnectBackoffSeconds ?? 5),
             // Every backoff collapses to nothing: fixtures assert ordering, never wall-clock time.
