@@ -286,6 +286,35 @@ public sealed class SsmAdapter : ISsmProvider
     }
 
     /// <summary>
+    /// Asks AWS what state a session is in. Used to establish whether an abnormally exited client
+    /// leaves its session open, which local process containment cannot answer (AC-07).
+    /// </summary>
+    public static async Task<string> DescribeSessionStateAsync(
+        string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken = default)
+    {
+        using var client = new AmazonSimpleSystemsManagementClient(
+            AwsClients.Session(credentials), AwsClients.Region(region));
+
+        foreach (SessionState state in new[] { SessionState.Active, SessionState.History })
+        {
+            DescribeSessionsResponse response = await AwsErrors.GuardAsync(() =>
+                client.DescribeSessionsAsync(new DescribeSessionsRequest
+                {
+                    State = state,
+                    Filters = [new SessionFilter { Key = SessionFilterKey.SessionId, Value = sessionId }],
+                }, cancellationToken)).ConfigureAwait(false);
+
+            Session? found = response.Sessions.FirstOrDefault();
+            if (found is not null)
+            {
+                return found.Status?.Value ?? state.Value;
+            }
+        }
+
+        return "NotFound";
+    }
+
+    /// <summary>
     /// Terminates a session server-side. The workflow's local process containment does not do this,
     /// so an abnormal exit can otherwise leave a session open until it times out (AC-07).
     /// </summary>

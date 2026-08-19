@@ -10,4 +10,7 @@
     <Project Path="tests/SSMConnect.Windows.Tests/SSMConnect.Windows.Tests.csproj" />
     <Project Path="tests/SSMConnect.Workflow.Tests/SSMConnect.Workflow.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/SSMConnect.DevHarness/SSMConnect.DevHarness.csproj" />
+  </Folder>
 </Solution>

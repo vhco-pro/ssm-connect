@@ -666,6 +666,21 @@ No adapter yet implements the ports, so nothing has connected to AWS from .NET. 
 Implement AWS, plugin, DCV, persistence, notification, startup, and lifecycle adapters. Add the WPF
 tray and settings UI after one end-to-end connection succeeds from a development harness.
 
+**Status (2026-08-19): adapters written, end-to-end connection not yet demonstrated.**
+`SSMConnect.Aws` and `SSMConnect.Windows` implement every port in `Ports.cs`, and
+`tools/SSMConnect.DevHarness` wires them into the real workflow with `connect`, `preflight`, and
+`orphan-check` commands. 26 adapter tests cover the logic that does not need live AWS.
+
+The live run is **blocked on interactive sign-in, not on a defect**. The cached IAM Identity Center
+token on the development host expired on 2026-08-17, so the harness did what it is supposed to do:
+it fell back to device authorization and opened the browser. That fallback is itself the behavior
+Phase 0 identified as mandatory — without `SupportsGettingNewToken` and a verification callback the
+SDK would have failed instead of opening anything — so the auth adapter is confirmed wired
+correctly. Completing the flow needs a human at the browser once.
+
+The WPF tray MUST NOT begin until `dev-harness connect` reaches `connected` against a real
+workstation, per the rule above: a UI bug and an adapter bug must not be able to be confused.
+
 ### Phase 5: Packaging and release hardening
 
 Add installer creation, signing, checksums, CodeQL, release assets, WinGet manifest generation and
