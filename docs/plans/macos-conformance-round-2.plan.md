@@ -96,3 +96,62 @@ agreeing with the schema rather than with each other.
 - **Windows baseline review on 2026-10-13** — §11.2.
 - **The WPF tray** — deliberately not started, because the specification requires one end-to-end
   harness connection first, and that connection is blocked on the same interactive sign-in.
+
+---
+
+# Addendum: AC-07 is answered, and it changes the workflow
+
+Added after the first live end-to-end run on Windows, which happened after this document was
+written. **This is a behaviour change both clients need, not just a fixture to run.**
+
+## What the measurement showed
+
+A tunnel was opened against a real workstation and the plugin killed outright, the way a crash
+kills it. Ten seconds later AWS still reported the session as `Connected`.
+
+So the answer to the question your handoff carried forward is: **the AWS-side session survives an
+abnormal client exit.** Local Job Object containment reaps the process and tells AWS nothing. On
+macOS the equivalent is `terminateTunnelForQuit`'s `kill(2)`, which has the same blind spot.
+
+## What Windows now does, and Swift needs to match
+
+Two behaviours, because neither covers the other:
+
+1. **Close the session server-side on any graceful teardown** — the main tunnel on disconnect,
+   reconnect, and stop, and the transient multi-user agent tunnel as soon as `ensure-session`
+   returns.
+2. **Reap before opening a new tunnel** — terminate sessions this caller previously left open
+   against the same target. This is the crash path, where nothing graceful runs.
+
+Two things I got wrong on the way, so you do not repeat them:
+
+- **The agent tunnel leaked one session per connection.** My first fix covered only the main
+  tunnel, and the reap masked it: every run reported "terminated 1 session left open by a previous
+  run" and looked like it was working. Only running two connections back to back and expecting the
+  second to reap *zero* exposed it.
+- **Reaping must match on owner, not just target.** `DescribeSessions` filtered by target returns
+  every session against that instance from anyone in the account. On a shared multi-user
+  workstation, terminating those would tear down other people's sessions. Windows compares the
+  session owner against `GetCallerIdentity`'s ARN.
+
+`ISsmProvider` gained `ReapOrphanedSessionsAsync` and `TerminateSessionAsync`.
+
+## Fixture changes
+
+One new, three amended — on top of the ten in the main document:
+
+| Fixture | Change |
+|---|---|
+| `orphaned-session-is-reaped-before-connecting` | **New.** The reap happens, and before `startSession`. |
+| `connect-multi-user` | Now asserts `terminateSession` once, after `ensureSession` and **before** `launch`. |
+| `agent-unreachable-exhausts-retries` | Same, for the failure path. |
+| `stop-workstation-tears-down-and-stops` | Asserts `terminateSession` before `stopInstance`. |
+
+Note the ordering in `connect-multi-user`: exactly one `terminateSession`, not two. That case
+connects and stops there, so the main tunnel's session is still open when the fixture ends — only
+the agent's has been closed. I asserted two at first and it failed, correctly.
+
+## Still not verified anywhere
+
+Logoff and suspend/resume. Neither can be driven from inside the session under test, on either
+platform. AC-07 now says so explicitly rather than leaving it implied.

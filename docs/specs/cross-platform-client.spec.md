@@ -412,11 +412,21 @@ Phase 0 proved the local half of this: the Job Object reaps contained processes 
 is killed outright, with no managed cleanup path running. That is necessary but not sufficient. Two
 behaviors remain unproven and MUST be validated under AC-07 rather than assumed:
 
-- **AWS-side session teardown.** Killing the client reaps the local plugin process, but nothing has
-  been shown to terminate the SSM session server-side. If sessions linger until timeout, the client
-  MUST reap them on next start — enumerate its own prior sessions and terminate them — rather than
-  relying on process containment. The workflow MUST NOT assume a dead local process means a closed
-  remote session.
+- **AWS-side session teardown. Measured, and sessions survive.** A tunnel was opened against a real
+  workstation and the plugin killed outright; ten seconds later AWS still reported the session as
+  `Connected`. Local containment reaps the process and tells AWS nothing, so the client MUST do
+  both of the following.
+
+  1. **Close its sessions server-side on any graceful teardown** — the main tunnel on disconnect,
+     reconnect, and stop, and the transient multi-user agent tunnel as soon as its call returns.
+     The agent tunnel is easy to overlook and leaked one session per connection until fixed.
+  2. **Reap before opening a new tunnel**, terminating sessions it previously left open against the
+     same target. This is what covers a crash, where no graceful path runs. It MUST match on owner
+     as well as target: filtering on the target alone would let one user tear down another user's
+     session on a shared workstation.
+
+  Verified end to end on Windows: an orphan created deliberately was reaped by the next connection,
+  and two consecutive connections then left nothing behind.
 - **Logoff and suspend/resume.** Neither can be automated from inside the session under test; both
   MUST be exercised manually or in a VM that can drive the power state.
 
@@ -708,8 +718,10 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
   session, and fresh identity token.
 - **AC-07:** Disconnect, app exit, logoff, suspend/resume, and crash do not leave a reusable orphan
   tunnel; startup safely handles any process or file residue. Local Job Object containment is proven
-  and is not sufficient evidence on its own: this criterion MUST also show that the AWS-side SSM
-  session does not survive an abnormal client exit, or that the client reaps it on next start.
+  and is not sufficient on its own — measurement showed the AWS-side session survives an abnormal
+  exit — so the client closes sessions server-side on graceful teardown and reaps its own leftovers
+  before opening a new tunnel. **Met on Windows for disconnect and crash**; logoff and suspend/resume
+  remain unverified, because neither can be automated from inside the session under test.
 - **AC-08:** Automated security tests find no persisted credential, DCV password, or presigned token
   in profile storage, logs, or ordinary temporary files.
 - **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a signed versioned
