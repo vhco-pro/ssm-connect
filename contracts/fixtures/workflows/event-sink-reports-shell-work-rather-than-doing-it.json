@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "id": "event-sink-reports-shell-work-rather-than-doing-it",
+  "title": "The workflow reports the password and lifecycle events instead of acting on them",
+  "covers": [
+    "Shell events are reported, not performed",
+    "Notification vocabulary"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "settings": {
+    "autoReconnect": true
+  },
+  "harness": {
+    "maxReconnectAttempts": 3,
+    "reconnectBackoffSeconds": 0
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0050"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4320
+            }
+          },
+          {
+            "result": {
+              "processIdentifier": 4321
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    },
+    "events": [
+      {
+        "kind": "tunnelDrop",
+        "afterState": "connected",
+        "reason": {
+          "kind": "processExited",
+          "exitCode": 1,
+          "stderr": ""
+        }
+      }
+    ]
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected",
+      "tunneling",
+      "connected"
+    ],
+    "calls": [
+      {
+        "port": "EventSink",
+        "method": "passwordAvailable",
+        "times": 1
+      },
+      {
+        "port": "EventSink",
+        "method": "notify",
+        "with": {
+          "notification": "connected"
+        }
+      },
+      {
+        "port": "EventSink",
+        "method": "notify",
+        "with": {
+          "notification": "reconnecting"
+        }
+      },
+      {
+        "port": "EventSink",
+        "method": "notify",
+        "with": {
+          "notification": "connected"
+        }
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "tunnelActive": true,
+      "passwordInMemory": true
+    }
+  }
+}

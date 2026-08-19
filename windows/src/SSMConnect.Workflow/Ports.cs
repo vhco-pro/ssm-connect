@@ -141,6 +141,22 @@ public enum ConnectionNotification
 }
 
 /// <summary>
+/// Wire names for the notification vocabulary. These are contract: both clients emit the same
+/// sequence for the same run, so conformance fixtures assert them.
+/// </summary>
+public static class NotificationNames
+{
+    public static string Wire(ConnectionNotification notification) => notification switch
+    {
+        ConnectionNotification.Connected => "connected",
+        ConnectionNotification.Reconnecting => "reconnecting",
+        ConnectionNotification.Stopped => "stopped",
+        ConnectionNotification.SignInRequired => "signInRequired",
+        _ => throw new ArgumentOutOfRangeException(nameof(notification), notification, null),
+    };
+}
+
+/// <summary>
 /// Publishes state snapshots, log lines, and notification-worthy events. Clipboard, notifications,
 /// browser launch, and shutdown are shell policy driven by these events, never done here.
 /// </summary>

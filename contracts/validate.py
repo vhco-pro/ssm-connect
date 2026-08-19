@@ -11,11 +11,16 @@ Checks, in order:
 6. Fixture IDs are unique and match their filename.
 7. No fixture contains a value that looks like real credential material.
 
-Run: python contracts/validate.py
+Pass --profiles DIR to additionally validate documents a client actually exported. That is the
+check a client's own unit tests cannot make: an exporter can satisfy every in-language assertion
+and still emit a schema violation, such as an enum written as a number.
+
+Run: python contracts/validate.py [--profiles DIR ...]
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import re
@@ -79,7 +84,17 @@ def scan_for_secrets(path: pathlib.Path, node, trail: str = "$") -> None:
             fail(path, f"{trail} looks like a real AWS account ID")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Validate the portable contracts and their fixtures.")
+    parser.add_argument(
+        "--profiles",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="Directory of exported profile documents to validate against the profile schema.",
+    )
+    options = parser.parse_args(argv)
+
     profile_schema = load(PROFILE_SCHEMA)
     workflow_schema = load(WORKFLOW_SCHEMA)
     if profile_schema is None or workflow_schema is None:
@@ -135,15 +150,43 @@ def main() -> int:
             if not target.is_file():
                 fail(path, f"profile $ref does not resolve: {reference}")
 
+    # Documents a client actually exported. A client's own tests cannot make this check: an
+    # exporter can satisfy every in-language assertion and still emit a schema violation, such as
+    # an enum serialized as a number.
+    exported_count = 0
+    for directory in options.profiles:
+        root = pathlib.Path(directory)
+        if not root.is_dir():
+            failures.append(f"{root}: exported-profile directory does not exist")
+            continue
+
+        exported = sorted(root.glob("*.json"))
+        if not exported:
+            failures.append(f"{root}: exported-profile directory contains no documents")
+            continue
+
+        for path in exported:
+            exported_count += 1
+            document = load(path)
+            if document is None:
+                continue
+            for error in sorted(profile_validator.iter_errors(document), key=str):
+                where = "/".join(str(p) for p in error.absolute_path) or "<root>"
+                failures.append(f"{path}: exported document invalid at {where}: {error.message}")
+            scan_for_secrets(path, document)
+
     if failures:
         print(f"FAIL: {len(failures)} problem(s)\n", file=sys.stderr)
         print("\n".join(f"  - {f}" for f in failures), file=sys.stderr)
         return 1
 
-    print(
+    summary = (
         f"PASS: 2 schemas, {len(PROFILE_FIXTURES)} profile fixtures, "
-        f"{len(WORKFLOW_FIXTURES)} workflow fixtures."
+        f"{len(WORKFLOW_FIXTURES)} workflow fixtures"
     )
+    if options.profiles:
+        summary += f", {exported_count} exported document(s)"
+    print(summary + ".")
     return 0
 
 

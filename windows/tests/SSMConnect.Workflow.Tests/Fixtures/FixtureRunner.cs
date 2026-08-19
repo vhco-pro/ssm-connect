@@ -34,7 +34,7 @@ public sealed class FixtureRunner
         var recorder = new PortRecorder(_fixture.Given);
         _tunnels = new FakeTunnelProvider(recorder);
 
-        var sink = new RecordingSink(this);
+        var sink = new RecordingSink(this, recorder);
         _workflow = new ConnectionWorkflow(
             new FakeAuthProvider(recorder),
             new FakeEc2Provider(recorder),
@@ -217,7 +217,16 @@ public sealed class FixtureRunner
         await _workflow.WaitForQuiescenceAsync().ConfigureAwait(false);
     }
 
-    private sealed class RecordingSink(FixtureRunner owner) : IEventSink
+    /// <summary>
+    /// Records the shell-facing events as ordinary port calls, so a fixture can assert the
+    /// notification sequence the same way it asserts any other collaboration.
+    /// </summary>
+    /// <remarks>
+    /// Logging is deliberately not recorded. Log text is not contract, and the two clients shape
+    /// logging differently — macOS keeps an injected connection log for its log window rather than
+    /// folding it into the sink — so asserting it would freeze a difference that does not matter.
+    /// </remarks>
+    private sealed class RecordingSink(FixtureRunner owner, PortRecorder recorder) : IEventSink
     {
         public void StateChanged(ConnectionState state) => owner.OnStateChanged(state);
 
@@ -225,13 +234,11 @@ public sealed class FixtureRunner
         {
         }
 
-        public void Notify(ConnectionNotification notification)
-        {
-        }
+        public void Notify(ConnectionNotification notification) =>
+            recorder.Invoke("EventSink", "notify", ("notification", NotificationNames.Wire(notification)));
 
-        public void PasswordAvailable(string password)
-        {
-        }
+        public void PasswordAvailable(string password) =>
+            recorder.Invoke("EventSink", "passwordAvailable");
     }
 }
 

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "id": "viewer-not-installed-warns-and-keeps-tunnel",
+  "title": "A missing DCV viewer warns without failing the connection",
+  "covers": [
+    "Viewer absence is non-fatal"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "viewerInstalled": false,
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0041"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4312
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected"
+    ],
+    "calls": [
+      {
+        "port": "SecretsProvider",
+        "method": "fetchSecret",
+        "times": 1
+      }
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "DCVLauncher",
+        "method": "launch"
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "warningPresent": true,
+      "tunnelActive": true,
+      "passwordInMemory": true
+    }
+  }
+}

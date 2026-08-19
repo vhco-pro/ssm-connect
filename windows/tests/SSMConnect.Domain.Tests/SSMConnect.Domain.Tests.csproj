@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>SSMConnect.Domain.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- The portable-profile round-trip runs against the real contract documents. -->
+    <ContractsDirectory>$(MSBuildThisFileDirectory)../../../contracts</ContractsDirectory>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +16,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SSMConnect.Domain\SSMConnect.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(ContractsDirectory)/fixtures/profiles/*.json"
+             Link="contracts/fixtures/profiles/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

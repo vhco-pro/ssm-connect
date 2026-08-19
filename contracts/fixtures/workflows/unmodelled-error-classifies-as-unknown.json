@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "id": "unmodelled-error-classifies-as-unknown",
+  "title": "An unrecognised failure is reported as unknown rather than mislabelled",
+  "covers": [
+    "Terminal unknown failure"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "error": {
+              "kind": "unknown",
+              "message": "something unexpected"
+            }
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0031"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4300
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "error"
+    ],
+    "terminal": {
+      "state": "error",
+      "errorCategory": "unknown",
+      "tunnelActive": false
+    }
+  }
+}

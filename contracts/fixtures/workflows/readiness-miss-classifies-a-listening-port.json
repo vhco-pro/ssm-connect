@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "id": "readiness-miss-classifies-a-listening-port",
+  "title": "A listening port that never answers is classified as a silent DCV server",
+  "covers": [
+    "Readiness failure classification"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "harness": {
+    "establishRetryAttempts": 0
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0050"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4320
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": false
+          }
+        ],
+        "isListening": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "error"
+    ],
+    "calls": [
+      {
+        "port": "ReadinessProbe",
+        "method": "waitUntilReady",
+        "times": 1
+      },
+      {
+        "port": "ReadinessProbe",
+        "method": "isListening",
+        "times": 1
+      }
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "DCVLauncher",
+        "method": "launch"
+      }
+    ],
+    "terminal": {
+      "state": "error",
+      "errorCategory": "readiness",
+      "tunnelActive": false
+    }
+  }
+}

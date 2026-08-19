@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "id": "reauthentication-failure-is-terminal",
+  "title": "When re-authentication itself fails the connection ends in an authentication error",
+  "covers": [
+    "Expired credentials during an AWS stage",
+    "Terminal authentication failure"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          },
+          {
+            "error": {
+              "kind": "signInRequired",
+              "message": "Sign-in is required."
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "error": {
+              "kind": "expiredCredentials"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0030"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4300
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "error"
+    ],
+    "calls": [
+      {
+        "port": "AuthProvider",
+        "method": "authenticate",
+        "times": 2
+      },
+      {
+        "port": "EC2Provider",
+        "method": "resolveInstance",
+        "times": 1
+      }
+    ],
+    "forbiddenCalls": [
+      {
+        "port": "TunnelProvider",
+        "method": "startTunnel"
+      }
+    ],
+    "terminal": {
+      "state": "error",
+      "errorCategory": "authentication",
+      "tunnelActive": false
+    }
+  }
+}

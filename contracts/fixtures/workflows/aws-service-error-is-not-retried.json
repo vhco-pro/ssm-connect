@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "id": "aws-service-error-is-not-retried",
+  "title": "A non-expiry AWS service error fails without re-authenticating",
+  "covers": [
+    "Terminal AWS service failure",
+    "Only expiry triggers re-authentication"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "error": {
+              "kind": "awsServiceError",
+              "message": "AccessDenied"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0030"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4300
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "error"
+    ],
+    "calls": [
+      {
+        "port": "AuthProvider",
+        "method": "authenticate",
+        "times": 1
+      },
+      {
+        "port": "EC2Provider",
+        "method": "resolveInstance",
+        "times": 1
+      }
+    ],
+    "terminal": {
+      "state": "error",
+      "errorCategory": "aws",
+      "tunnelActive": false
+    }
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "id": "reconnect-reruns-the-whole-flow",
+  "title": "An explicit reconnect re-authenticates and re-resolves rather than only re-tunnelling",
+  "covers": [
+    "Explicit reconnect"
+  ],
+  "profile": {
+    "$ref": "../profiles/single-user.json"
+  },
+  "given": {
+    "ports": {
+      "AuthProvider": {
+        "authenticate": [
+          {
+            "result": {
+              "source": "cache",
+              "interactive": false
+            }
+          }
+        ]
+      },
+      "EC2Provider": {
+        "resolveInstance": [
+          {
+            "result": {
+              "id": "i-0aaaaaaaaaaaaaaa1",
+              "state": "running"
+            }
+          }
+        ]
+      },
+      "SSMProvider": {
+        "waitForSSMOnline": [
+          {
+            "result": null
+          }
+        ],
+        "startSession": [
+          {
+            "result": {
+              "sessionId": "example-session-0050"
+            }
+          }
+        ]
+      },
+      "TunnelProvider": {
+        "startTunnel": [
+          {
+            "result": {
+              "processIdentifier": 4320
+            }
+          },
+          {
+            "result": {
+              "processIdentifier": 4321
+            }
+          }
+        ]
+      },
+      "ReadinessProbe": {
+        "waitUntilReady": [
+          {
+            "result": true
+          }
+        ]
+      },
+      "SecretsProvider": {
+        "fetchSecret": [
+          {
+            "result": "synthetic-dcv-password"
+          }
+        ]
+      },
+      "DCVLauncher": {
+        "launch": [
+          {
+            "result": null
+          }
+        ]
+      }
+    }
+  },
+  "when": [
+    {
+      "action": "connect"
+    },
+    {
+      "action": "reconnect",
+      "afterState": "connected"
+    }
+  ],
+  "expect": {
+    "states": [
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected",
+      "authenticating",
+      "resolving",
+      "waitingForSSM",
+      "tunneling",
+      "connected"
+    ],
+    "calls": [
+      {
+        "port": "AuthProvider",
+        "method": "authenticate",
+        "times": 2
+      },
+      {
+        "port": "EC2Provider",
+        "method": "resolveInstance",
+        "times": 2
+      },
+      {
+        "port": "TunnelProvider",
+        "method": "startTunnel",
+        "times": 2
+      }
+    ],
+    "terminal": {
+      "state": "connected",
+      "errorCategory": "none",
+      "tunnelActive": true
+    }
+  }
+}

@@ -50,3 +50,12 @@ jobs:
 
       - name: Test
         run: dotnet test windows/SSMConnect.slnx --no-build --configuration Release
+
+      # The portable-profile tests write the documents they exported. Validating those against the
+      # schema is a check the .NET tests cannot make themselves: an exporter can satisfy every
+      # in-language assertion and still emit a schema violation, such as an enum written as a
+      # number, which is exactly what System.Text.Json does by default.
+      - name: Validate exported profile documents against the schema
+        run: |
+          python -m pip install --disable-pip-version-check jsonschema
+          python contracts/validate.py --profiles windows/tests/SSMConnect.Domain.Tests/bin/Release/net10.0/artifacts/exported-profiles
