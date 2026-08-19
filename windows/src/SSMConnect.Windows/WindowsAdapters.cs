@@ -105,11 +105,35 @@ internal sealed class PluginTunnelHandle : ITunnelHandle
 [SupportedOSPlatform("windows")]
 public sealed class PluginTunnelProvider(string? pluginPath = null) : ITunnelProvider
 {
-    /// <summary>Where the official installer puts the plugin.</summary>
-    public const string DefaultPluginPath =
+    /// <summary>Where the official standalone installer puts the plugin.</summary>
+    public const string SystemPluginPath =
         @"C:\Program Files\Amazon\SessionManagerPlugin\bin\session-manager-plugin.exe";
 
-    private readonly string _pluginPath = pluginPath ?? DefaultPluginPath;
+    /// <summary>The copy shipped inside this application, relative to its own directory.</summary>
+    public const string BundledPluginRelativePath = @"session-manager-plugin\session-manager-plugin.exe";
+
+    private readonly string _pluginPath = pluginPath ?? DiscoverPluginPath();
+
+    /// <summary>Prefers the bundled plugin over any system installation.</summary>
+    /// <remarks>
+    /// The bundled copy is the version this release was tested against, and it is the one the
+    /// redistribution files installed beside it describe. A separately installed plugin may be any
+    /// version, so it is a fallback for a development checkout rather than the intended path.
+    /// </remarks>
+    public static string DiscoverPluginPath()
+    {
+        string? directory = Path.GetDirectoryName(Environment.ProcessPath);
+        if (directory is not null)
+        {
+            string bundled = Path.Combine(directory, BundledPluginRelativePath);
+            if (File.Exists(bundled))
+            {
+                return bundled;
+            }
+        }
+
+        return SystemPluginPath;
+    }
 
     public bool IsPluginAvailable => File.Exists(_pluginPath);
 

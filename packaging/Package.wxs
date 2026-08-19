@@ -1,0 +1,110 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!--
+    Per-user, non-elevated MSI. Phase 0 chose WiX/MSI over MSIX because MSIX restricts the
+    process launches and local-file work this client depends on: it starts session-manager-plugin
+    and dcvviewer.exe and writes short-lived .dcv files.
+
+    The Session Manager plugin is redistributed here under the Apache License 2.0, which permits it
+    and requires that the LICENSE, NOTICE, and attribution travel with the binary. Those three files
+    are installed alongside it deliberately, not incidentally.
+  -->
+  <Package
+    Name="SSM Connect"
+    Manufacturer="VHCo"
+    Version="$(PackageVersion)"
+    UpgradeCode="C3B41D22-9E5F-4C0A-9E7B-6D9E4F1A2B77"
+    Scope="perUser"
+    Compressed="yes">
+
+    <SummaryInformation Description="Connect to EC2 workstations through AWS Systems Manager." />
+
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of SSM Connect is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Windows 11 24H2 is the servicing baseline (specification 11.2). Refusing to install on an
+         older build beats installing and failing at run time with a less obvious message. -->
+    <Launch
+      Condition="Installed OR WINDOWSBUILD &gt;= &quot;26100&quot;"
+      Message="SSM Connect requires Windows 11 version 24H2 (build 26100) or newer." />
+    <!--
+      The build number is read from the registry because MSI's own version properties are
+      unusable here: msiexec is not manifested for Windows 10 or later, so on this Windows 11 host
+      it reports WindowsBuild 9600 and VersionNT 603, the Windows 8.1 values. A VersionNT clause
+      would therefore reject every machine. The literal is quoted deliberately: RegistrySearch returns a
+      string, and MSI evaluates any comparison between a string and an unquoted integer as false,
+      so an unquoted 26100 silently blocks every install. Quoting makes it a lexicographic
+      comparison, which is correct while Windows build numbers stay five digits.
+    -->
+    <Property Id="WINDOWSBUILD" Secure="yes" Value="0">
+      <RegistrySearch Id="WindowsBuildSearch" Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber" Type="raw" />
+    </Property>
+
+    <Property Id="ARPHELPLINK" Value="https://github.com/vhco-pro/ssm-connect" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/vhco-pro/ssm-connect" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SSM Connect">
+          <Directory Id="PLUGINFOLDER" Name="session-manager-plugin" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="SSM Connect" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="ApplicationComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="*">
+        <File Id="SSMConnectExe" Source="$(PayloadDirectory)\SSMConnect.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="ApplicationLicense" Guid="*">
+        <File Id="AppLicense" Source="$(RepositoryRoot)\LICENSE" Name="LICENSE" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Apache-2.0 section 4: a copy of the licence, the NOTICE contents, and the attribution
+         notices travel with the redistributed binary. -->
+    <ComponentGroup Id="PluginComponents" Directory="PLUGINFOLDER">
+      <Component Id="PluginBinary" Guid="*">
+        <File Id="PluginExe" Source="$(PluginDirectory)\bin\session-manager-plugin.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="PluginLicense" Guid="*">
+        <File Id="PluginLicenseFile" Source="$(PluginDirectory)\LICENSE" Name="LICENSE" KeyPath="yes" />
+      </Component>
+      <Component Id="PluginNotice" Guid="*">
+        <File Id="PluginNoticeFile" Source="$(PluginDirectory)\NOTICE" Name="NOTICE" KeyPath="yes" />
+      </Component>
+      <Component Id="PluginThirdParty" Guid="*">
+        <File Id="PluginThirdPartyFile" Source="$(PluginDirectory)\THIRD-PARTY" Name="THIRD-PARTY" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ShortcutComponents" Directory="ShortcutFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="AppShortcut"
+                  Name="SSM Connect"
+                  Description="Connect to EC2 workstations through AWS Systems Manager."
+                  Target="[INSTALLFOLDER]SSMConnect.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveShortcutFolder" On="uninstall" />
+        <!-- A per-user component needs a per-user key path, and HKCU is the only one available. -->
+        <RegistryValue Root="HKCU" Key="Software\VHCo\SSM Connect"
+                       Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Complete" Title="SSM Connect" Level="1">
+      <ComponentGroupRef Id="ApplicationComponents" />
+      <ComponentGroupRef Id="PluginComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+    </Feature>
+  </Package>
+</Wix>

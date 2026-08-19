@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SSMConnect.App/SSMConnect.App.csproj" />
     <Project Path="src/SSMConnect.Aws/SSMConnect.Aws.csproj" />
     <Project Path="src/SSMConnect.Domain/SSMConnect.Domain.csproj" />
     <Project Path="src/SSMConnect.Windows/SSMConnect.Windows.csproj" />

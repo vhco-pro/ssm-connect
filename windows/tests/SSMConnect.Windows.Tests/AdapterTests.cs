@@ -379,11 +379,32 @@ public sealed class DcvViewerLauncherTests
 public sealed class PluginTunnelProviderTests
 {
     [Fact]
-    public void ReportsWhetherTheOfficialPluginIsPresent()
+    public void ReportsWhetherThePluginIsPresent()
     {
         var provider = new PluginTunnelProvider();
-        Assert.Equal(File.Exists(PluginTunnelProvider.DefaultPluginPath), provider.IsPluginAvailable);
+        Assert.Equal(File.Exists(PluginTunnelProvider.DiscoverPluginPath()), provider.IsPluginAvailable);
     }
+
+    /// <summary>
+    /// An installed release ships its own plugin and must use it, because that is the version the
+    /// release was tested against and the one its redistribution files describe.
+    /// </summary>
+    [Fact]
+    public void PrefersTheBundledPluginOverASystemInstallation()
+    {
+        string directory = Path.GetDirectoryName(Environment.ProcessPath)!;
+        string bundled = Path.Combine(directory, PluginTunnelProvider.BundledPluginRelativePath);
+
+        Assert.Equal(
+            File.Exists(bundled) ? bundled : PluginTunnelProvider.SystemPluginPath,
+            PluginTunnelProvider.DiscoverPluginPath());
+    }
+
+    /// <summary>The bundled path is relative to the app, so an installed copy resolves beside it.</summary>
+    [Fact]
+    public void LooksForTheBundledPluginBesideTheApplication() =>
+        Assert.Equal(PluginTunnelProvider.BundledPluginRelativePath,
+            Path.Combine("session-manager-plugin", "session-manager-plugin.exe"));
 
     [Fact]
     public async Task ReportsAMissingPluginAsATunnelFailure()

@@ -51,3 +51,4 @@ spikes/windows/installer/payload/
 windows/**/bin/
 windows/**/obj/
 windows/**/artifacts/
+packaging/payload*/
