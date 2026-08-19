@@ -352,11 +352,21 @@ The product MUST either:
    supply-chain policy; or
 2. Reliably discover and validate an official user installation.
 
-Bundling is preferred for a one-click experience. Phase 0 confirmed the package layout supports it —
-the ZIP carries the x86-64 PE, license, notice, third-party notices, and release notes. **Open:**
-whether the included terms permit redistribution inside SSM Connect is a licence question that Phase
-0 did not settle, and it MUST be answered before bundling is chosen over discovery. This is the only
-remaining half of §15 question 2.
+**The Windows client MUST bundle**, matching macOS. Redistribution is permitted: the plugin ships
+under the Apache License 2.0 — its `LICENSE` is the canonical Apache-2.0 text, verified
+whitespace-normalised identical to the text published at apache.org — and Apache-2.0 §4 expressly
+grants reproduction and distribution of the Work in any medium. Its `THIRD-PARTY` file lists only
+permissive components (BSD-3-Clause, MIT, and Apache-2.0: `seelog`, `gorilla/websocket`, `fsnotify`,
+`go-difflib`, `twinj/uuid`, `testify`, `objx`, `keyboard`, `smux`, and Canonical's YAML package),
+with no copyleft. SSM Connect is itself Apache-2.0, so the licences are compatible.
+
+Redistribution carries Apache-2.0 §4 conditions, which the Windows package MUST satisfy: ship a copy
+of the `LICENSE`, reproduce the `NOTICE` contents, carry `THIRD-PARTY`, and retain all attribution
+notices. This is the same obligation §12 already imposes.
+
+Discovery of a user installation was the alternative had redistribution been barred. It is now
+rejected on product grounds as well as licence grounds: macOS bundles the plugin, so discovering on
+Windows would give the two clients materially different first-run experiences.
 
 ### 9.2 Amazon DCV Viewer
 
@@ -699,9 +709,8 @@ These questions MUST be answered in Phase 0 rather than guessed during implement
 
 1. **Answered.** AWS SDK for .NET v4 matches the current app for IAM Identity Center cache, refresh,
    and device authorization, subject to the options in §9.0.
-2. **Partly answered.** The official x64 plugin preserves the same five-argument contract (§9.1).
-   Whether its ZIP payload may be redistributed inside SSM Connect under the included terms is a
-   licence question that remains **open** and blocks choosing bundling over discovery.
+2. **Answered.** The official x64 plugin preserves the same five-argument contract, and its terms
+   permit redistribution, so Windows bundles it as macOS already does (§9.1).
 3. **Answered.** Amazon DCV Viewer for Windows consumes the current `.dcv` fields in both modes; a
    bounded grace period after launch makes deletion safe (§9.2). The spike also surfaced an
    unanticipated requirement: the certificate-validation policy in §9.2.
@@ -730,8 +739,7 @@ These questions MUST be answered in Phase 0 rather than guessed during implement
    - Unknown optional fields are still preserved on round-trip (§6.1), so a v1 client will not
      destroy a `preferences` object written by some future version.
 
-Question 2 is the only one still open. It does not block Phase 1 and MUST be closed before
-packaging work in Phase 5.
+**All six questions are now answered.** None remain open.
 
 ## 16. Planning Gate
 

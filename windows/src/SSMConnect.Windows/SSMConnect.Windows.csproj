@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows 11 24H2 is the servicing baseline (specification 11.2). Pinning it in the TFM is
+         what makes the CA1416 platform-compatibility analyzer enforce it. -->
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <RootNamespace>SSMConnect.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../SSMConnect.Domain/SSMConnect.Domain.csproj" />
+    <ProjectReference Include="../SSMConnect.Workflow/SSMConnect.Workflow.csproj" />
+  </ItemGroup>
+
+</Project>

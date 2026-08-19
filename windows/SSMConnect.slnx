@@ -1,10 +1,13 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SSMConnect.Aws/SSMConnect.Aws.csproj" />
     <Project Path="src/SSMConnect.Domain/SSMConnect.Domain.csproj" />
+    <Project Path="src/SSMConnect.Windows/SSMConnect.Windows.csproj" />
     <Project Path="src/SSMConnect.Workflow/SSMConnect.Workflow.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SSMConnect.Domain.Tests/SSMConnect.Domain.Tests.csproj" />
+    <Project Path="tests/SSMConnect.Windows.Tests/SSMConnect.Windows.Tests.csproj" />
     <Project Path="tests/SSMConnect.Workflow.Tests/SSMConnect.Workflow.Tests.csproj" />
   </Folder>
 </Solution>
