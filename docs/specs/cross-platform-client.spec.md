@@ -705,6 +705,20 @@ The tray is built on `Shell_NotifyIcon` rather than Windows Forms' `NotifyIcon`,
 Windows Forms makes the application ineligible for trimming and cost 41 MB of payload for a control
 that ~80 lines of interop replaces.
 
+**Parity correction (2026-08-20).** This phase was first marked complete while XP-02 was unmet:
+Windows had no way to import IAM Identity Center profiles from the AWS config directory, so every
+field had to be typed by hand. Settings now offers it, reading through the SDK's own profile store
+so `sso_session` indirection and alternate config locations behave as they do for every other AWS
+tool. Two smaller gaps closed with it — a log window, without which a failure gave the user a
+balloon and nothing else, and the masked password in the menu.
+
+**One measured performance defect is worth recording**, because it looked like a platform problem
+and was not. The viewer launch awaited a five-second grace before deleting the connection file, and
+the workflow awaited the launch before reporting `connected`, so the tray sat on "opening the
+tunnel" for five seconds after the session was already on screen. The delete now runs off the
+caller's thread. Constructing a fresh AWS SDK client for each of the twelve calls a connection
+makes was the other avoidable cost; clients are now reused per region and credentials.
+
 ### Phase 5: Packaging and release hardening
 
 **Status (2026-08-19): complete except signing.** `packaging/Build-Release.ps1` publishes the app,
@@ -797,11 +811,15 @@ submission, upgrade/uninstall tests, and end-to-end tests on supported Windows v
 - **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a versioned artifact
   with checksums and licenses; the stable release is installable, upgradeable, and uninstallable
   through WinGet.
-  *Signing was dropped from this criterion deliberately (2026-08-20): WinGet does not require it for
-  MSI, and an EV certificate would not remove the SmartScreen warning anyway. The release carries
-  publisher metadata and a published SHA-256 instead. Everything else in the criterion is met —
-  install, reinstall, upgrade, uninstall, and residue verified in a clean Windows Sandbox — except
-  the release CI job itself, which does not exist yet.*
+  *Met (2026-08-20). Signing was dropped from this criterion deliberately: WinGet does not require
+  it for MSI, and an EV certificate would not remove the SmartScreen warning anyway. The release
+  carries publisher metadata and a published SHA-256 instead. `release-windows.yml` builds, tests,
+  packages, verifies install/launch/uninstall on a hosted runner, attaches the installer and its
+  checksum to the tagged release, and publishes the WinGet manifest as an artifact. It runs on the
+  tag `release.yml` already creates rather than tagging again, so one release carries both
+  platforms. The MSI packaging itself is a reusable composite action,
+  `.github/actions/dotnet-msi-release`, so the next .NET application gets the same pipeline by
+  reference.*
 - **AC-10:** The current macOS release remains independently buildable and releasable throughout
   Windows development.
 
