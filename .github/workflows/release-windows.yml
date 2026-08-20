@@ -1,0 +1,171 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+#
+# Builds and attaches the Windows release. It runs on the tag that release.yml already created
+# rather than tagging again: two workflows racing to tag the same commit is a conflict, and this
+# way one GitHub Release carries both the macOS app and the Windows installer.
+#
+# The release is unsigned by choice. WinGet requires a signature only for MSIX, and this ships an
+# MSI, so nothing is blocked; the SmartScreen warning is documented in the release notes and the
+# published checksum is how a user confirms the download.
+
+name: Release (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build when running manually, without the leading v.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  release:
+    name: Build and attach the Windows installer
+    runs-on: windows-latest
+    permissions:
+      contents: write # attach the installer to the release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            '${{ inputs.version }}'
+          } else {
+            '${{ github.ref_name }}'.TrimStart('v')
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Expected a three-part version, got '$version'."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Building $version"
+
+      # Never package whatever happens to be on the runner. The plugin is redistributed under
+      # Apache-2.0, so its provenance is asserted against a pinned checksum at build time.
+      - name: Fetch and verify the Session Manager plugin
+        id: plugin
+        shell: pwsh
+        run: |
+          $directory = & ./scripts/fetch-plugin.ps1 | Select-Object -Last 1
+          "directory=$directory" >> $env:GITHUB_OUTPUT
+
+      # The same suite the pull-request workflow runs. A release must not be able to ship a build
+      # that would have failed CI.
+      - name: Test
+        run: dotnet test windows/SSMConnect.slnx --configuration Release
+
+      - name: Build the installer and the WinGet manifest
+        id: package
+        uses: ./.github/actions/dotnet-msi-release
+        with:
+          project: windows/src/SSMConnect.App/SSMConnect.App.csproj
+          wxs: packaging/Package.wxs
+          version: ${{ steps.version.outputs.version }}
+          package-identifier: VHCo.SSMConnect
+          package-name: SSMConnect
+          publisher: VHCo
+          short-description: Connect to EC2 workstations through AWS Systems Manager.
+          package-url: https://github.com/vhco-pro/ssm-connect
+          installer-url: https://github.com/vhco-pro/ssm-connect/releases/download/v${{ steps.version.outputs.version }}/SSMConnect-${{ steps.version.outputs.version }}-x64.msi
+          wix-defines: |
+            PluginDirectory=${{ steps.plugin.outputs.directory }}
+            RepositoryRoot=${{ github.workspace }}
+
+      # A packaged MSI that cannot install is not a release. This is the same check the clean-room
+      # Sandbox run makes, reduced to what a hosted runner can do.
+      - name: Verify the installer installs, runs, and uninstalls
+        shell: pwsh
+        run: |
+          $msi = '${{ steps.package.outputs.msi-path }}'
+          $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/i', $msi, '/qn', '/norestart', '/l*v', 'install.log')
+          if ($install.ExitCode -ne 0) {
+            Get-Content install.log -Tail 40
+            throw "Install failed with $($install.ExitCode)."
+          }
+
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect\SSMConnect.exe'
+          if (-not (Test-Path $exe)) { throw 'The application was not installed.' }
+
+          # Apache-2.0 section 4: the notices must reach the machine, not merely the .wxs.
+          $plugin = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect\session-manager-plugin'
+          foreach ($required in 'session-manager-plugin.exe', 'LICENSE', 'NOTICE', 'THIRD-PARTY') {
+            if (-not (Test-Path (Join-Path $plugin $required))) {
+              throw "The redistributed plugin is missing $required."
+            }
+          }
+
+          # A tray application has no window, so "it ran" means it stayed alive.
+          $app = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($app.HasExited) { throw "The application exited immediately with $($app.ExitCode)." }
+          Stop-Process -Id $app.Id -Force
+
+          $uninstall = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/x', $msi, '/qn', '/norestart')
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed with $($uninstall.ExitCode)." }
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect')) { throw 'Uninstall left residue.' }
+
+          Write-Host 'Installer verified: install, redistribution files, launch, uninstall, no residue.'
+
+      - name: Write the release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $msi = Split-Path -Leaf '${{ steps.package.outputs.msi-path }}'
+          @"
+          ## Windows
+
+          ``$msi`` is **not code-signed**. Windows will show "Windows protected your PC" on first
+          run; choose **More info**, then **Run anyway**. Verify the download first:
+
+          ``````powershell
+          Get-FileHash .\$msi -Algorithm SHA256
+          ``````
+
+          Expected SHA-256: ``${{ steps.package.outputs.sha256 }}``
+
+          Installs per-user under ``%LOCALAPPDATA%\Programs\SSM Connect``, no administrator rights
+          required. Bundles the AWS Session Manager plugin under Apache-2.0 with its LICENSE,
+          NOTICE, and THIRD-PARTY files. Amazon DCV Viewer is a separate prerequisite.
+          "@ | Set-Content windows-release-notes.md -Encoding utf8
+
+      - name: Attach the installer to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = 'v${{ steps.version.outputs.version }}'
+          $msi = '${{ steps.package.outputs.msi-path }}'
+
+          # release.yml creates the release for this tag on the macOS run. Whichever finishes first
+          # creates it; the other appends, so the ordering of the two jobs does not matter.
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title $tag --notes-file windows-release-notes.md
+          } else {
+            $existing = gh release view $tag --json body --jq .body
+            "$existing`n`n$(Get-Content windows-release-notes.md -Raw)" |
+              Set-Content combined-notes.md -Encoding utf8
+            gh release edit $tag --notes-file combined-notes.md
+          }
+
+          gh release upload $tag $msi "$msi.sha256" --clobber
+
+      - name: Upload the WinGet manifest for submission
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: winget-manifest-${{ steps.version.outputs.version }}
+          path: ${{ steps.package.outputs.manifest-directory }}

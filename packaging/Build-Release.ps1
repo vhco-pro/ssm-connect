@@ -27,7 +27,7 @@
 param(
     [string] $Version = '0.1.0',
     [bool] $SelfContained = $true,
-    [string] $PluginDirectory = 'C:\Program Files\Amazon\SessionManagerPlugin'
+    [string] $PluginDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,6 +36,14 @@ $packaging = $PSScriptRoot
 $repository = Split-Path -Parent $packaging
 $payload = Join-Path $packaging 'payload'
 $output = Join-Path $repository 'dist'
+
+# Default to a verified download rather than whatever happens to be installed on the build machine.
+# Local builds and CI then package byte-identical plugin binaries, and the provenance is asserted
+# rather than assumed.
+if (-not $PluginDirectory) {
+    $PluginDirectory = & (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/fetch-plugin.ps1') |
+        Select-Object -Last 1
+}
 
 foreach ($required in @(
     (Join-Path $PluginDirectory 'bin\session-manager-plugin.exe'),

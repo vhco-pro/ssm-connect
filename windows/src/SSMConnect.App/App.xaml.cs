@@ -21,6 +21,7 @@ public partial class App : System.Windows.Application
 {
     private readonly ProfileStore _store = new();
     private readonly StartupRegistration _startup = new();
+    private readonly ConnectionLog _log = new();
     private ClipboardPolicy _clipboard = null!;
     private TrayIcon _tray = null!;
     private ContextMenu _menu = null!;
@@ -28,6 +29,7 @@ public partial class App : System.Windows.Application
     private StoredState _state = null!;
     private string? _password;
     private SettingsWindow? _settingsWindow;
+    private LogWindow? _logWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -127,6 +129,11 @@ public partial class App : System.Windows.Application
 
         if (_password is not null)
         {
+            _menu.Items.Add(new MenuItem
+            {
+                Header = $"Password: {new string('•', Math.Min(_password.Length, 12))}",
+                IsEnabled = false,
+            });
             _menu.Items.Add(Item("Copy password", CopyPassword));
         }
 
@@ -161,6 +168,7 @@ public partial class App : System.Windows.Application
         };
         _menu.Items.Add(startAtSignIn);
 
+        _menu.Items.Add(Item("Show log", ShowLog));
         _menu.Items.Add(Item("Settings…", ShowSettings));
         _menu.Items.Add(new Separator());
         _menu.Items.Add(Item("Quit SSM Connect", Quit));
@@ -212,6 +220,20 @@ public partial class App : System.Windows.Application
     }
 
     // MARK: Settings
+
+    private void ShowLog()
+    {
+        if (_logWindow is { IsLoaded: true })
+        {
+            _logWindow.Activate();
+            return;
+        }
+
+        _logWindow = new LogWindow(_log);
+        _logWindow.Closed += (_, _) => _logWindow = null;
+        _logWindow.Show();
+        _logWindow.Activate();
+    }
 
     private void ShowSettings()
     {
@@ -315,7 +337,11 @@ public partial class App : System.Windows.Application
             }
         }
 
-        public void Log(string category, string message) => Debug.WriteLine($"[{category}] {message}");
+        public void Log(string category, string message)
+        {
+            Debug.WriteLine($"[{category}] {message}");
+            app._log.Append(category, message);
+        }
 
         public void Notify(ConnectionNotification notification)
         {

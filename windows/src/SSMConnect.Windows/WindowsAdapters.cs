@@ -306,16 +306,20 @@ public sealed class DcvViewerLauncher : IDcvLauncher
     /// </remarks>
     public const string AcceptUntrustedArgument = "--certificate-validation-policy=accept-untrusted";
 
-    /// <summary>How long the file stays on disk after launch, so the viewer can read it.</summary>
-    public static readonly TimeSpan ConsumptionGrace = TimeSpan.FromSeconds(5);
+    /// <summary>Default time the file stays on disk after launch, so the viewer can read it.</summary>
+    public static readonly TimeSpan DefaultConsumptionGrace = TimeSpan.FromSeconds(5);
 
     /// <summary>Orphans older than this are swept at startup.</summary>
     public static readonly TimeSpan OrphanAge = TimeSpan.FromHours(1);
 
     private readonly string _viewerPath;
+    private readonly TimeSpan _consumptionGrace;
 
-    public DcvViewerLauncher(string? viewerPath = null) =>
+    public DcvViewerLauncher(string? viewerPath = null, TimeSpan? consumptionGrace = null)
+    {
         _viewerPath = viewerPath ?? DiscoverViewerPath() ?? string.Empty;
+        _consumptionGrace = consumptionGrace ?? DefaultConsumptionGrace;
+    }
 
     /// <summary>The application-owned directory, with an ACL granting only the current user.</summary>
     public static string ConnectionFileDirectory { get; } = Path.Combine(
@@ -367,14 +371,22 @@ public sealed class DcvViewerLauncher : IDcvLauncher
             {
                 throw new InvalidOperationException("Amazon DCV Viewer did not start.");
             }
-
-            // Deleting immediately can race the viewer's own read of the file.
-            await Task.Delay(ConsumptionGrace, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch
         {
             TryDelete(path);
+            throw;
         }
+
+        // Deleting immediately would race the viewer's own read of the file, so the delete waits.
+        // It waits on its own, though: the workflow reaches Connected as soon as the viewer is
+        // launched. Awaiting the grace here held the UI on "opening the tunnel" for five seconds
+        // after the session was already on screen. Startup sweeps anything a crash leaves behind.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(_consumptionGrace, CancellationToken.None).ConfigureAwait(false);
+            TryDelete(path);
+        }, CancellationToken.None);
     }
 
     /// <summary>

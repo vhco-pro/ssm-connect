@@ -1,0 +1,209 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+
+name: .NET MSI release
+description: >-
+  Publishes a .NET application, packages it as a WiX MSI, writes a SHA-256 checksum, and generates a
+  validated WinGet manifest. Reusable across .NET desktop apps: everything app-specific arrives as
+  an input or lives in the caller's .wxs.
+
+# Nothing here is specific to SSM Connect. It is a composite action rather than a script in one
+# repository so the next .NET app gets the same pipeline by reference. If a third repository needs
+# it, move this directory to its own repo and pin it by tag, exactly as gitversion-tag-action is;
+# the inputs are already shaped for that.
+
+inputs:
+  project:
+    description: Path to the .csproj to publish.
+    required: true
+  wxs:
+    description: Path to the WiX source that packages the published payload.
+    required: true
+  version:
+    description: Product version, e.g. 1.2.3.
+    required: true
+  package-identifier:
+    description: WinGet package identifier, e.g. Publisher.Product.
+    required: true
+  package-name:
+    description: Human-readable product name.
+    required: true
+  publisher:
+    description: Publisher name shown by WinGet and in Installed apps.
+    required: true
+  short-description:
+    description: One-line description for the WinGet manifest.
+    required: true
+  installer-url:
+    description: Where the MSI will be downloadable. The manifest pins this alongside its hash.
+    required: true
+  license:
+    description: SPDX licence identifier.
+    required: false
+    default: Apache-2.0
+  package-url:
+    description: Project home page.
+    required: false
+    default: ''
+  minimum-os-version:
+    description: Lowest supported Windows build, as a four-part version.
+    required: false
+    default: 10.0.26100.0
+  runtime:
+    description: .NET runtime identifier to publish for.
+    required: false
+    default: win-x64
+  architecture:
+    description: Architecture recorded in the MSI and the manifest.
+    required: false
+    default: x64
+  self-contained:
+    description: Bundle the .NET runtime, removing the runtime prerequisite at the cost of size.
+    required: false
+    default: 'true'
+  wix-version:
+    description: WiX tool version to install.
+    required: false
+    default: 6.0.2
+  wix-defines:
+    description: >-
+      Extra WiX preprocessor definitions, one Name=Value per line. PayloadDirectory and
+      PackageVersion are always provided.
+    required: false
+    default: ''
+  output-directory:
+    description: Where the MSI, checksum, and manifest are written.
+    required: false
+    default: dist
+
+outputs:
+  msi-path:
+    description: Path to the built MSI.
+    value: ${{ steps.package.outputs.msi-path }}
+  sha256:
+    description: SHA-256 of the built MSI.
+    value: ${{ steps.package.outputs.sha256 }}
+  manifest-directory:
+    description: Directory holding the three WinGet manifest files.
+    value: ${{ steps.manifest.outputs.manifest-directory }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install WiX
+      shell: pwsh
+      run: |
+        if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
+          dotnet tool install --global wix --version ${{ inputs.wix-version }}
+        }
+        wix --version
+
+    - name: Publish the application
+      shell: pwsh
+      run: |
+        $payload = Join-Path '${{ inputs.output-directory }}' 'payload'
+        Remove-Item $payload -Recurse -Force -ErrorAction SilentlyContinue
+        dotnet publish '${{ inputs.project }}' `
+          -c Release -r '${{ inputs.runtime }}' `
+          -p:SelfContained=${{ inputs.self-contained }} `
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none `
+          -p:Version=${{ inputs.version }} `
+          -o $payload
+        if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+
+    - name: Build the MSI and its checksum
+      id: package
+      shell: pwsh
+      run: |
+        $output = '${{ inputs.output-directory }}'
+        $payload = Join-Path $output 'payload'
+        New-Item -ItemType Directory -Force -Path $output | Out-Null
+        $msi = Join-Path $output '${{ inputs.package-name }}-${{ inputs.version }}-${{ inputs.architecture }}.msi'.Replace(' ', '')
+
+        # The architecture must be explicit. Without it WiX builds x86, which registers the product
+        # under WOW6432Node and contradicts the architecture the manifest declares.
+        $arguments = @(
+          'build', '${{ inputs.wxs }}',
+          '-arch', '${{ inputs.architecture }}',
+          '-d', "PackageVersion=${{ inputs.version }}",
+          '-d', "PayloadDirectory=$((Resolve-Path $payload).Path)",
+          '-o', $msi
+        )
+        foreach ($define in ('${{ inputs.wix-defines }}' -split "`n")) {
+          $trimmed = $define.Trim()
+          if ($trimmed) { $arguments += @('-d', $trimmed) }
+        }
+
+        & wix @arguments
+        if ($LASTEXITCODE -ne 0) { throw 'MSI build failed.' }
+
+        $hash = (Get-FileHash $msi -Algorithm SHA256).Hash
+        # Published as a file, not just logged: on an unsigned release this is the only way a user
+        # can confirm the download is the artifact this build produced.
+        "$hash  $(Split-Path -Leaf $msi)" | Set-Content "$msi.sha256" -Encoding ascii
+
+        "msi-path=$msi" >> $env:GITHUB_OUTPUT
+        "sha256=$hash" >> $env:GITHUB_OUTPUT
+        Write-Host "Built $msi"
+        Write-Host "SHA-256: $hash"
+
+    - name: Generate and validate the WinGet manifest
+      id: manifest
+      shell: pwsh
+      run: |
+        # Generated from the artifact just built, so the pinned hash cannot drift from the file it
+        # describes. Manifests live in their own directory because winget validate parses every
+        # file it finds there.
+        $directory = Join-Path '${{ inputs.output-directory }}' 'winget-${{ inputs.version }}'
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+        $id = '${{ inputs.package-identifier }}'
+        $date = (Get-Date).ToString('yyyy-MM-dd')
+
+        @"
+        PackageIdentifier: $id
+        PackageVersion: ${{ inputs.version }}
+        DefaultLocale: en-US
+        ManifestType: version
+        ManifestVersion: 1.9.0
+        "@ | Set-Content (Join-Path $directory "$id.yaml") -Encoding utf8
+
+        @"
+        PackageIdentifier: $id
+        PackageVersion: ${{ inputs.version }}
+        InstallerType: wix
+        Scope: user
+        MinimumOSVersion: ${{ inputs.minimum-os-version }}
+        InstallModes:
+          - silent
+          - silentWithProgress
+        UpgradeBehavior: install
+        ReleaseDate: $date
+        Installers:
+          - Architecture: ${{ inputs.architecture }}
+            InstallerUrl: ${{ inputs.installer-url }}
+            InstallerSha256: ${{ steps.package.outputs.sha256 }}
+        ManifestType: installer
+        ManifestVersion: 1.9.0
+        "@ | Set-Content (Join-Path $directory "$id.installer.yaml") -Encoding utf8
+
+        @"
+        PackageIdentifier: $id
+        PackageVersion: ${{ inputs.version }}
+        PackageLocale: en-US
+        Publisher: ${{ inputs.publisher }}
+        PackageName: ${{ inputs.package-name }}
+        PackageUrl: ${{ inputs.package-url }}
+        License: ${{ inputs.license }}
+        ShortDescription: ${{ inputs.short-description }}
+        ManifestType: defaultLocale
+        ManifestVersion: 1.9.0
+        "@ | Set-Content (Join-Path $directory "$id.locale.en-US.yaml") -Encoding utf8
+
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+          winget validate --manifest $directory --disable-interactivity
+          if ($LASTEXITCODE -ne 0) { throw 'winget validate failed.' }
+        } else {
+          Write-Host '::warning::winget is unavailable on this runner; the manifest was not validated.'
+        }
+
+        "manifest-directory=$directory" >> $env:GITHUB_OUTPUT
+        Write-Host "Wrote the WinGet manifest to $directory"

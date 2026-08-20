@@ -271,3 +271,65 @@ public sealed class ClipboardPolicyTests
         Assert.Equal(0, Volatile.Read(ref cleared));
     }
 }
+
+public sealed class ConnectionLogTests
+{
+    [Fact]
+    public void KeepsWhatTheWorkflowReported()
+    {
+        var log = new ConnectionLog();
+        log.Append("ssm", "SSM agent is online.");
+        log.Append("tunnel", "Connected.");
+
+        IReadOnlyList<LogEntry> entries = log.Snapshot();
+        Assert.Equal(2, entries.Count);
+        Assert.Equal("ssm", entries[0].Category);
+        Assert.Equal("Connected.", entries[1].Message);
+    }
+
+    /// <summary>
+    /// A tray app runs for days and the workflow logs every poll and retry, so an unbounded buffer
+    /// is a slow leak. Oldest entries go first.
+    /// </summary>
+    [Fact]
+    public void DropsTheOldestOnceFull()
+    {
+        var log = new ConnectionLog(capacity: 3);
+        foreach (int i in Enumerable.Range(1, 5))
+        {
+            log.Append("ui", $"line {i}");
+        }
+
+        IReadOnlyList<LogEntry> entries = log.Snapshot();
+        Assert.Equal(3, entries.Count);
+        Assert.Equal("line 3", entries[0].Message);
+        Assert.Equal("line 5", entries[2].Message);
+    }
+
+    [Fact]
+    public void NotifiesAListenerSoAWindowCanFollowAlong()
+    {
+        var log = new ConnectionLog();
+        var seen = new List<string>();
+        log.Appended += entry => seen.Add(entry.Message);
+
+        log.Append("auth", "Authenticated.");
+
+        Assert.Equal(["Authenticated."], seen);
+    }
+
+    [Fact]
+    public void RendersPlainTextForPasting()
+    {
+        var log = new ConnectionLog();
+        log.Append("ec2", "Resolved instance i-0aaaaaaaaaaaaaaa1.");
+
+        string text = log.ToPlainText();
+        Assert.Contains("SSM Connect log", text, StringComparison.Ordinal);
+        Assert.Contains("Resolved instance i-0aaaaaaaaaaaaaaa1.", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RejectsANonPositiveCapacity() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ConnectionLog(0));
+}

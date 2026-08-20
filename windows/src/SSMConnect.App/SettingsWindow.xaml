@@ -19,8 +19,10 @@
     <DockPanel Grid.Row="0" Grid.Column="0" Margin="0,0,16,0">
       <TextBlock DockPanel.Dock="Top" Text="Workstations" FontWeight="SemiBold" Margin="0,0,0,6" />
       <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-        <Button x:Name="AddButton" Content="Add" Margin="0" Click="OnAdd" />
-        <Button x:Name="RemoveButton" Content="Remove" Click="OnRemove" />
+        <Button x:Name="AddButton" Content="Add" Margin="0" Click="OnAdd" MinWidth="60" />
+        <Button x:Name="FromAwsButton" Content="From AWS…" Click="OnFromAwsConfig" MinWidth="80"
+                ToolTip="Create a profile from an IAM Identity Center profile in your AWS config" />
+        <Button x:Name="RemoveButton" Content="Remove" Click="OnRemove" MinWidth="70" />
       </StackPanel>
       <ListBox x:Name="ProfileList" DisplayMemberPath="Name" SelectionChanged="OnProfileSelected" />
     </DockPanel>

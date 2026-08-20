@@ -154,7 +154,7 @@ public sealed class Ec2Adapter : IEc2Provider
     public async Task<Ec2Instance> ResolveInstanceAsync(
         string tagKey, string tagValue, string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        using var client = new AmazonEC2Client(AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonEC2Client client = AwsClientCache.Get(credentials, region, (c, r) => new AmazonEC2Client(c, r));
         DescribeInstancesResponse response = await AwsErrors.GuardAsync(() =>
             client.DescribeInstancesAsync(new DescribeInstancesRequest
             {
@@ -183,7 +183,7 @@ public sealed class Ec2Adapter : IEc2Provider
     public async Task StartInstanceAsync(
         string instanceId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        using var client = new AmazonEC2Client(AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonEC2Client client = AwsClientCache.Get(credentials, region, (c, r) => new AmazonEC2Client(c, r));
         await AwsErrors.GuardAsync(() => client.StartInstancesAsync(
             new StartInstancesRequest { InstanceIds = [instanceId] }, cancellationToken)).ConfigureAwait(false);
     }
@@ -192,7 +192,7 @@ public sealed class Ec2Adapter : IEc2Provider
         string instanceId, string region, AwsCredentials credentials,
         TimeSpan timeout, TimeSpan interval, CancellationToken cancellationToken)
     {
-        using var client = new AmazonEC2Client(AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonEC2Client client = AwsClientCache.Get(credentials, region, (c, r) => new AmazonEC2Client(c, r));
         DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
 
         while (DateTimeOffset.UtcNow < deadline)
@@ -225,7 +225,7 @@ public sealed class Ec2Adapter : IEc2Provider
     public async Task StopInstanceAsync(
         string instanceId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        using var client = new AmazonEC2Client(AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonEC2Client client = AwsClientCache.Get(credentials, region, (c, r) => new AmazonEC2Client(c, r));
         await AwsErrors.GuardAsync(() => client.StopInstancesAsync(
             new StopInstancesRequest { InstanceIds = [instanceId] }, cancellationToken)).ConfigureAwait(false);
     }
@@ -240,8 +240,8 @@ public sealed class SsmAdapter : ISsmProvider
         string instanceId, string region, AwsCredentials credentials,
         TimeSpan timeout, TimeSpan interval, CancellationToken cancellationToken)
     {
-        using var client = new AmazonSimpleSystemsManagementClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSimpleSystemsManagementClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSimpleSystemsManagementClient(c, r));
         DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
 
         while (DateTimeOffset.UtcNow < deadline)
@@ -268,8 +268,8 @@ public sealed class SsmAdapter : ISsmProvider
         string instanceId, string region, AwsCredentials credentials,
         int localPort, int remotePort, CancellationToken cancellationToken)
     {
-        using var client = new AmazonSimpleSystemsManagementClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSimpleSystemsManagementClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSimpleSystemsManagementClient(c, r));
         StartSessionResponse response = await AwsErrors.GuardAsync(() =>
             client.StartSessionAsync(new StartSessionRequest
             {
@@ -296,13 +296,13 @@ public sealed class SsmAdapter : ISsmProvider
     public async Task<int> ReapOrphanedSessionsAsync(
         string instanceId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        using var sts = new AmazonSecurityTokenServiceClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSecurityTokenServiceClient sts = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSecurityTokenServiceClient(c, r));
         GetCallerIdentityResponse identity = await AwsErrors.GuardAsync(() =>
             sts.GetCallerIdentityAsync(new GetCallerIdentityRequest(), cancellationToken)).ConfigureAwait(false);
 
-        using var client = new AmazonSimpleSystemsManagementClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSimpleSystemsManagementClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSimpleSystemsManagementClient(c, r));
         DescribeSessionsResponse response = await AwsErrors.GuardAsync(() =>
             client.DescribeSessionsAsync(new DescribeSessionsRequest
             {
@@ -332,8 +332,8 @@ public sealed class SsmAdapter : ISsmProvider
     public static async Task<string> DescribeSessionStateAsync(
         string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken = default)
     {
-        using var client = new AmazonSimpleSystemsManagementClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSimpleSystemsManagementClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSimpleSystemsManagementClient(c, r));
 
         foreach (SessionState state in new[] { SessionState.Active, SessionState.History })
         {
@@ -361,8 +361,8 @@ public sealed class SsmAdapter : ISsmProvider
     public async Task TerminateSessionAsync(
         string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken = default)
     {
-        using var client = new AmazonSimpleSystemsManagementClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSimpleSystemsManagementClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSimpleSystemsManagementClient(c, r));
         await AwsErrors.GuardAsync(() => client.TerminateSessionAsync(
             new TerminateSessionRequest { SessionId = sessionId }, cancellationToken)).ConfigureAwait(false);
     }
@@ -373,8 +373,8 @@ public sealed class SecretsAdapter : ISecretsProvider
     public async Task<string> FetchSecretAsync(
         string secretId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        using var client = new AmazonSecretsManagerClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSecretsManagerClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSecretsManagerClient(c, r));
         GetSecretValueResponse response = await AwsErrors.GuardAsync(() =>
             client.GetSecretValueAsync(new GetSecretValueRequest { SecretId = secretId }, cancellationToken))
             .ConfigureAwait(false);
@@ -396,8 +396,8 @@ public sealed class StsIdentityAdapter : IIdentityProvider
     public async Task<string> ResolveIdentityAsync(
         string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        using var client = new AmazonSecurityTokenServiceClient(
-            AwsClients.Session(credentials), AwsClients.Region(region));
+        AmazonSecurityTokenServiceClient client = AwsClientCache.Get(
+            credentials, region, (c, r) => new AmazonSecurityTokenServiceClient(c, r));
         GetCallerIdentityResponse identity = await AwsErrors.GuardAsync(() =>
             client.GetCallerIdentityAsync(new GetCallerIdentityRequest(), cancellationToken)).ConfigureAwait(false);
 

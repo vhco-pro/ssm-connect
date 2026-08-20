@@ -56,11 +56,19 @@ public sealed class TrayIcon : IDisposable
     /// <summary>Raised on right-click, with the menu expected to appear at the cursor.</summary>
     public event Action? ContextMenuRequested;
 
+    /// <summary>
+    /// Points the tray icon at a new glyph and tooltip.
+    /// </summary>
+    /// <remarks>
+    /// The icon is borrowed, never owned. <see cref="TrayIcons"/> caches one instance per state and
+    /// keeps them for the life of the process, so disposing the previous one here would hand back a
+    /// dead handle the next time that state recurred: connect once, disconnect, and the tray would
+    /// stop updating.
+    /// </remarks>
     public void Update(Icon icon, string tooltip)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        Icon? previous = _icon;
         _icon = icon;
 
         var data = NewData();
@@ -73,10 +81,6 @@ public sealed class TrayIcon : IDisposable
         _added = NativeMethods.Shell_NotifyIcon(
             _added ? NativeMethods.NimModify : NativeMethods.NimAdd, ref data) || _added;
 
-        if (!ReferenceEquals(previous, icon))
-        {
-            previous?.Dispose();
-        }
     }
 
     public void ShowNotification(string title, string message, TrayNotificationKind kind)
@@ -148,7 +152,8 @@ public sealed class TrayIcon : IDisposable
             _added = false;
         }
 
-        _icon?.Dispose();
+        // _icon is owned by TrayIcons, not by this type, so it is deliberately not disposed here.
+        _icon = null;
         _window.RemoveHook(OnMessage);
         _window.Dispose();
     }

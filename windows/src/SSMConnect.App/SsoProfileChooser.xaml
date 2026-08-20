@@ -1,0 +1,30 @@
+<Window x:Class="SSMConnect.App.SsoProfileChooser"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Choose an AWS profile"
+        Width="520" Height="380"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{StaticResource SurfaceBrush}">
+
+  <DockPanel Margin="16">
+    <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,10"
+               Text="IAM Identity Center profiles found in your AWS config. Choosing one fills in the sign-in details; you still set which workstation it connects to." />
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button Content="Cancel" IsCancel="True" Click="OnCancel" Margin="0" />
+      <Button x:Name="UseButton" Content="Use" IsDefault="True" Click="OnUse" />
+    </StackPanel>
+
+    <ListBox x:Name="ProfileList" MouseDoubleClick="OnUse" AutomationProperties.Name="AWS profiles">
+      <ListBox.ItemTemplate>
+        <DataTemplate>
+          <StackPanel Margin="2,4">
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding Summary}" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+          </StackPanel>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+</Window>

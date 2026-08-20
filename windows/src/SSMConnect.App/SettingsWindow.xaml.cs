@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using MessageBox = System.Windows.MessageBox;
 using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
+using SSMConnect.Aws;
 using SSMConnect.Domain;
 using SSMConnect.Windows;
 
@@ -124,6 +125,49 @@ public partial class SettingsWindow : Window
 
         _profiles.Add(created);
         RefreshList(created.Id);
+    }
+
+    /// <summary>
+    /// Creates a profile from an IAM Identity Center entry in the shared AWS config (XP-02).
+    /// </summary>
+    /// <remarks>
+    /// The config supplies the SSO endpoints, account, role and region; it has no concept of which
+    /// workstation to target or which secret holds its password, so those stay empty and the editor
+    /// opens on the new profile rather than saving something that looks complete and cannot connect.
+    /// </remarks>
+    private void OnFromAwsConfig(object sender, RoutedEventArgs e)
+    {
+        IReadOnlyList<DiscoveredSsoProfile> discovered;
+        try
+        {
+            discovered = SsoProfileDiscovery.Discover();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, error.Message, "Could not read your AWS config",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (discovered.Count == 0)
+        {
+            MessageBox.Show(this,
+                "No IAM Identity Center profiles were found in your AWS config. Run 'aws configure sso' first.",
+                "No SSO profiles found", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var chooser = new SsoProfileChooser(discovered) { Owner = this };
+        if (chooser.ShowDialog() != true || chooser.Selected is not DiscoveredSsoProfile chosen)
+        {
+            return;
+        }
+
+        ConnectionProfile created = chosen.ToConnectionProfile();
+        _profiles.Add(created);
+        _activeId = created.Id;
+        RefreshList(_activeId);
+        ValidationText.Text = "Set the instance tag value for this workstation, then save.";
     }
 
     private void OnRemove(object sender, RoutedEventArgs e)

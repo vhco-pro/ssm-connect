@@ -8,8 +8,8 @@ using SSMConnect.Workflow;
 namespace SSMConnect.Windows.Tests;
 
 /// <summary>
-/// Covers adapter behavior that does not need live AWS. The parts that do — the SSO browser
-/// fallback, a real tunnel, a real DCV session — are exercised by the development harness against
+/// Covers adapter behavior that does not need live AWS. The parts that do â€” the SSO browser
+/// fallback, a real tunnel, a real DCV session â€” are exercised by the development harness against
 /// real infrastructure, because a mock of them would only assert the mock.
 /// </summary>
 public sealed class StsPresignerTests
@@ -205,7 +205,7 @@ public sealed class WorkstationAgentClientTests
     /// <summary>
     /// The agent's wire contract, pinned. It reads a form field named authenticationToken; a JSON
     /// body or a different field name is answered with 401, because the agent simply never finds
-    /// the token. That is not a hypothetical � it is what this client did against the real agent
+    /// the token. That is not a hypothetical — it is what this client did against the real agent
     /// until the shape was corrected to match the macOS client and the Phase 0 spike.
     /// </summary>
     [Fact]
@@ -542,4 +542,59 @@ public sealed class LoopbackReadinessProbeTests
             _stopping.Dispose();
         }
     }
+}
+
+public sealed class DcvLaunchTimingTests
+{
+    /// <summary>
+    /// The connection must be reported as soon as the viewer is launched. The connection file has
+    /// to linger briefly so the viewer can read it, but awaiting that grace period inside the
+    /// launch held the workflow on "opening the tunnel" for five seconds after the session was
+    /// already on screen, which read as the client being slow.
+    /// </summary>
+    [Fact]
+    public async Task LaunchReturnsWithoutWaitingOutTheConsumptionGrace()
+    {
+        var launcher = new DcvViewerLauncher(
+            viewerPath: Path.Combine(Environment.SystemDirectory, "hostname.exe"),
+            consumptionGrace: TimeSpan.FromSeconds(3));
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await launcher.LaunchAsync(
+            DcvConnectionFile.SingleUser(58443, "synthetic-password"), TestContext.Current.CancellationToken);
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.ElapsedMilliseconds < 1500,
+            $"Launch took {stopwatch.ElapsedMilliseconds} ms; it must not block on the grace period.");
+    }
+
+    /// <summary>
+    /// Returning early must not mean the file is left behind: it carries a password or an identity
+    /// token, so the delete still has to happen, just not on the caller's thread.
+    /// </summary>
+    [Fact]
+    public async Task TheConnectionFileIsStillDeletedAfterTheGrace()
+    {
+        var launcher = new DcvViewerLauncher(
+            viewerPath: Path.Combine(Environment.SystemDirectory, "hostname.exe"),
+            consumptionGrace: TimeSpan.FromMilliseconds(300));
+
+        int before = CountConnectionFiles();
+        await launcher.LaunchAsync(
+            DcvConnectionFile.SingleUser(58443, "synthetic-password"), TestContext.Current.CancellationToken);
+
+        // Poll rather than sleep a fixed amount: the delete is deliberately off the caller's thread.
+        for (int attempt = 0; attempt < 40 && CountConnectionFiles() > before; attempt++)
+        {
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(before, CountConnectionFiles());
+    }
+
+    private static int CountConnectionFiles() =>
+        Directory.Exists(DcvViewerLauncher.ConnectionFileDirectory)
+            ? Directory.GetFiles(DcvViewerLauncher.ConnectionFileDirectory,
+                $"{DcvConnectionFile.TempFilePrefix}*.{DcvConnectionFile.FileExtension}").Length
+            : 0;
 }
