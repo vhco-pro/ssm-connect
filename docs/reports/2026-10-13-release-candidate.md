@@ -59,3 +59,24 @@ passed checksum, app/helper signatures, proxy CLI smoke and deployment-target ch
 Reviewed ZIP SHA-256: `128bf624c576f0f806b2901a745ac67a3d73291cb1df2a78c8bbbc0ac4a8cd29`.
 Human acceptance gates remain open; these regressions do not establish a complete
 real-workspace or recovery workflow.
+
+## Executed Workflow Follow-Up
+
+Hosted CodeQL Actions and Swift jobs both passed for commit
+`2df498471dcc4f3f7add93f3268f916f22acba9e` in
+[run 38448482324](https://github.com/vhco-pro/ssm-connect/actions/runs/38448482324).
+That run includes the hosted unit-test gate; it is not evidence for later commits.
+
+The isolated native editor fixture passed actual UI file open/save, integrated-terminal
+project execution, TypeScript definition navigation and debugger pause/continue/output checks.
+The existing server runtime was reused, and no existing user project was inspected. Details
+and the initial stale-forwarding recovery caveat are in the
+[editor specification](../specs/remote-vscode.spec.md). The fixture preparation command is
+`node scripts/test-native-editor-workflow.mjs`; it prepares/opens the workspace, not an
+automated assertion that every subsequent UI action passed.
+
+All three supported browser scopes passed the controlled sign-in redirect and authenticated
+reopen fixture, alongside DNS/routing/outage checks. See the
+[browser review](2026-10-13-browser-bootstrap-review.md). Real identity-provider policy/MFA,
+arbitrary user projects, concurrency/socket-mode/recovery and fresh-user coverage remain
+separate gates. No merge or public release has been performed.

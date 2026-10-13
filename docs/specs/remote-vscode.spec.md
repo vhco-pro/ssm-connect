@@ -229,6 +229,20 @@ editor responsiveness on the same workspace; do not invent a numerical speed-up 
   unverified by these local checks.
 - Author review regressions for bounded CLI timeout/cancellation/output and pending-open profile
   changes passed. The optimized suite after those fixes passed 197 tests across 31 suites.
-- Still unverified: chosen-folder open/save/terminal/language server/project tests/debugging,
-  simultaneous windows, live multi-user socket-server mode, full app/drop/SSO recovery, and
+- An isolated remote fixture was created using the approved SSH lease and the existing
+  VS Code Server Node runtime. No existing repository was inspected and no package was installed.
+  Native file opening displayed the owned remote source; a native UI edit/save was verified
+  through an independent SSH read of that same fixture file. The project test passed afterward.
+- The actual integrated terminal ran the fixture project test and wrote an independently
+  verified remote proof file. The TypeScript service's native Go to Definition moved the
+  cursor from the call site at line 2 to the declaration at line 1.
+- The fixture folder's configured debugger started, paused on entry (Continue control visible),
+  and emitted `SSM_EDITOR_BUILD_OK=42` in the native Debug Console after Continue, then stopped.
+- Initial connection attempts encountered a stale cached local forwarding port and a reconnect
+  dialog. A fresh SSH SOCKS channel reached the live server port, and a subsequent native
+  connection recovered. These observations do not establish automatic recovery in every case.
+  The unreliable keyboard-driven test attempt was removed; these UI actions were directly
+  executed and inspected through guarded native accessibility/System Events operations.
+- Still unverified: arbitrary user projects, simultaneous windows, live multi-user socket-server
+  mode, full app/drop/SSO recovery, and
   fresh-Mac/user bootstrap. These are not marked met by an SSH marker or CLI launch.

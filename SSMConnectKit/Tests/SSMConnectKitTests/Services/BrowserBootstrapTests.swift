@@ -132,7 +132,8 @@ import Testing
                     try BrowserPrivateFiles.write(Data(try ProxyPreference.render(routing.firefoxPreferences).utf8), to: directory.appendingPathComponent("user.js"))
                 }
                 let urls = ["http://private.fixture.invalid:\(httpPort)/\(choice.rawValue)-\(mode.rawValue)-internal",
-                            "http://127.0.0.1:\(httpPort)/\(choice.rawValue)-\(mode.rawValue)-direct"]
+                            "http://127.0.0.1:\(httpPort)/\(choice.rawValue)-\(mode.rawValue)-direct",
+                            "http://private.fixture.invalid:\(httpPort)/\(choice.rawValue)-\(mode.rawValue)-session-reopen"]
                 for (index, url) in urls.enumerated() {
                     let process = Process()
                     process.executableURL = descriptor.executableURL

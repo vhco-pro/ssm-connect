@@ -110,6 +110,19 @@ passed after Restore alone stopped requiring a launch-verified version. Launch p
 refuses that version; policy, closed-browser, exact ownership scope and installed-value checks
 remain mandatory for Restore. This supersedes the original Restore regression name above.
 
+## Session Workflow Evidence
+
+The installed-browser fixture driver was extended and executed for Chrome Separate Browser,
+Zen Separate Browser and Zen Existing Browser. Each internal request followed a direct public
+fixture sign-in redirect, returned to the proxied internal callback, then retained its own
+synthetic authenticated session after browser-process restart. Exactly one fixture sign-in
+occurred per scope; the server independently observed an authenticated reopen request.
+Remote DNS, selective routing and fail-closed outage checks also passed.
+
+No cookie database, saved password or ordinary browser profile was inspected. This verifies
+browser-managed persistence and redirect routing with a controlled session, not real-account
+SSO/MFA or enterprise identity-provider policy. The command is `node scripts/test-browser-bootstrap.mjs`.
+
 ## Follow-Up Fix Verification
 
 The two reproduced P1 findings and interrupted-write P2 were addressed after the user authorized

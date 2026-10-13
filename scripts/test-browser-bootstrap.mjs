@@ -12,6 +12,7 @@ const root = await mkdtemp(path.join(os.tmpdir(), 'ssm-browser-e2e-'));
 await chmod(root, 0o700);
 const requests = [];
 const destinations = [];
+const retainedSessions = new Set();
 const sockets = new Set();
 assert((await dns.lookup('outage.localtest.me', { all: true })).some(result => result.address === '127.0.0.1'));
 const server = http.createServer((request, response) => {
@@ -22,6 +23,34 @@ const server = http.createServer((request, response) => {
     return;
   }
   requests.push({ host: request.headers.host, url: request.url });
+  const scope = request.url.match(/^\/(chrome-separate|zen-separate|zen-existing)-(?:internal|sign-in|callback|session-reopen)$/)?.[1];
+  if (scope) {
+    const internal = `http://private.fixture.invalid:${httpPort}/${scope}`;
+    if (request.url === `/${scope}-sign-in`) {
+      assert.equal(request.headers.host, `127.0.0.1:${httpPort}`);
+      response.writeHead(302, { Location: `${internal}-callback` });
+      response.end();
+      return;
+    }
+    if (request.url === `/${scope}-callback`) {
+      response.writeHead(302, { Location: `${internal}-internal`,
+        'Set-Cookie': `ssm-fixture-session=${scope}; Max-Age=3600; HttpOnly; SameSite=Lax; Path=/` });
+      response.end();
+      return;
+    }
+    const authenticated = request.headers.cookie?.split(';').some(value => value.trim() === `ssm-fixture-session=${scope}`);
+    if (request.url === `/${scope}-session-reopen`) {
+      if (authenticated) retainedSessions.add(scope);
+      response.writeHead(authenticated ? 200 : 401, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
+      response.end(authenticated ? '<h1>Fixture session retained after browser restart</h1>' : '<h1>Fixture session missing</h1>');
+      return;
+    }
+    if (!authenticated) {
+      response.writeHead(302, { Location: `http://127.0.0.1:${httpPort}/${scope}-sign-in` });
+      response.end();
+      return;
+    }
+  }
   response.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
   response.end('<!doctype html><title>SSM Browser Routing Fixture</title><h1>Routing verified</h1>');
 });
@@ -81,12 +110,15 @@ try {
   for (const scope of ['chrome-separate', 'zen-separate', 'zen-existing']) {
     assert(requests.some(request => request.url === `/${scope}-internal`), `${scope}: internal route missing`);
     assert(requests.some(request => request.url === `/${scope}-direct`), `${scope}: direct route missing`);
+    assert.equal(requests.filter(request => request.url === `/${scope}-sign-in`).length, 1, `${scope}: fixture sign-in was not retained`);
+    assert(retainedSessions.has(scope), `${scope}: authenticated fixture session did not survive browser restart`);
     assert(requests.some(request => request.url === `/${scope}-outage-direct`), `${scope}: public traffic failed during outage`);
     assert(!requests.some(request => request.url === `/${scope}-outage-internal`), `${scope}: internal traffic leaked to DIRECT`);
   }
   assert(destinations.length >= 3);
   assert(destinations.every(destination => destination.hostname === 'private.fixture.invalid'));
-  console.log(JSON.stringify({ result: 'passed', scopes: 3, remoteDNS: true, selectiveRouting: true, failClosed: true, artifacts: root }));
+  console.log(JSON.stringify({ result: 'passed', scopes: 3, remoteDNS: true, selectiveRouting: true,
+    fixtureSignInRedirect: true, sessionRetentionAfterRestart: true, failClosed: true, artifacts: root }));
 } finally {
   for (const socket of sockets) socket.destroy();
   socks.close();
