@@ -6,10 +6,10 @@ import AppKit
 @MainActor
 final class AppQuitHandler {
     static let shared = AppQuitHandler()
-    private var handler: (() -> Void)?
+    private var handlers: [() -> Void] = []
 
-    func register(_ handler: @escaping () -> Void) { self.handler = handler }
-    func runShutdown() { handler?() }
+    func register(_ handler: @escaping () -> Void) { handlers.append(handler) }
+    func runShutdown() { handlers.forEach { $0() } }
 }
 
 /// Minimal app delegate: on quit, tear down the active tunnel so no plugin process is orphaned.

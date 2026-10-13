@@ -35,7 +35,10 @@ xcodebuild build \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED" \
+  -clonedSourcePackagesDirPath SSMConnectKit/.build \
   -skipPackagePluginValidation \
+  -skipPackageUpdates \
+  -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   -quiet
 

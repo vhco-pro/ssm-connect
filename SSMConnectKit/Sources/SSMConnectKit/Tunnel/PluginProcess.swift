@@ -14,6 +14,7 @@ protocol SpawnedPluginProcess: AnyObject {
     func sendSIGKILL()
     /// Best-effort captured stderr (for surfacing the failure reason on an unexpected exit).
     func capturedStderr() -> String
+    func setEnvironment(_ environment: [String: String])
 }
 
 /// Spawns plugin child processes. Real impl wraps `Foundation.Process`; mocked in tests.
@@ -74,6 +75,9 @@ final class ProcessPluginProcess: SpawnedPluginProcess, @unchecked Sendable {
 
     var processIdentifier: Int32 { process.processIdentifier }
     var isRunning: Bool { process.isRunning }
+    func setEnvironment(_ environment: [String: String]) {
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+    }
     func sendSIGTERM() { kill(process.processIdentifier, SIGTERM) }
     func sendSIGKILL() { kill(process.processIdentifier, SIGKILL) }
 

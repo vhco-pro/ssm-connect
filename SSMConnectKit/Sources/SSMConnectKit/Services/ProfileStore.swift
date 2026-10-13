@@ -17,6 +17,7 @@ public final class ProfileStore {
     }
 
     private let defaults: any KeyValueStoring
+    private let fallbackProfile = ConnectionProfile.template
     private static let profilesKey = "ssmconnect.profiles.v1"
     private static let activeKey = "ssmconnect.activeProfileID.v1"
     private static let settingsKey = "ssmconnect.settings.v1"
@@ -43,7 +44,7 @@ public final class ProfileStore {
         if let id = activeProfileID, let match = profiles.first(where: { $0.id == id }) {
             return match
         }
-        return profiles.first ?? .template
+        return profiles.first ?? fallbackProfile
     }
 
     /// Whether the user has configured at least one profile (drives first-launch guidance).

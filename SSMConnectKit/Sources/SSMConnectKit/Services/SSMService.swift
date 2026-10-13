@@ -9,6 +9,7 @@ final class SSMService: SSMProviding {
 
     /// SSM document for local port forwarding (spec §6.4).
     static let portForwardDocument = "AWS-StartPortForwardingSession"
+    static let sshDocument = "AWS-StartSSHSession"
 
     private let makeClient: ClientFactory
 
@@ -17,6 +18,21 @@ final class SSMService: SSMProviding {
     }
 
     // MARK: - SSMProviding
+
+    func startSSHSession(
+        instanceId: String, region: String, credentials: AWSCredentials
+    ) async throws -> SSMSessionResponse {
+        let client = try makeClient(credentials, region)
+        let output = try await client.startSession(StartSessionInput(
+            documentName: Self.sshDocument,
+            parameters: ["portNumber": ["22"]], target: instanceId
+        ))
+        guard let sessionId = output.sessionId, let streamUrl = output.streamUrl,
+              let tokenValue = output.tokenValue else {
+            throw SSMError.malformedSessionResponse
+        }
+        return SSMSessionResponse(sessionId: sessionId, streamUrl: streamUrl, tokenValue: tokenValue)
+    }
 
     func waitForSSMOnline(
         instanceId: String,

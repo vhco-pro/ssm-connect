@@ -122,13 +122,21 @@ stateDiagram-v2
 
 ### Menu Dropdown Layout
 
-The dropdown does **not** list all states at once. It surfaces only the *current* state plus a context-aware action, with the full state list available on demand:
+The dropdown surfaces only the *current* state plus connection actions. Reference information is kept in the About window:
 
 1. **Header row** — the current state only: colored SF Symbol + label (e.g. "Workstation — Connected"). Non-interactive. The menu-bar icon mirrors this same state.
 2. **Detail line** (when applicable) — a secondary, greyed, non-interactive line: session info such as `Signed in · expires 8:54 AM` when connected, or the last error message when in the `Error` state.
 3. **Primary action button** — context-aware: `Connect` when disconnected, `Connecting…` (disabled) while transitioning, `Connected` (disabled) once connected, `Retry Connect` after an error. Later phases add `Disconnect` / `Reconnect` / `Stop Workstation` here per F-13/F-14/F-15.
-4. **"All States" submenu** — an expandable legend listing all 8 states with their icons/colors (the §5 mapping above), for reference/troubleshooting. Collapsed by default.
-5. **Quit** (⌘Q).
+4. **Utility actions** — Show Log, Settings (⌘,), and About. Settings and About use these exact labels, without ellipses.
+5. **About SSM Connect window** — app icon/name, release version and build number from the app bundle, macOS/system architecture, Apache 2.0 license, project and release-note links. A collapsed-by-default Connection States reference contains all 8 existing state icons/colors (the §5 mapping above). Opening About does not change either connection.
+6. **Quit** (⌘Q).
+
+About verification on 2026-10-13 used an isolated preview bundle so the connected app was not
+restarted. The native window showed the bundle's actual version/build, system details and all
+three links; its collapsed layout measured 440 x 347 points, expanding to 440 x 551 for all eight
+state labels without text overflow. Repeated About actions reused one window. The full package
+suite passed with 171 tests in 29 suites. Fresh-preview testing also found and fixed an unstable
+empty-store fallback profile identity that could loop the menu's profile-change observer.
 
 **Time formatting:** all wall-clock times shown to the user (e.g. session expiry) use a 12-hour clock with an explicit `AM`/`PM` suffix (`h:mm a`). Because SSO sessions last ~12 h, the expiry can fall on the same clock numerals as sign-in, so the AM/PM marker is required to disambiguate.
 

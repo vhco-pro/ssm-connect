@@ -8,6 +8,7 @@ final class FakePluginProcess: SpawnedPluginProcess, @unchecked Sendable {
     private(set) var sigkillCount = 0
     var running = false
     var stderr = ""
+    private(set) var environment: [String: String] = [:]
     var startError: Error?
     /// When true, a SIGTERM gracefully exits the process (fires `onExit`); else it ignores SIGTERM
     /// and only SIGKILL stops it (exercises the grace-period → SIGKILL path).
@@ -40,6 +41,7 @@ final class FakePluginProcess: SpawnedPluginProcess, @unchecked Sendable {
     }
 
     func capturedStderr() -> String { stderr }
+    func setEnvironment(_ environment: [String: String]) { self.environment = environment }
 
     /// Test helper: simulate the process exiting (fires the wired onExit handler).
     func simulateExit(code: Int32) {

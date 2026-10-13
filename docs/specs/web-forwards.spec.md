@@ -1,7 +1,9 @@
 # SPECIFICATION: Web forwards (internal web UIs in the local browser, over the SSM tunnel)
 
-- **Status:** draft, 2026-10-12. The mechanism is proven with a shell script
-  ([`scripts/web-forwards.sh`](../../scripts/web-forwards.sh)); nothing is implemented in the app yet.
+- **Status:** implemented locally, 2026-10-12; native UI and live transport tested 2026-10-13.
+  Automated tests and the native Debug build pass. Interactive browser SSO is user-confirmed
+  on 2026-10-13; working-day/DCV observation is in progress. The shell script
+  ([`scripts/web-forwards.sh`](../../scripts/web-forwards.sh)) remains the reference mechanism.
 - **Area:** new tunnel type next to the DCV port-forward (F-09). Touches `ConnectionProfile`,
   `SSMProviding`/`SSMService`, the `Tunnel/` layer, the menu and the profile editor.
 - **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md) (F-09, F-13, F-18, ADR-1, ADR-5),
@@ -12,6 +14,10 @@
 This spec was written on the workstation side, where the mechanism was built and measured. It is
 handed to an agent on the Mac because the app can only be built and run there. Do the two parts in
 order.
+
+On 2026-10-12 the user explicitly authorized Part B before the working-day/DCV observation,
+deferring that observation and manual testing of the built feature until after implementation.
+Those checks remain pending, not passed.
 
 **Part A: prove it from this Mac with the script. No code changes.**
 
@@ -84,13 +90,121 @@ security group rules.
 
 ### 3.2 To be measured from the Mac (Part A)
 
+Mac preflight on 2026-10-12: AWS CLI, Session Manager plugin, SSH and Swift/Xcode
+tools are present. The supplied settings were saved outside the repository with
+restricted permissions, and PAC generation passed. The configured AWS profile
+matches the requested account and role, and AWS authentication now succeeds.
+The first connection attempt failed with `TargetNotConnected` after 47.05 s.
+Read-only checks subsequently showed EC2 running with both health checks OK and
+SSM Online; a later attempt connected successfully. The tunnel was left running,
+and an isolated Chrome profile was opened with the generated PAC for the user's
+interactive internal-app login. No system proxy settings were changed.
+The user deferred the working-day/DCV coexistence check on 2026-10-12 and authorized Part B.
+
 | Check | Result |
 |---|---|
-| Cold `up` from a network outside the VPC | |
-| Per-request time, SOCKS and local forward | |
-| SSO login to an internal app completes from this network | |
-| Websocket page through the local forward | |
-| Tunnel survives a working day next to a DCV session | |
+| Cold `up` from a network outside the VPC | Successful session startup: 3.75 s, after the initial failure. Local key already existed from the earlier attempt; network location was not independently verified. |
+| Per-request time, SOCKS and local forward | Three samples, all HTTP 200. SOCKS: 0.543 / 0.409 / 0.583 s. Local: 0.145 / 0.286 / 0.276 s. A later health check also returned HTTP 200: SOCKS 0.375 s, local 0.122 s. |
+| SSO login to an internal app completes from this network | Passed, user-confirmed on 2026-10-12: the user completed Okta login in the PAC-configured Chrome window. The agent verified internal HTTPS with valid TLS and the identity-provider redirect, but did not inspect the authenticated session or handle credentials. |
+| Websocket page through the local forward | Passed in real Chrome at `http://127.0.0.1:4466`: cluster metrics populated and a read-only namespace watch with `resourceVersion=0` received an 840-byte frame. No CORS errors or failed requests were observed. The earlier shared-browser hostname mismatch was not reproduced in real Chrome; no host configuration changes were required. |
+| Tunnel survives a working day next to a DCV session | Initially deferred until after implementation; app-owned web forwards are now under observation alongside real DCV (section 3.5). A full working-day result is not yet available. |
+
+Additional Mac checks on 2026-10-12:
+
+| Check | Result |
+|---|---|
+| Repeated `up` | Reports `already up`; does not replace the active connection. |
+| Listener addresses | Both local listeners verified as IPv4 `127.0.0.1`, not wildcard or IPv6 listeners. |
+| PAC routing with tunnel up | Internal HTTPS and public HTTPS both returned HTTP 200 in isolated Chrome, without disabling TLS verification. |
+| PAC routing with tunnel down | Internal HTTPS failed with `ERR_PROXY_CONNECTION_FAILED`; public HTTPS still returned HTTP 200 in a separate tab. This verifies fail-closed internal routing and direct public routing. |
+| Stop and reconnect | Successful; measured reconnect 5.21 s. Subsequent SOCKS and local requests returned HTTP 200. Tunnel restored after outage tests. |
+| Existing app regression suite | `make test` passed: 151 tests in 26 suites on Swift 6.4 / Xcode 27. Existing concurrency warnings were emitted; no source changes were made. These are existing app tests, not tests of the unimplemented web-forwards feature. |
+| Existing macOS app build | Debug Xcode build completed with `-skipPackagePluginValidation -skipPackageUpdates` after cancelling a stalled dependency fetch. App executable, embedded plugin version and plist verified. CoreDevice/CoreSimulator version-mismatch and existing concurrency warnings were emitted. Xcode resolved four newer transitive dependency pins; those test-generated lockfile changes were restored to the branch's original contents. The produced artifact therefore does not establish a build with exactly the original transitive pins. No app source changes or app launch. |
+| Bundled plugin invocation | Package and binary checksums passed through `scripts/fetch-plugin.sh`; binary reports `1.2.814.0`. A live isolated SSM/SSH tunnel used `AWS_SSM_START_SESSION_RESPONSE` as argument 1, region, `StartSession`, empty profile, and request JSON, with no endpoint argument. Connected in 3.74 s; internal HTTPS returned HTTP 200 in 0.248 s. The wrapper rejected non-environment response arguments. Probe tunnel stopped and private key removed; main tunnel remained active. |
+
+### 3.3 App implementation verification
+
+`make test` passed with 165 tests in 28 suites. The native arm64 Debug app built successfully
+with package updates and automatic package resolution disabled. Its executable, plist,
+code signature, embedded plugin version (`1.2.814.0`) and web-forward symbols in the Debug
+dylib were verified. The tracked dependency lockfile is unchanged. Existing toolchain and
+concurrency warnings remain; no Xcode installation or system settings were changed.
+
+| Criterion | Executed evidence |
+|---|---|
+| AC-1 | ConnectionProfileCodableTests decodes a stored legacy profile with the new block absent; default and explicit-null SOCKS configurations also round-trip. |
+| AC-2 | SSHTunnelTests verifies the pure argument builder, loopback SOCKS/local forwards and ProxyCommand; a spawned-process test verifies that the token is only in the environment. |
+| AC-3 | WebForwardsStateMachineTests verifies key generation, key push, SSH session start and SSH spawn in order, plus the actionable permission error and mapped-user fallback. |
+| AC-4 | A mocked web connection reaches on with no DCV launch; a separate DCV connection is then connected/disconnected while the SSH handle remains active. |
+| AC-5 | An unexpected SSH exit pushes a different key and respawns; user stop cleans up without reconnecting. |
+| AC-6 | PAC suffix branches contain SOCKS5 and no DIRECT fallback. |
+| AC-7 | Partially verified in the built app (sections 3.4 and 3.5), including user-confirmed browser SSO through the app PAC. A fresh-Mac-only-app setup and the exact no-DCV-at-any-point sequence remain unverified. |
+
+Additional executed tests cover conflicting ports, invalid ports/suffixes/SSH inputs, real
+local key generation with a 0700 directory and cleanup, and both independent quit callbacks.
+The working-day/DCV observation is running (section 3.5), not complete. No changes were committed or published.
+
+### 3.4 Native app and live transport checks (2026-10-13)
+
+After the user enabled Accessibility access, the built Debug app was exercised through its
+actual Settings and menu controls. Only the web-forward block of the matching active profile
+was edited; other profile fields and the other saved profile were left alone. No system proxy
+settings or remote application configuration were changed.
+
+| Check | Result |
+|---|---|
+| Native editor | Enabled the block, entered proxy/local-forward settings, and saved. A deliberate duplicate SOCKS/local port disabled Save and showed the uniqueness error; correcting it enabled Save. Persisted values matched the private configuration. |
+| Live profile refresh | Found and fixed a cached-menu bug: onAppear alone did not pick up saved profile edits. The menu now explicitly observes active-profile and settings changes. A saved local-forward name change appeared without restarting the app. Focused regression: 15 tests in 3 suites passed. |
+| Independent connection | Native Turn On Web Forwards reached On with the desktop still Disconnected and no DCV Viewer process. Real EC2 Instance Connect and SSH-over-SSM were used, not mocks or the reference script. |
+| HTTP and bindings | Internal HTTPS through the app SOCKS proxy returned HTTP 200 in 0.195 s; the dashboard forward returned HTTP 200 in 0.110 s. Both listeners were verified as IPv4 127.0.0.1 and owned by the app's SSH child. |
+| Local-forward host policy | The dashboard rejected a temporary alternate local port with invalid Host header. The same forward returned 200 with its expected Host header; using the expected local port made ordinary browser requests work. No host policy was changed. |
+| Native Open action | Invoked the configured dashboard Open item. The dashboard rendered populated CPU/memory panels in the shared browser while the app owned the listener; the read-only metrics endpoint returned a NodeMetricsList with three records. |
+| PAC controls | Copy PAC URL produced the actual app PAC file, with SOCKS-only internal suffix branches. Reveal PAC File opened its Application Support folder in Finder. |
+| Real Chrome with app PAC | Internal HTTPS, public HTTPS and the dashboard all returned 200. A read-only namespace watch with resourceVersion=0 received an 840-byte websocket frame. The probe recorded no browser console errors, but an immediate metrics-text assertion did not pass. |
+| Browser rendering caveat | A separate cold deep-link metrics assertion timed out. The normal home-page-to-cluster workflow subsequently displayed CPU and memory in real Chrome on the restored reference tunnel. Shared-browser API/CRD warnings were observed; no changes were made to that separate application. |
+| PAC with app off | Internal HTTPS failed with ERR_PROXY_CONNECTION_FAILED; public HTTPS returned 200 in a separate Chrome tab. |
+| Stop and key cleanup | Native Turn Off stopped the app listener. The temporary key directory was mode 0700 while connected; no app key directories remained after stop. |
+| Reference tunnel preservation | The reference SSH master and SOCKS listener remained running. Its dashboard listener was temporarily handed to the app for the expected Host header, then restored on the same master; dashboard HTTP 200 verified after restoration. |
+
+The follow-up Debug build returned exit 0 and its new refresh method and bundle signature were
+verified. Existing toolchain/concurrency warnings remained. At that checkpoint the app test
+connection was stopped and the reference tunnel restored. Subsequent browser SSO confirmation
+and ongoing DCV coexistence are recorded in section 3.5, separately from those initial checks.
+
+### 3.5 Live DCV independence and ongoing observation (2026-10-13)
+
+The built app's normal DCV action reached Connected while web forwards remained On. DCV Viewer
+had seven established connections to the local desktop tunnel, and the dashboard still returned
+HTTP 200. Native Disconnect then removed only the DCV connection: the dashboard and SOCKS HTTPS
+both continued returning 200. DCV was reconnected for the stability observation.
+
+The read-only `scripts/observe-web-forwards.mjs` helper records one sample per minute outside
+the repository, in `~/.web-forwards/observations/` (0700 directory, 0600 log). It checks SOCKS
+and local HTTP status, whether the SOCKS listener's SSH parent is SSM Connect, and established
+DCV Viewer streams. It records sleep/coverage gaps and never infers an uninterrupted working day
+from elapsed wall time. No URLs, instance identifiers, usernames, cookies or tokens are written
+to its sample log.
+
+At the updated checkpoint, twelve samples over eleven minutes were healthy: both HTTP targets were
+200, app-owned SSH was verified, seven Viewer streams remained established, and no coverage gaps
+were recorded. This is a successful short coexistence check, **not a completed working-day test**.
+The observer was left running with both app connections active. The reference SSH master and
+its separate SOCKS listener remain alive; its dashboard listener is temporarily handed to the app.
+When ending the app test, stop app web forwards before restoring the reference local listener.
+
+An isolated Chrome profile was launched with the app PAC for interactive identity-provider login.
+On 2026-10-13 the user confirmed completion: "done sso logged in". This is a user-confirmed pass
+for browser SSO through the app PAC, not an agent-inspected authenticated session. No credential
+fields, cookies or tokens were read. The fresh-Mac-only-app setup, exact no-DCV-at-any-point
+sequence for AC-7 and completed working-day observation remain outstanding.
+
+Later, during isolated About UI verification, the observer first reported zero DCV Viewer
+streams at elapsed 3661 seconds. SOCKS and local HTTP remained 200 and SSH ownership remained
+the live app's; no coverage gap was recorded. The native app still reported desktop Connected
+and web forwards On, and Viewer remained running. Its connection-status message was not exposed
+through Accessibility, so the reason for the stream loss is not established. The live app and
+its binary were not restarted or overwritten for the UI preview. This deviation is retained in
+the private observation log; it must not be reported as a clean working-day coexistence pass.
 
 ## 4. Functional requirements
 
@@ -106,7 +220,7 @@ security group rules.
 | WF-8 | P0 | **Port conflicts are reported, not fought.** If a local port is taken by something that is not our own stale process, fail with the existing `localPortInUse` error naming the port. | Reuse `PortProbing`. |
 | WF-9 | P1 | **PAC file.** Write a PAC file from `proxySuffixes` and `socksPort` to Application Support and offer "Copy PAC URL" and "Reveal PAC file" in the menu. The internal branch returns only `SOCKS5 127.0.0.1:<port>`, with no `DIRECT` fallback. | The app does not touch system proxy settings. |
 | WF-10 | P1 | **Menu.** A "Web Forwards" section: on/off, state line, and one "Open <name>" item per local forward that has an `openPath`. | Opens `http://127.0.0.1:<localPort><openPath>`. |
-| WF-11 | P1 | **Profile editor.** Fields for the block in WF-1 with the same validation style as the existing editor (ports 1 to 65535, no duplicate local ports, suffixes start with a dot). | |
+| WF-11 | P1 | **Profile editor.** Fields for the block in WF-1 with the same validation style as the existing editor (ports 1 to 65535, no duplicate local ports, suffixes start with a dot). Proxy suffixes appear as editable domain rows with Add Domain and per-row removal controls. | Empty or invalid added rows prevent Save. |
 | WF-12 | P1 | **No session token in process arguments.** Pass the `StartSession` response to the plugin through the `AWS_SSM_START_SESSION_RESPONSE` environment variable instead of as its first argument. | See 6.2. This is how AWS CLI v2 invokes the plugin. |
 | WF-13 | P2 | **Key material is ephemeral.** The private key lives in a `0700` temporary directory and is deleted when the connection ends or the app quits. | It is useless without an authorised push, but there is no reason to keep it. |
 
@@ -161,9 +275,9 @@ already knows how to do. That was rejected for three reasons:
 
 - The `StartSession` response JSON goes in the environment of the `ssh` process under
   `AWS_SSM_START_SESSION_RESPONSE`; the plugin reads it when its first argument is that variable's
-  name. On the Linux client, AWS CLI v2 was observed invoking the plugin this way. Confirm the
-  remaining argument order against the bundled plugin version before relying on it, and fall back
-  to the 5-argument form from section 6.4 of the main spec if it differs.
+  name. A live Mac test on 2026-10-12 confirmed this exact five-argument form against the
+  checksum-verified bundled version `1.2.814.0` (section 3.2), including an empty profile argument
+  and no endpoint argument. No command-line response fallback is needed for that version.
 - `<params JSON>` is `{"Target":"<id>","DocumentName":"AWS-StartSSHSession","Parameters":{"portNumber":["22"]}}`.
   It contains no single quotes, so single-quoting it inside `ProxyCommand` is safe.
 - Host key checking is off on purpose. The session is brokered by AWS for an instance id the app
@@ -195,7 +309,12 @@ already knows how to do. That was rejected for three reasons:
 
 ### 6.4 Browser side
 
-The PAC file is the whole browser integration:
+The existing implementation exposes PAC files for manual browser integration. A proposed
+first-class Open Browser flow is specified separately in
+[browser-bootstrap.spec.md](./browser-bootstrap.spec.md); it requires acceptance before coding
+and is not implemented or implied by the manual browser tests above.
+
+The current routing mechanism is:
 
 ```js
 function FindProxyForURL(url, host) {
@@ -258,6 +377,7 @@ user's kubeconfig, bound to `127.0.0.1:4466`.
 
 1. Does the SSO login to an internal app complete from the user's own network (Part A, step 3)?
 2. Should web forwards auto-start with the profile, like auto-connect does for DCV?
-3. Is a PAC file enough, or is a "launch a browser profile with this proxy" action worth having?
+3. A managed-browser action is requested; its proposed contract is in
+  [browser-bootstrap.spec.md](./browser-bootstrap.spec.md), awaiting acceptance before implementation.
 4. Should the SOCKS destination set be limited from the app side? SSH cannot restrict a dynamic
    forward without `permitopen` on the key, which Instance Connect keys cannot carry.

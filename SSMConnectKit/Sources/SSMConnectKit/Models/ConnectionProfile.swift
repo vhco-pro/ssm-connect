@@ -52,6 +52,8 @@ public struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
     /// Port the on-box agent listens on (`/ensure-session` + token verifier), forwarded over a second
     /// SSM tunnel in multi-user mode. `nil` → 8444.
     var agentRemotePort: Int? = nil
+    var webForwards: WebForwardsConfiguration? = nil
+    var remoteDevelopment: RemoteDevelopmentConfiguration? = nil
 
     /// Resolved connect mode — legacy/`nil` maps to `.singleUser` (vanilla, the default).
     var resolvedConnectMode: ConnectMode { connectMode ?? .singleUser }
@@ -64,6 +66,94 @@ public struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
         !ssoStartUrl.isEmpty && AWSRegion.isValid(ssoRegion) && !accountId.isEmpty
             && !roleName.isEmpty && AWSRegion.isValid(resourceRegion)
             && !instanceTagKey.isEmpty && !instanceTagValue.isEmpty
+    }
+}
+
+struct RemoteDevelopmentConfiguration: Equatable, Codable, Sendable {
+    var enabled = false
+    var folder: String? = nil
+}
+
+struct WebForwardsConfiguration: Equatable, Codable, Sendable {
+    var enabled: Bool = false
+    var sshUser: String? = nil
+    var socksPort: Int? = 1080
+    var proxySuffixes: [String] = []
+    var localForwards: [LocalForward] = []
+    var browser: ManagedBrowserChoice? = nil
+    var browserMode: BrowserMode? = nil
+    var browserProfilePath: String? = nil
+
+    struct LocalForward: Identifiable, Equatable, Codable, Sendable {
+        var id: Int { localPort }
+        var name: String
+        var localPort: Int
+        var remoteHost: String
+        var remotePort: Int
+        var openPath: String? = nil
+    }
+
+    init(enabled: Bool = false, sshUser: String? = nil, socksPort: Int? = 1080,
+            proxySuffixes: [String] = [], localForwards: [LocalForward] = [], browser: ManagedBrowserChoice? = nil,
+            browserMode: BrowserMode? = nil, browserProfilePath: String? = nil) {
+        self.enabled = enabled
+        self.sshUser = sshUser
+        self.socksPort = socksPort
+        self.proxySuffixes = proxySuffixes
+        self.localForwards = localForwards
+        self.browser = browser
+        self.browserMode = browserMode
+        self.browserProfilePath = browserProfilePath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, sshUser, socksPort, proxySuffixes, localForwards, browser, browserMode, browserProfilePath
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        sshUser = try values.decodeIfPresent(String.self, forKey: .sshUser)
+        socksPort = values.contains(.socksPort)
+            ? try values.decodeIfPresent(Int.self, forKey: .socksPort) : 1080
+        proxySuffixes = try values.decodeIfPresent([String].self, forKey: .proxySuffixes) ?? []
+        localForwards = try values.decodeIfPresent([LocalForward].self, forKey: .localForwards) ?? []
+        browser = try values.decodeIfPresent(ManagedBrowserChoice.self, forKey: .browser)
+        browserMode = try values.decodeIfPresent(BrowserMode.self, forKey: .browserMode)
+        browserProfilePath = try values.decodeIfPresent(String.self, forKey: .browserProfilePath)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(enabled, forKey: .enabled)
+        try values.encodeIfPresent(sshUser, forKey: .sshUser)
+        try values.encode(socksPort, forKey: .socksPort)
+        try values.encode(proxySuffixes, forKey: .proxySuffixes)
+        try values.encode(localForwards, forKey: .localForwards)
+        try values.encodeIfPresent(browser, forKey: .browser)
+        try values.encodeIfPresent(browserMode, forKey: .browserMode)
+        try values.encodeIfPresent(browserProfilePath, forKey: .browserProfilePath)
+    }
+}
+
+enum BrowserMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case existing, separate
+    var id: String { rawValue }
+    var name: String { self == .existing ? "Use My Browser" : "Separate Browser" }
+}
+
+enum ManagedBrowserChoice: String, CaseIterable, Codable, Identifiable, Sendable {
+    case automatic, chrome, edge, firefox, zen
+
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .chrome: "Google Chrome"
+        case .edge: "Microsoft Edge"
+        case .firefox: "Firefox"
+        case .zen: "Zen"
+        }
     }
 }
 

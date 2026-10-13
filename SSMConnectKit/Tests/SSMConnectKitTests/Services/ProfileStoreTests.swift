@@ -27,6 +27,16 @@ struct ProfileStoreTests {
         #expect(store.activeProfile.isConfigured == false)
     }
 
+    @Test("empty-store fallback identity stays stable across reads and deleting the last profile")
+    func stableFallbackIdentity() {
+        let store = ProfileStore(store: makeDefaults())
+        let fallback = store.activeProfile
+        #expect(store.activeProfile == fallback)
+        store.addProfile(.example)
+        store.deleteProfile(store.profiles[0].id)
+        #expect(store.activeProfile == fallback)
+    }
+
     @Test("importableProfiles maps ~/.aws/config SSO profiles, leaving tag + secret blank")
     func importFromConfig() {
         let store = ProfileStore(store: makeDefaults())
@@ -116,6 +126,50 @@ struct ProfileStoreTests {
 
 @Suite("ConnectionProfile Codable")
 struct ConnectionProfileCodableTests {
+    @Test("AC-B2: legacy web configuration decodes without a browser preference")
+    func legacyBrowserPreference() throws {
+        let data = Data("{\"enabled\":true,\"socksPort\":1080,\"proxySuffixes\":[\".internal.example.com\"]}".utf8)
+        var configuration = try JSONDecoder().decode(WebForwardsConfiguration.self, from: data)
+        #expect(configuration.browser == nil)
+        #expect(configuration.browserMode == nil)
+        #expect(configuration.browserProfilePath == nil)
+        configuration.browser = .chrome
+        configuration.browserMode = .separate
+        configuration.browserProfilePath = "/tmp/test-browser-profile"
+        let decoded = try JSONDecoder().decode(WebForwardsConfiguration.self,
+            from: JSONEncoder().encode(configuration))
+        #expect(decoded == configuration)
+    }
+
+    @Test("AC-1: a stored legacy profile decodes with web forwards absent")
+    func legacyWithoutWebForwards() throws {
+        let data = Data("""
+        {"id":"00000000-0000-0000-0000-000000000001","name":"Legacy",
+         "ssoStartUrl":"https://example.awsapps.com/start","ssoRegion":"eu-west-1",
+         "accountId":"111122223333","roleName":"Developer","resourceRegion":"eu-central-1",
+         "instanceTagKey":"Name","instanceTagValue":"workstation","localPort":8443,
+         "remotePort":8443,"connectAction":{"dcvViewer":{}}}
+        """.utf8)
+        let profile = try JSONDecoder().decode(ConnectionProfile.self, from: data)
+        #expect(profile.webForwards == nil)
+        #expect(profile.localPort == 8443)
+        #expect(profile.resolvedConnectMode == .singleUser)
+    }
+
+    @Test("WF-1: optional block defaults and explicit SOCKS disable survive decoding")
+    func webForwardsDefaults() throws {
+        let defaults = try JSONDecoder().decode(WebForwardsConfiguration.self, from: Data("{}".utf8))
+        #expect(defaults.enabled == false)
+        #expect(defaults.socksPort == 1080)
+        let configuration = WebForwardsConfiguration(enabled: true, socksPort: nil,
+            localForwards: [.init(name: "Dashboard", localPort: 4466,
+                                  remoteHost: "127.0.0.1", remotePort: 4466, openPath: "/")])
+        var profile = ConnectionProfile.example
+        profile.webForwards = configuration
+        let decoded = try JSONDecoder().decode(ConnectionProfile.self, from: JSONEncoder().encode(profile))
+        #expect(decoded.webForwards == configuration)
+    }
+
     @Test("round-trips through JSON including the connect action")
     func roundTrip() throws {
         let original = ConnectionProfile.example
