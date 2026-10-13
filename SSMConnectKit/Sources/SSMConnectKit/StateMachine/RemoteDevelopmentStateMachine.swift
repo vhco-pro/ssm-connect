@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import Observation
 
@@ -15,7 +16,7 @@ import Observation
     private let setup: RemoteSSHSetup
     private let helperPath: () -> String
     private let editorPath: () -> String?
-    private let editorPreflight: (String) throws -> Void
+    private let editorPreflight: (String) async throws -> Void
     private var task: Task<Void, Never>?
     private var keys: [UUID: SSHKeyMaterial] = [:]
     private var leases: [UUID: URL] = [:]
@@ -31,7 +32,7 @@ import Observation
          editorPath: @escaping () -> String? = {
              NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode")?
                  .appendingPathComponent("Contents/Resources/app/bin/code").path
-         }, editorPreflight: @escaping (String) throws -> Void = RemoteEditorPreflight.check) {
+         }, editorPreflight: @escaping (String) async throws -> Void = RemoteEditorPreflight.check) {
         self.profile = profile
         self.root = root
         self.setup = RemoteSSHSetup(root: root, configURL: configURL)
@@ -50,7 +51,8 @@ import Observation
     var setupConfigPath: String { setup.configURL.path }
 
     func apply(profile: ConnectionProfile) {
-        guard !isOpening else { return }
+        guard self.profile != profile else { return }
+        task?.cancel()
         self.profile = profile
         errorMessage = nil
         editorLaunched = false
@@ -96,19 +98,24 @@ import Observation
         guard profile.isConfigured, profile.remoteDevelopment?.enabled == true, setup.isInstalled,
               let editor = editorPath(), FileManager.default.isExecutableFile(atPath: editor),
               FileManager.default.isExecutableFile(atPath: helperPath()) else { throw RemoteSSHError.unavailable }
-          try editorPreflight(editor)
+                try await editorPreflight(editor)
+                try Task.checkCancellation()
         let arguments = try RemoteSSHConfiguration.arguments(alias: RemoteSSHConfiguration.alias(profile.id), folder: profile.remoteDevelopment?.folder)
         let credentials = try await auth.authenticate(profile: profile)
+                try Task.checkCancellation()
         var instance = try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
                                                     region: profile.resourceRegion, credentials: credentials)
+                try Task.checkCancellation()
         guard !instance.state.isTerminal else { throw EC2Error.instanceTerminated(instanceId: instance.id) }
         if instance.state != .running {
             try await ec2.startInstance(instanceId: instance.id, region: profile.resourceRegion, credentials: credentials)
             instance = try await ec2.pollUntilRunning(instanceId: instance.id, region: profile.resourceRegion,
                 credentials: credentials, timeout: .seconds(600), interval: .seconds(5))
         }
+        try Task.checkCancellation()
         try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion, credentials: credentials,
                                      timeout: .seconds(120), interval: .seconds(5))
+        try Task.checkCancellation()
         let configuredUser = profile.webForwards?.sshUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let user = configuredUser.isEmpty
             ? try await STSIdentityResolver(presigner: STSPresigner(region: profile.resourceRegion)).resolve(credentials: credentials).username
@@ -139,31 +146,54 @@ import Observation
                   lease.instanceID == instance.id, lease.user == user else { throw RemoteSSHError.targetChanged }
         }
         try Task.checkCancellation()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: editor)
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw RemoteSSHError.unavailable }
+        _ = try await RemoteEditorPreflight.run(editor, arguments: arguments)
         editorLaunched = true
     }
 }
 
 enum RemoteEditorPreflight {
-    static func check(_ executable: String) throws {
+    static func check(_ executable: String) async throws {
+        let data = try await run(executable, arguments: ["--locate-extension", "ms-vscode-remote.remote-ssh"])
+        let directory = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !directory.isEmpty,
+              FileManager.default.fileExists(atPath: directory + "/package.json") else { throw RemoteSSHError.unavailable }
+    }
+
+    static func run(_ executable: String, arguments: [String], timeout: Duration = .seconds(15)) async throws -> Data {
+        try Task.checkCancellation()
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("ssm-editor-cli-" + UUID().uuidString)
+        try BrowserPrivateFiles.write(Data(), to: outputURL, createParent: false)
+        defer { try? FileManager.default.removeItem(at: outputURL) }
+        let output = try FileHandle(forWritingTo: outputURL)
+        defer { try? output.close() }
         let process = Process()
-        let output = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["--locate-extension", "ms-vscode-remote.remote-ssh"]
+        process.arguments = arguments
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
         try process.run()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let directory = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard process.terminationStatus == 0, !directory.isEmpty,
-              FileManager.default.fileExists(atPath: directory + "/package.json") else { throw RemoteSSHError.unavailable }
+        do {
+            let deadline = ContinuousClock.now.advanced(by: timeout)
+            while process.isRunning {
+                try Task.checkCancellation()
+                let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+                guard ContinuousClock.now < deadline,
+                      (attributes[.size] as? NSNumber)?.intValue ?? 0 <= 64 * 1024 else { throw RemoteSSHError.unavailable }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            try Task.checkCancellation()
+            let reader = try FileHandle(forReadingFrom: outputURL)
+            defer { try? reader.close() }
+            let data = try reader.read(upToCount: 64 * 1024 + 1) ?? Data()
+            guard process.terminationStatus == 0, data.count <= 64 * 1024 else { throw RemoteSSHError.unavailable }
+            return data
+        } catch {
+            if process.isRunning {
+                process.terminate()
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
+            throw error
+        }
     }
 }

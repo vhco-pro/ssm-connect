@@ -102,6 +102,14 @@ Then rerun the targeted regressions and the mode-specific native/browser criteri
 session retention, fresh-user setup and the working-day gate remain open. The previous summary's
 test count was correct, but it cannot establish complete acceptance for both modes.
 
+## Auto-Update Restore Follow-Up
+
+The author extended the Restore regression to a newly installed, unverified browser version.
+`restoreUsesInstalledRoutingAfterSaveAndBrowserUpgrade` first failed with `.unavailable`, then
+passed after Restore alone stopped requiring a launch-verified version. Launch preflight still
+refuses that version; policy, closed-browser, exact ownership scope and installed-value checks
+remain mandatory for Restore. This supersedes the original Restore regression name above.
+
 ## Follow-Up Fix Verification
 
 The two reproduced P1 findings and interrupted-write P2 were addressed after the user authorized

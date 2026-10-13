@@ -277,7 +277,7 @@ import Testing
             from: Data(contentsOf: directory.appendingPathComponent("ssm-connect-routing.json"))) == original)
     }
 
-    @Test func restoreUsesInstalledRoutingAfterSave() throws {
+    @Test func restoreUsesInstalledRoutingAfterSaveAndBrowserUpgrade() throws {
         let root = try temporary()
         defer { try? FileManager.default.removeItem(at: root) }
         let directory = root.appendingPathComponent("ordinary")
@@ -286,10 +286,15 @@ import Testing
         try BrowserPrivateFiles.write(Data("user_pref(\"network.proxy.type\", 0);\n".utf8), to: prefs)
         var profile = profile(mode: .existing)
         profile.webForwards?.browserProfilePath = directory.path
-        let service = BrowserBootstrap(root: root, discover: { [descriptor()] }, isRunning: { _ in false })
+        var product = descriptor()
+        let service = BrowserBootstrap(root: root, discover: { [product] }, isRunning: { _ in false })
         try service.setupExisting(profile: profile, consent: true)
         profile.webForwards?.socksPort = 1081
         profile.webForwards?.proxySuffixes.append(".another.example.com")
+        product = .init(choice: product.choice, bundleID: product.bundleID,
+            applicationURL: product.applicationURL, executableURL: product.executableURL, version: "999.0")
+        #expect(!product.supports(.existing))
+        #expect(throws: BrowserBootstrapError.self) { try service.preflight(profile: profile) }
         try service.restore(profile: profile)
         #expect(try ProxyPreference.parse(String(contentsOf: prefs, encoding: .utf8)) == ["network.proxy.type": .integer(0)])
     }

@@ -220,13 +220,15 @@ editor responsiveness on the same workspace; do not invent a numerical speed-up 
 - A further owned SSH channel observed the standard current-commit VS Code Server executable
   on the management VM. This is server-installation evidence, not proof of every workspace feature.
 - URI escaping, strict host-key/agent-forwarding boundaries and conditional SSH Include restore
-  passed focused unit tests. Current full suite passed 195 tests/31 suites; opt-in transport/menu
+  passed focused unit tests. Initial full suite passed 195 tests/31 suites; opt-in transport/menu
   checks were executed separately. Output is recorded in `/tmp/ssm-native-editor-full-tests.log`.
 - The sequential Debug preview rebuild completed with its matching Debug helper embedded;
   executable presence and deep/strict app signature verification passed. No release, commit or
   push was performed. The native window remains available for folder selection.
-- Local CodeQL lint, all eight staged Dependabot YAML drafts, coverage assertions, lockfile
-  stability and diff formatting passed. Hosted CodeQL and updater publication remain unverified.
+- Local CodeQL lint, lockfile stability and diff formatting passed. Hosted CodeQL remains
+  unverified by these local checks.
+- Author review regressions for bounded CLI timeout/cancellation/output and pending-open profile
+  changes passed. The optimized suite after those fixes passed 197 tests across 31 suites.
 - Still unverified: chosen-folder open/save/terminal/language server/project tests/debugging,
   simultaneous windows, live multi-user socket-server mode, full app/drop/SSO recovery, and
   fresh-Mac/user bootstrap. These are not marked met by an SSH marker or CLI launch.

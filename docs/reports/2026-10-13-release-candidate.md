@@ -2,7 +2,7 @@
 
 Date: 2026-10-13. Scope: this branch's macOS ARM64 candidate, not a published release.
 
-## Executed Gates
+## Initial Candidate Gates
 
 - `scripts/release.sh` completed with exit 0 after aligning Xcode's dependency checkout
   with the verified Swift package checkout and enforcing lockfile-only resolution.
@@ -39,5 +39,23 @@ warnings remain; they did not fail the successful build or test suite.
 The app remains ad-hoc signed, not notarized, as in the existing distribution contract.
 No app was installed or launched from this candidate; existing app/editor/DCV state was
 left intact. No merge, public release, Homebrew update or organization setting change
-was performed. Organization-wide Dependabot drafts remain separate, unpublished changes
-as detailed in the [coverage report](2026-10-13-dependabot-coverage.md).
+was performed.
+
+## PR Self-Review Follow-Up
+
+The author reviewed the app diff directly after the independent reviewer reported that
+it had no filesystem or execution tools. No independent-review verdict is claimed.
+
+| Severity | Finding | Resolution and executed check |
+|---|---|---|
+| P0 | `project.yml` helper embedding was left unstaged: the local ZIP contained a helper the pushed commit would omit. | Include the existing embedding changes in the PR; Release packaging now refuses either missing/non-executable helper. Shell syntax and YAML embedding-contract checks passed. |
+| P1 | Browser auto-update blocked conditional Restore through the launch-version gate. | The extended Restore regression reproduced `.unavailable`, then passed after recovery alone bypassed the version gate. Unsupported launch remains refused, and ownership/policy/running checks remain intact. |
+| P1 | VS Code CLI preflight/launch could block the menu main actor indefinitely. | Async waits are bounded to 15 seconds and 64 KiB of captured output. Local timeout, cancellation, excessive-output and normal-result checks passed without VM access. |
+| P1 | Changing the selected profile during editor preparation was ignored. | The regression reproduced stale profile/error state, then passed after changed-profile cancellation and cancellation checks before subsequent workstation actions. No AWS operation occurred in that test. |
+
+The optimized suite was rerun after the review fixes: 197 tests across 31 suites passed.
+Distribution packaging completed, including required-helper checks. The unpacked candidate
+passed checksum, app/helper signatures, proxy CLI smoke and deployment-target checks.
+Reviewed ZIP SHA-256: `128bf624c576f0f806b2901a745ac67a3d73291cb1df2a78c8bbbc0ac4a8cd29`.
+Human acceptance gates remain open; these regressions do not establish a complete
+real-workspace or recovery workflow.

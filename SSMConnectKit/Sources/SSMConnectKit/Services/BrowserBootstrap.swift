@@ -163,11 +163,11 @@ enum BrowserPrivateFiles {
         self.launch = launch
     }
 
-    func resolve(profile: ConnectionProfile) throws -> (BrowserDescriptor, BrowserRouting) {
+    func resolve(profile: ConnectionProfile, requireVerifiedSupport: Bool = true) throws -> (BrowserDescriptor, BrowserRouting) {
         guard let configuration = profile.webForwards, let mode = configuration.browserMode else {
             throw BrowserBootstrapError.chooseMode
         }
-        let available = discover().filter { $0.supports(mode) }
+        let available = discover().filter { !requireVerifiedSupport || $0.supports(mode) }
         let preferred = configuration.browser ?? .automatic
         let defaultID = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!)
             .flatMap { Bundle(url: $0)?.bundleIdentifier }
@@ -304,7 +304,7 @@ enum BrowserPrivateFiles {
     }
 
     func restore(profile: ConnectionProfile) throws {
-        let (descriptor, routing) = try resolve(profile: profile)
+        let (descriptor, routing) = try resolve(profile: profile, requireVerifiedSupport: false)
         try checkPolicy(descriptor)
         guard !isRunning(descriptor) else { throw BrowserBootstrapError.closeBrowser }
         try FirefoxProxySetup(root: root).restore(routing)

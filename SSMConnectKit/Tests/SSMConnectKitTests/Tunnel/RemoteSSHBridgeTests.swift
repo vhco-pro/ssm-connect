@@ -14,6 +14,56 @@ import Testing
         #expect(throws: RemoteSSHError.self) { try RemoteSSHConfiguration.folderURI(alias: host, folder: "~/code") }
         #expect(throws: RemoteSSHError.self) { try RemoteSSHConfiguration.folderURI(alias: host, folder: "/code\nHost *") }
     }
+
+    @Test @MainActor func editorCLITimeoutAndCancellationAreBounded() async throws {
+        let started = ContinuousClock.now
+        await #expect(throws: RemoteSSHError.self) {
+            _ = try await RemoteEditorPreflight.run("/usr/bin/tail", arguments: ["-f", "/dev/null"], timeout: .milliseconds(50))
+        }
+        #expect(ContinuousClock.now - started < .seconds(2))
+        let pending = Task { try await RemoteEditorPreflight.run("/usr/bin/tail", arguments: ["-f", "/dev/null"]) }
+        try await Task.sleep(for: .milliseconds(50))
+        pending.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await pending.value }
+        await #expect(throws: RemoteSSHError.self) {
+            _ = try await RemoteEditorPreflight.run("/usr/bin/yes", arguments: ["output"])
+        }
+        let result = try await RemoteEditorPreflight.run("/usr/bin/printf", arguments: ["ready"])
+        #expect(String(decoding: result, as: UTF8.self) == "ready")
+    }
+
+    @Test @MainActor func profileSwitchCancelsPendingEditorOpen() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var original = ConnectionProfile.example
+        original.remoteDevelopment = .init(enabled: true)
+        let ec2 = SequencedEC2Service(resolveResults: [.success(.stub(state: .running))])
+        var enteredPreflight = false
+        let machine = RemoteDevelopmentStateMachine(profile: original, root: root.appendingPathComponent("owned"),
+            configURL: root.appendingPathComponent("user/config"), ec2: ec2,
+            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in
+                enteredPreflight = true
+                _ = try await RemoteEditorPreflight.run("/usr/bin/tail", arguments: ["-f", "/dev/null"], timeout: .seconds(1))
+            })
+        try machine.installSetup(consent: true)
+        machine.open()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !enteredPreflight && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(enteredPreflight)
+        machine.apply(profile: original)
+        #expect(machine.isOpening)
+        var replacement = original
+        replacement.id = UUID()
+        replacement.name = "Replacement"
+        machine.apply(profile: replacement)
+        #expect(machine.profile == replacement)
+        await machine.awaitOpening()
+        #expect(!machine.isOpening)
+        #expect(machine.errorMessage == nil)
+        #expect(!machine.editorLaunched)
+        #expect(ec2.resolveCount == 0)
+    }
+
     @Test func configurationHasNoCredentialsOrSecurityBypass() throws {
         let lease = RemoteSSHLease(profile: .example, instanceID: "i-0123456789abcdef0", user: "example",
             keyPath: "/tmp/key with spaces", pluginPath: "/tmp/plugin", ownerPID: 1, ownerLaunchDate: Date(),
