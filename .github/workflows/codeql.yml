@@ -18,6 +18,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -50,16 +54,25 @@ jobs:
       # Cache resolved SwiftPM dependency *sources* (aws-sdk-swift is large to clone)
       # — NOT the build products, so CodeQL still traces a full clean compile.
       - name: Cache SwiftPM sources (Swift)
+        id: swift-cache
         if: matrix.language == 'swift'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 2
         with:
           path: |
             SSMConnectKit/.build/checkouts
             SSMConnectKit/.build/repositories
             ~/Library/Caches/org.swift.swiftpm
-          key: codeql-spm-${{ hashFiles('SSMConnectKit/Package.resolved') }}
+          key: codeql-spm-v2-${{ runner.os }}-${{ hashFiles('SSMConnectKit/Package.resolved') }}
           restore-keys: |
-            codeql-spm-
+            codeql-spm-v2-${{ runner.os }}-
+
+      - name: Discard incomplete Swift source cache
+        if: matrix.language == 'swift' && steps.swift-cache.outcome == 'failure'
+        run: rm -rf SSMConnectKit/.build/checkouts SSMConnectKit/.build/repositories
 
       - name: Run Swift unit tests
         if: matrix.language == 'swift'
