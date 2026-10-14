@@ -15,7 +15,10 @@ struct FakeSSHKeyGenerator: SSHKeyGenerating {
         recorder.append("key")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-        return SSHKeyMaterial(directory: directory, publicKey: "ssh-ed25519 \(UUID().uuidString)")
+        let publicKey = "ssh-ed25519 \(UUID().uuidString)"
+        try BrowserPrivateFiles.write(Data("fixture-private-key".utf8), to: directory.appendingPathComponent("key"))
+        try BrowserPrivateFiles.write(Data(publicKey.utf8), to: directory.appendingPathComponent("key.pub"))
+        return SSHKeyMaterial(directory: directory, publicKey: publicKey)
     }
 }
 

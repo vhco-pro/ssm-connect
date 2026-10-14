@@ -17,6 +17,7 @@ import Observation
     private let helperPath: () -> String
     private let editorPath: () -> String?
     private let editorPreflight: (String) async throws -> Void
+    private let ownerIdentity: () -> (pid: Int32, launchDate: Date, bundleID: String)?
     private var task: Task<Void, Never>?
     private var keys: [UUID: SSHKeyMaterial] = [:]
     private var leases: [UUID: URL] = [:]
@@ -32,7 +33,12 @@ import Observation
          editorPath: @escaping () -> String? = {
              NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode")?
                  .appendingPathComponent("Contents/Resources/app/bin/code").path
-         }, editorPreflight: @escaping (String) async throws -> Void = RemoteEditorPreflight.check) {
+         }, editorPreflight: @escaping (String) async throws -> Void = RemoteEditorPreflight.check,
+         ownerIdentity: @escaping () -> (pid: Int32, launchDate: Date, bundleID: String)? = {
+             guard let launchDate = NSRunningApplication.current.launchDate,
+                   let bundleID = NSRunningApplication.current.bundleIdentifier else { return nil }
+             return (NSRunningApplication.current.processIdentifier, launchDate, bundleID)
+         }) {
         self.profile = profile
         self.root = root
         self.setup = RemoteSSHSetup(root: root, configURL: configURL)
@@ -43,6 +49,7 @@ import Observation
         self.helperPath = helperPath
         self.editorPath = editorPath
         self.editorPreflight = editorPreflight
+        self.ownerIdentity = ownerIdentity
         AppQuitHandler.shared.register { [weak self] in self?.stopAll() }
     }
 
@@ -121,29 +128,28 @@ import Observation
             ? try await STSIdentityResolver(presigner: STSPresigner(region: profile.resourceRegion)).resolve(credentials: credentials).username
             : configuredUser
         try Task.checkCancellation()
+        if let path = leases[profile.id] {
+            let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: path))
+            if try !lease.canReuse(profile: profile, instanceID: instance.id, user: user) {
+                stop(profileID: profile.id)
+            }
+        }
         if leases[profile.id] == nil {
             let key = try await keyGenerator.generate()
             try Task.checkCancellation()
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: key.privateKeyPath + ".pub")
             let directory = root.appendingPathComponent(profile.id.uuidString, isDirectory: true)
             let leaseURL = directory.appendingPathComponent("lease.json")
-            guard let launchDate = NSRunningApplication.current.launchDate,
-                  let bundleID = NSRunningApplication.current.bundleIdentifier else { throw RemoteSSHError.invalidLease }
+            guard let owner = ownerIdentity() else { throw RemoteSSHError.invalidLease }
             let lease = RemoteSSHLease(profile: profile, instanceID: instance.id, user: user, keyPath: key.privateKeyPath,
-                pluginPath: BundledPluginTunnel.defaultPluginPath() ?? "", ownerPID: NSRunningApplication.current.processIdentifier,
-                ownerLaunchDate: launchDate, ownerBundleID: bundleID, generation: UUID(), expiresAt: Date().addingTimeInterval(24 * 60 * 60))
+                pluginPath: BundledPluginTunnel.defaultPluginPath() ?? "", ownerPID: owner.pid,
+                ownerLaunchDate: owner.launchDate, ownerBundleID: owner.bundleID, generation: UUID(), expiresAt: Date().addingTimeInterval(24 * 60 * 60))
             try BrowserPrivateFiles.write(try JSONEncoder().encode(lease), to: leaseURL)
             let contents = try RemoteSSHConfiguration.contents(lease: lease, leasePath: leaseURL.path,
                 helperPath: helperPath(), knownHostsPath: root.appendingPathComponent("known-hosts").path)
             try setup.writeHost(contents, profileID: profile.id)
             keys[profile.id] = key
             leases[profile.id] = leaseURL
-        } else {
-            let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leases[profile.id]!))
-            guard lease.profile.accountId == profile.accountId, lease.profile.resourceRegion == profile.resourceRegion,
-                lease.profile.ssoStartUrl == profile.ssoStartUrl, lease.profile.ssoRegion == profile.ssoRegion,
-                lease.profile.roleName == profile.roleName, lease.expiresAt > Date(),
-                  lease.instanceID == instance.id, lease.user == user else { throw RemoteSSHError.targetChanged }
         }
         try Task.checkCancellation()
         _ = try await RemoteEditorPreflight.run(editor, arguments: arguments)

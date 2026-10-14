@@ -80,3 +80,26 @@ reopen fixture, alongside DNS/routing/outage checks. See the
 [browser review](2026-10-13-browser-bootstrap-review.md). Real identity-provider policy/MFA,
 arbitrary user projects, concurrency/socket-mode/recovery and fresh-user coverage remain
 separate gates. No merge or public release has been performed.
+
+## Recovery Coverage Follow-Up (2026-10-14)
+
+The user selected completing remaining coverage rather than publishing the preview scope.
+The earlier approved candidate is therefore not a release approval.
+
+Local expiry-renewal, exact-identity refusal, double-open deduplication, lease reuse,
+sign-in failure/retry and fresh-setup prerequisite tests passed. The full suite passed
+202 tests across 31 suites. The recovery Release ZIP was rebuilt and its unpacked app/helper
+signatures, checksum and proxy CLI smoke check passed.
+Recovery ZIP SHA-256: `1d31956b782d5068c0b268461697f5f8150f1132945ff89434258ca3665c9ecb`.
+
+Explicit native sign-in enabled isolated live concurrent-channel and 65-second fresh-key
+authorization tests to pass; a repeat passed after an intervening failed duplicate attempt.
+An owned private Unix-socket forwarding fixture also passed and was cleaned up. These do
+not replace full concurrent-window/multi-user editor, drop/relaunch, fresh-Mac or real
+enterprise browser sign-in coverage. Details are recorded in the editor specification.
+
+Hosted PR checks passed for head `2acdef2dc335cd87b93ea0cc8a0e02f55d9e10a9` in
+[run 38473783218](https://github.com/vhco-pro/ssm-connect/actions/runs/38473783218), and
+same-head independent verification passed in
+[run 38476973135](https://github.com/vhco-pro/ssm-connect/actions/runs/38476973135).
+New recovery source changes require their own hosted run. No merge or public release occurred.

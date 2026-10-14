@@ -79,6 +79,62 @@ import Testing
         #expect(throws: RemoteSSHError.self) { try lease.validate(path: "/tmp/lease.json", ownerActive: false) }
     }
 
+    @Test func leaseExpiryRenewsOnlyTheSameWorkstationIdentity() throws {
+        let now = Date()
+        let profile = ConnectionProfile.example
+        let lease = RemoteSSHLease(profile: profile, instanceID: "i-0123456789abcdef0", user: "example",
+            keyPath: "/tmp/key", pluginPath: "/tmp/plugin", ownerPID: 1, ownerLaunchDate: now,
+            ownerBundleID: "test", generation: UUID(), expiresAt: now.addingTimeInterval(60))
+        #expect(try lease.canReuse(profile: profile, instanceID: lease.instanceID, user: lease.user, now: now))
+        #expect(try !lease.canReuse(profile: profile, instanceID: lease.instanceID, user: lease.user, now: lease.expiresAt))
+        #expect(throws: RemoteSSHError.self) {
+            try lease.canReuse(profile: profile, instanceID: "i-11111111111111111", user: lease.user, now: lease.expiresAt)
+        }
+        #expect(throws: RemoteSSHError.self) {
+            try lease.canReuse(profile: profile, instanceID: lease.instanceID, user: "other", now: lease.expiresAt)
+        }
+        var changed = profile
+        changed.instanceTagValue = "another-workstation"
+        #expect(throws: RemoteSSHError.self) {
+            try lease.canReuse(profile: changed, instanceID: lease.instanceID, user: lease.user, now: now)
+        }
+    }
+
+    @Test @MainActor func reopeningExpiredLeaseCreatesFreshOwnedGeneration() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var profile = ConnectionProfile.example
+        profile.remoteDevelopment = .init(enabled: true)
+        profile.webForwards = .init(enabled: true, sshUser: "example")
+        let recorder = WebEventRecorder()
+        let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
+            configURL: root.appendingPathComponent("user/config"), auth: MockAuthProvider(),
+            ec2: MockEC2Service(), ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
+            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
+            ownerIdentity: { (12345, Date(), "test-owner") })
+        defer { machine.stop() }
+        try machine.installSetup(consent: true)
+        machine.open()
+        await machine.awaitOpening()
+        try #require(machine.errorMessage == nil && machine.editorLaunched)
+        let leaseURL = root.appendingPathComponent("owned/\(profile.id.uuidString)/lease.json")
+        let first = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
+        let expired = RemoteSSHLease(profile: first.profile, instanceID: first.instanceID, user: first.user,
+            keyPath: first.keyPath, pluginPath: first.pluginPath, ownerPID: first.ownerPID,
+            ownerLaunchDate: first.ownerLaunchDate, ownerBundleID: first.ownerBundleID,
+            generation: first.generation, expiresAt: Date().addingTimeInterval(-1))
+        try BrowserPrivateFiles.write(try JSONEncoder().encode(expired), to: leaseURL)
+        machine.open()
+        await machine.awaitOpening()
+        try #require(machine.errorMessage == nil && machine.editorLaunched)
+        let renewed = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
+        #expect(renewed.generation != first.generation)
+        #expect(renewed.keyPath != first.keyPath)
+        #expect(renewed.expiresAt > Date())
+        #expect(renewed.instanceID == first.instanceID && renewed.user == first.user)
+        #expect(recorder.values == ["key", "key"])
+    }
+
     @Test func sshIncludeConsentAndConditionalRestore() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -98,6 +154,84 @@ import Testing
         #expect(throws: RemoteSSHError.self) { try setup.restore() }
     }
 
+    @Test @MainActor func repeatedOpenDeduplicatesAndReusesOwnedLease() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var profile = ConnectionProfile.example
+        profile.remoteDevelopment = .init(enabled: true)
+        profile.webForwards = .init(enabled: true, sshUser: "example")
+        let auth = MockAuthProvider(delay: .milliseconds(50))
+        let recorder = WebEventRecorder()
+        let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
+            configURL: root.appendingPathComponent("user/config"), auth: auth,
+            ec2: MockEC2Service(), ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
+            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
+            ownerIdentity: { (12345, Date(), "test-owner") })
+        defer { machine.stop() }
+        try machine.installSetup(consent: true)
+        machine.open()
+        machine.open()
+        await machine.awaitOpening()
+        try #require(machine.errorMessage == nil && machine.editorLaunched)
+        #expect(auth.authenticateCallCount == 1)
+        let leaseURL = root.appendingPathComponent("owned/\(profile.id.uuidString)/lease.json")
+        let initial = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
+        machine.open()
+        await machine.awaitOpening()
+        let reused = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
+        #expect(reused.generation == initial.generation && reused.keyPath == initial.keyPath)
+        #expect(recorder.values == ["key"])
+    }
+
+    @Test @MainActor func signInFailureIsRetryableWithoutWorkstationActions() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var profile = ConnectionProfile.example
+        profile.remoteDevelopment = .init(enabled: true)
+        profile.webForwards = .init(enabled: true, sshUser: "example")
+        let auth = MockAuthProvider(authenticateOutcome: .failure(AuthError.signInRequired))
+        let ec2 = SequencedEC2Service(resolveResults: [.success(.stub(state: .running))])
+        let recorder = WebEventRecorder()
+        let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
+            configURL: root.appendingPathComponent("user/config"), auth: auth,
+            ec2: ec2, ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
+            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
+            ownerIdentity: { (12345, Date(), "test-owner") })
+        defer { machine.stop() }
+        try machine.installSetup(consent: true)
+        machine.open()
+        await machine.awaitOpening()
+        #expect(machine.errorMessage == AuthError.signInRequired.localizedDescription)
+        #expect(ec2.resolveCount == 0 && recorder.values.isEmpty)
+        #expect(!machine.editorLaunched && !machine.isActive)
+        auth.authenticateOutcome = .success(.stub)
+        machine.open()
+        await machine.awaitOpening()
+        #expect(machine.errorMessage == nil && machine.editorLaunched && machine.isActive)
+        #expect(recorder.values == ["key"])
+    }
+
+    @Test @MainActor func freshSetupConsentAndMissingEditorRefuseBeforeAWS() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var profile = ConnectionProfile.example
+        profile.remoteDevelopment = .init(enabled: true)
+        let auth = MockAuthProvider()
+        let config = root.appendingPathComponent("user/config")
+        let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
+            configURL: config, auth: auth, helperPath: { "/usr/bin/true" }, editorPath: { nil })
+        try machine.installSetup(consent: false)
+        machine.open()
+        await machine.awaitOpening()
+        #expect(!FileManager.default.fileExists(atPath: config.path))
+        #expect(!machine.setupInstalled && auth.authenticateCallCount == 0)
+        try machine.installSetup(consent: true)
+        machine.open()
+        await machine.awaitOpening()
+        #expect(machine.setupInstalled && machine.errorMessage != nil)
+        #expect(!machine.editorLaunched && auth.authenticateCallCount == 0)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SSM_REMOTE_TRANSPORT_PROBE"] == "1"))
     @MainActor func realSSHCommandChannelsRefreshAuthorization() async throws {
         let owner = try #require(NSRunningApplication.runningApplications(withBundleIdentifier: "pro.vhco.ssm-connect.about-preview").first)
@@ -105,8 +239,10 @@ import Testing
         let data = try #require(defaults.data(forKey: "ssmconnect.profiles.v1"))
         let profiles = try JSONDecoder().decode([ConnectionProfile].self, from: data)
         let profile = try #require(profiles.first { $0.webForwards?.enabled == true })
-        let credentials = try await withStageTimeout("Probe cached AWS sign-in", .seconds(20)) {
-            try await AWSAuthProvider().refreshIfNeeded(profile: profile)
+        let interactive = ProcessInfo.processInfo.environment["SSM_REMOTE_INTERACTIVE_SIGNIN"] == "1"
+        let credentials = try await withStageTimeout("Probe AWS sign-in", interactive ? .seconds(600) : .seconds(20)) {
+            if interactive { return try await AWSAuthProvider().authenticate(profile: profile) }
+            return try await AWSAuthProvider().refreshIfNeeded(profile: profile)
         }
         let instance = try await EC2Service().resolveInstance(tagKey: profile.instanceTagKey,
             tagValue: profile.instanceTagValue, region: profile.resourceRegion, credentials: credentials)
@@ -134,6 +270,43 @@ import Testing
         let config = root.appendingPathComponent("config")
         try BrowserPrivateFiles.write(Data(try RemoteSSHConfiguration.contents(lease: lease,
             leasePath: leaseURL.path, helperPath: helper, knownHostsPath: root.appendingPathComponent("known-hosts").path).utf8), to: config)
+        try await withThrowingTaskGroup(of: String.self) { group in
+            for channel in 0..<3 {
+                group.addTask {
+                    let outputURL = root.appendingPathComponent("concurrent-output-\(channel)")
+                    let errorURL = root.appendingPathComponent("concurrent-error-\(channel)")
+                    try BrowserPrivateFiles.write(Data(), to: outputURL)
+                    try BrowserPrivateFiles.write(Data(), to: errorURL)
+                    let output = try FileHandle(forWritingTo: outputURL)
+                    let errors = try FileHandle(forWritingTo: errorURL)
+                    defer { try? output.close(); try? errors.close() }
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+                    process.arguments = ["-F", config.path, "-T", RemoteSSHConfiguration.alias(profile.id),
+                        "printf 'SSM_CONCURRENT_\(channel)\\n'"]
+                    process.standardInput = FileHandle.nullDevice
+                    process.standardOutput = output
+                    process.standardError = errors
+                    try process.run()
+                    let deadline = ContinuousClock.now.advanced(by: .seconds(100))
+                    while process.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(100)) }
+                    if process.isRunning { process.terminate() }
+                    if process.isRunning || process.terminationStatus != 0 {
+                        let message = try String(contentsOf: errorURL, encoding: .utf8)
+                        let reason = message.contains("Permission denied") ? "SSH permission denied"
+                            : message.contains("Host key verification failed") ? "host key verification failed"
+                            : message.contains(RemoteSSHProxyRuntime.failureMessage.trimmingCharacters(in: .whitespacesAndNewlines))
+                                ? "bridge authorization refused" : "SSH child failed or timed out"
+                        print("Owned concurrent channel \(channel): \(reason)")
+                    }
+                    try #require(!process.isRunning && process.terminationStatus == 0)
+                    return try String(contentsOf: outputURL, encoding: .utf8)
+                }
+            }
+            var responses: Set<String> = []
+            for try await response in group { responses.insert(response) }
+            #expect(responses == Set((0..<3).map { "SSM_CONCURRENT_\($0)\n" }))
+        }
         for channel in 0..<2 {
             if channel == 1 { try await Task.sleep(for: .seconds(65)) }
             let output = root.appendingPathComponent("output-\(channel)")
@@ -158,7 +331,7 @@ import Testing
             let response = try String(contentsOf: output, encoding: .utf8)
             #expect(response == "SSM_CONNECT_REMOTE_OK\n")
         }
-        print("Real SSH-over-SSM command channels passed, including fresh authorization after 65 seconds; normal SSH/editor configuration untouched.")
+        print("Concurrent SSH-over-SSM channels and fresh authorization after 65 seconds passed; normal SSH/editor configuration untouched.")
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SSM_REMOTE_MENU_PROBE"] == "1"))

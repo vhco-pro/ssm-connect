@@ -27,6 +27,15 @@ struct RemoteSSHLease: Codable, Sendable {
     let generation: UUID
     let expiresAt: Date
 
+    func canReuse(profile: ConnectionProfile, instanceID: String, user: String, now: Date = Date()) throws -> Bool {
+        guard self.profile.id == profile.id, self.profile.accountId == profile.accountId,
+              self.profile.resourceRegion == profile.resourceRegion, self.profile.ssoStartUrl == profile.ssoStartUrl,
+              self.profile.ssoRegion == profile.ssoRegion, self.profile.roleName == profile.roleName,
+              self.profile.instanceTagKey == profile.instanceTagKey, self.profile.instanceTagValue == profile.instanceTagValue,
+              self.instanceID == instanceID, self.user == user else { throw RemoteSSHError.targetChanged }
+        return expiresAt > now
+    }
+
     var ownerIsActive: Bool {
         guard expiresAt > Date(), let application = NSRunningApplication(processIdentifier: ownerPID),
               !application.isTerminated, application.bundleIdentifier == ownerBundleID,

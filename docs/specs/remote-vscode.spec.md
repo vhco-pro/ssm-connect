@@ -246,3 +246,37 @@ editor responsiveness on the same workspace; do not invent a numerical speed-up 
 - Still unverified: arbitrary user projects, simultaneous windows, live multi-user socket-server
   mode, full app/drop/SSO recovery, and
   fresh-Mac/user bootstrap. These are not marked met by an SSH marker or CLI launch.
+
+## 9. Recovery Coverage Follow-Up (2026-10-14)
+
+The user explicitly chose to finish remaining coverage rather than publish the tested
+preview scope. Release remains unapproved.
+
+- An expired lease now renews on explicit Open only after validating the exact profile,
+  account/SSO/role/region, tag selector, instance and OS-user identity. Changed identities
+  still require a separate decision; renewal never silently redirects an existing workspace.
+- `reopeningExpiredLeaseCreatesFreshOwnedGeneration` executed the coordinator twice around
+  an expired journal and verified a new key/generation on the same target. Identity mismatch
+  and expiry-boundary checks passed independently.
+- Double Open deduplicates preparation and later same-target Open reuses its owned key and
+  generation. Sign-in-required refusal does not reach EC2 or create a lease and can be retried.
+- Empty-state cancelled consent performs no SSH-config write or AWS operation. Missing editor
+  prerequisites are refused before AWS. These local fixture tests passed.
+- The full retained suite passed 202 tests across 31 suites. Live probes remain opt-in.
+- Explicit `SSM_REMOTE_INTERACTIVE_SIGNIN=1` on the live probe uses the normal native
+  authentication flow with a bounded approval window. Without that opt-in, the probe
+  remains silent and refuses an expired sign-in. It never accepts credentials through chat.
+- The initial expanded live probe refused expired cached sign-in. Explicit native sign-in
+  then succeeded and three concurrently authorized channels returned distinct expected
+  markers, followed by fresh authorization after 65 seconds. A duplicate attempt failed
+  quickly; a bounded repeat with private per-channel diagnostic classification passed in
+  81 seconds. One pass is not treated as proof of every reconnect condition.
+- An owned temporary Unix socket on the VM was reached through a fresh SSH `-L` channel,
+  with loopback-only local binding and private remote permissions. Expected output matched,
+  and the owned server/socket were cleaned up. No sshd or global editor setting was changed.
+  This verifies stream-local forwarding, not a full multi-user VS Code socket-server session.
+- Full concurrent editor windows, native multi-user socket mode, arbitrary SSO/policy and
+  drop/app-relaunch recovery remain open. The user's active preview lease/session was not
+  replaced or stopped by these probes.
+- Local fresh directories validate setup boundaries, not a genuinely fresh Mac, remote-user
+  provisioning or enterprise identity-provider behavior. Those acceptance scopes remain open.
