@@ -280,3 +280,24 @@ preview scope. Release remains unapproved.
   replaced or stopped by these probes.
 - Local fresh directories validate setup boundaries, not a genuinely fresh Mac, remote-user
   provisioning or enterprise identity-provider behavior. Those acceptance scopes remain open.
+
+## 10. Owned-Channel Shutdown Follow-Up (2026-10-14)
+
+- Proxy task cancellation now stops its owned plugin even when cancellation interrupts the
+  polling sleep. An invalidated lease receives a bounded graceful-stop period followed by
+  force-stop of only that child if needed.
+- Local process tests verified invalidation, cancellation, refusal to kill an unrelated child,
+  and a SIGTERM-ignoring fixture stopped after the grace period. Focused bridge tests passed.
+- The extended live probe passed in 87 seconds using its own temporary key/config/lease:
+  concurrent channels, fresh authorization after 65 seconds, temporary lease deletion stopping
+  its held channel, and a fresh-generation reconnect returning the exact expected marker.
+  No real app lease, editor window or normal SSH configuration was deleted or replaced.
+- The probe may explicitly select either approved SSM Connect bundle identity as its live
+  owner via `SSM_REMOTE_PROBE_OWNER_BUNDLE`. This is a test-only whitelist, not relaxed
+  production ownership validation. The main app was used when the preview was closed.
+- Disposable external UI/login/forwarding scripts were removed after session setup/testing.
+  Reproducible package tests and documented observation/fixture scripts remain.
+
+This adds isolated channel-stop/reconnect evidence, not a complete native-window app-quit/
+relaunch test or a genuine fresh-Mac/multi-user/enterprise-policy acceptance. Those gates
+remain open and release is still unapproved.

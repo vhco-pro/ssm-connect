@@ -103,3 +103,24 @@ Hosted PR checks passed for head `2acdef2dc335cd87b93ea0cc8a0e02f55d9e10a9` in
 same-head independent verification passed in
 [run 38476973135](https://github.com/vhco-pro/ssm-connect/actions/runs/38476973135).
 New recovery source changes require their own hosted run. No merge or public release occurred.
+
+## Bounded Shutdown And Cleanup Follow-Up (2026-10-14)
+
+Cancellation during the proxy monitor's polling sleep now stops only its owned plugin.
+Lease invalidation has a graceful-stop deadline followed by force-stop if the child ignores
+SIGTERM. Executed local tests cover invalidation, cancellation, an unrelated child remaining
+alive and an uncooperative child stopped after grace.
+
+The isolated live probe passed in 87 seconds: concurrent authorization, 65-second fresh-key
+authorization, deletion of its temporary lease stopping its held channel, and fresh-generation
+reconnect. The main app was explicitly used as owner when the old preview was closed; no
+normal app lease, browser configuration or user editor session was invalidated.
+
+The full retained suite passed 204 tests across 31 suites. Release packaging completed;
+unpacked app/helper signatures, checksum and proxy CLI smoke checks passed.
+Shutdown ZIP SHA-256: `641629669b9341aa70fc31c6e137ea35a7afeffab7473e152bd966418961b594`.
+
+Disposable external operational code was removed after checking it was unused. Runtime
+helper/library code, reproducible tests, observation tools, saved workspaces and app-owned
+leases remain. Full native GUI quit/relaunch, multi-user socket mode, fresh-Mac and enterprise
+identity-policy acceptance remain open. No merge or public release was performed.

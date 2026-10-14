@@ -138,11 +138,34 @@ public enum RemoteSSHProxyRuntime {
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError
         try process.run()
-        while process.isRunning {
-            if !current(lease, path: configurationPath) || Task.isCancelled { process.terminate() }
-            try await Task.sleep(for: .milliseconds(250))
+        return try await waitForOwnedProcess(process, isCurrent: { current(lease, path: configurationPath) })
+    }
+
+    static func waitForOwnedProcess(_ process: Process, isCurrent: () -> Bool,
+                                   pollInterval: Duration = .milliseconds(250),
+                                   terminationGrace: Duration = .seconds(5)) async throws -> Int32 {
+        var stopDeadline: ContinuousClock.Instant?
+        do {
+            while process.isRunning {
+                try Task.checkCancellation()
+                if !isCurrent() {
+                    if stopDeadline == nil {
+                        process.terminate()
+                        stopDeadline = ContinuousClock.now.advanced(by: terminationGrace)
+                    } else if let deadline = stopDeadline, ContinuousClock.now >= deadline {
+                        kill(process.processIdentifier, SIGKILL)
+                    }
+                }
+                try await Task.sleep(for: pollInterval)
+            }
+            return process.terminationStatus
+        } catch {
+            if process.isRunning {
+                process.terminate()
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
+            throw error
         }
-        return process.terminationStatus
     }
 
     public static var failureMessage: String {

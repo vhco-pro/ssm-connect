@@ -32,6 +32,61 @@ import Testing
         #expect(String(decoding: result, as: UTF8.self) == "ready")
     }
 
+    @Test func invalidatedChannelAndCancellationStopOnlyOwnedProcess() async throws {
+        func start() throws -> Process {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
+            process.arguments = ["-f", "/dev/null"]
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            return process
+        }
+        let invalidated = try start()
+        let unrelated = try start()
+        defer { if unrelated.isRunning { unrelated.terminate() } }
+        _ = try await RemoteSSHProxyRuntime.waitForOwnedProcess(invalidated, isCurrent: { false },
+            pollInterval: .milliseconds(10), terminationGrace: .milliseconds(50))
+        #expect(!invalidated.isRunning && unrelated.isRunning)
+        let cancelled = try start()
+        let waiter = Task {
+            try await RemoteSSHProxyRuntime.waitForOwnedProcess(cancelled, isCurrent: { true }, pollInterval: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(30))
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await waiter.value }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while cancelled.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!cancelled.isRunning && unrelated.isRunning)
+    }
+
+    @Test func invalidatedUncooperativeChannelIsForceStoppedAfterGrace() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try BrowserPrivateFiles.directory(root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let ready = root.appendingPathComponent("ready")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "trap '' TERM; printf ready > \"$1\"; while :; do :; done", "ssm-owned-test", ready.path]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        defer { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
+        try process.run()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !FileManager.default.fileExists(atPath: ready.path) && process.isRunning && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(FileManager.default.fileExists(atPath: ready.path))
+        let started = ContinuousClock.now
+        let exitCode = try await RemoteSSHProxyRuntime.waitForOwnedProcess(process, isCurrent: { false },
+            pollInterval: .milliseconds(10), terminationGrace: .milliseconds(50))
+        #expect(!process.isRunning)
+        #expect(exitCode == SIGKILL)
+        #expect(ContinuousClock.now - started < .seconds(2))
+    }
+
     @Test @MainActor func profileSwitchCancelsPendingEditorOpen() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -234,7 +289,9 @@ import Testing
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SSM_REMOTE_TRANSPORT_PROBE"] == "1"))
     @MainActor func realSSHCommandChannelsRefreshAuthorization() async throws {
-        let owner = try #require(NSRunningApplication.runningApplications(withBundleIdentifier: "pro.vhco.ssm-connect.about-preview").first)
+        let ownerBundleID = ProcessInfo.processInfo.environment["SSM_REMOTE_PROBE_OWNER_BUNDLE"] ?? "pro.vhco.ssm-connect.about-preview"
+        try #require(["pro.vhco.ssm-connect.about-preview", "pro.vhco.ssm-connect"].contains(ownerBundleID))
+        let owner = try #require(NSRunningApplication.runningApplications(withBundleIdentifier: ownerBundleID).first)
         let defaults = try #require(UserDefaults(suiteName: "pro.vhco.ssm-connect"))
         let data = try #require(defaults.data(forKey: "ssmconnect.profiles.v1"))
         let profiles = try JSONDecoder().decode([ConnectionProfile].self, from: data)
@@ -264,7 +321,7 @@ import Testing
         let leaseURL = root.appendingPathComponent("lease.json")
         let lease = RemoteSSHLease(profile: profile, instanceID: instance.id, user: user,
             keyPath: key.privateKeyPath, pluginPath: plugin, ownerPID: owner.processIdentifier,
-            ownerLaunchDate: try #require(owner.launchDate), ownerBundleID: "pro.vhco.ssm-connect.about-preview",
+            ownerLaunchDate: try #require(owner.launchDate), ownerBundleID: ownerBundleID,
             generation: UUID(), expiresAt: Date().addingTimeInterval(300))
         try BrowserPrivateFiles.write(try JSONEncoder().encode(lease), to: leaseURL)
         let config = root.appendingPathComponent("config")
@@ -331,7 +388,41 @@ import Testing
             let response = try String(contentsOf: output, encoding: .utf8)
             #expect(response == "SSM_CONNECT_REMOTE_OK\n")
         }
-        print("Concurrent SSH-over-SSM channels and fresh authorization after 65 seconds passed; normal SSH/editor configuration untouched.")
+        let heldOutputURL = root.appendingPathComponent("held-output")
+        try BrowserPrivateFiles.write(Data(), to: heldOutputURL)
+        let heldOutput = try FileHandle(forWritingTo: heldOutputURL)
+        defer { try? heldOutput.close() }
+        let heldInput = Pipe()
+        defer { try? heldInput.fileHandleForWriting.close() }
+        let held = Process()
+        held.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        held.arguments = ["-F", config.path, "-T", RemoteSSHConfiguration.alias(profile.id),
+                          "printf 'OWNED_CHANNEL_READY\\n'; exec cat"]
+        held.standardInput = heldInput
+        held.standardOutput = heldOutput
+        held.standardError = FileHandle.nullDevice
+        defer { if held.isRunning { held.terminate() } }
+        try held.run()
+        let readyDeadline = ContinuousClock.now.advanced(by: .seconds(100))
+        while held.isRunning && ContinuousClock.now < readyDeadline {
+            if (try String(contentsOf: heldOutputURL, encoding: .utf8)).contains("OWNED_CHANNEL_READY") { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let heldReadyText = try String(contentsOf: heldOutputURL, encoding: .utf8)
+        try #require(held.isRunning && heldReadyText.contains("OWNED_CHANNEL_READY"))
+        try FileManager.default.removeItem(at: leaseURL)
+        let stoppedDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while held.isRunning && ContinuousClock.now < stoppedDeadline { try await Task.sleep(for: .milliseconds(100)) }
+        #expect(!held.isRunning)
+        let renewed = RemoteSSHLease(profile: lease.profile, instanceID: lease.instanceID, user: lease.user,
+            keyPath: lease.keyPath, pluginPath: lease.pluginPath, ownerPID: lease.ownerPID,
+            ownerLaunchDate: lease.ownerLaunchDate, ownerBundleID: lease.ownerBundleID,
+            generation: UUID(), expiresAt: Date().addingTimeInterval(300))
+        try BrowserPrivateFiles.write(try JSONEncoder().encode(renewed), to: leaseURL)
+        let reconnected = try await RemoteEditorPreflight.run("/usr/bin/ssh", arguments: ["-F", config.path,
+            "-T", RemoteSSHConfiguration.alias(profile.id), "printf 'OWNED_CHANNEL_RECONNECTED\\n'"], timeout: .seconds(100))
+        #expect(String(decoding: reconnected, as: UTF8.self) == "OWNED_CHANNEL_RECONNECTED\n")
+        print("Concurrent channels, 65-second authorization and isolated lease invalidation/reconnect passed; normal SSH/editor configuration untouched.")
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SSM_REMOTE_MENU_PROBE"] == "1"))
