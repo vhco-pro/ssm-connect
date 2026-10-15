@@ -94,6 +94,59 @@ struct ConnectionStateMachineTests {
         #expect(machine.warningMessage == nil)
     }
 
+    @Test("Disabling automatic DCV opening connects without a desktop or password", arguments: [ConnectMode.singleUser, .multiUser])
+    func tunnelOnlyDoesNotOpenDCV(mode: ConnectMode) async {
+        var profile = ConnectionProfile.example
+        profile.connectAction = .tunnelOnly
+        profile.connectMode = mode
+        let secrets = MockSecretsService()
+        let dcv = MockDCVLauncher()
+        let readiness = StubReadinessProbe(ready: false)
+        let listener = StubTunnelListenerProbe()
+        let machine = makeMachine(ec2: runningEC2(), secrets: secrets, dcv: dcv,
+                                  readiness: readiness, tunnelListener: listener, profile: profile)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(machine.tunnelPID == 4242)
+        #expect(readiness.calls == 0)
+        #expect(listener.calls == 1)
+        #expect(secrets.fetchCount == 0)
+        #expect(dcv.launchCount == 0)
+        #expect(machine.password == nil)
+        #expect(machine.warningMessage == nil)
+
+        machine.reconnect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .connected)
+        #expect(readiness.calls == 0)
+        #expect(listener.calls == 2)
+        #expect(secrets.fetchCount == 0)
+        #expect(dcv.launchCount == 0)
+    }
+
+    @Test("Tunnel-only connections still refuse a missing local listener")
+    func tunnelOnlyRequiresListener() async {
+        var profile = ConnectionProfile.example
+        profile.connectAction = .tunnelOnly
+        let readiness = StubReadinessProbe()
+        let listener = StubTunnelListenerProbe(listening: false)
+        let dcv = MockDCVLauncher()
+        let machine = makeMachine(ec2: runningEC2(), dcv: dcv, readiness: readiness,
+                                  tunnelListener: listener, profile: profile)
+
+        machine.connect()
+        await machine.awaitInFlightTask()
+
+        #expect(machine.state == .error)
+        #expect(readiness.calls == 0)
+        #expect(listener.calls > 0)
+        #expect(dcv.launchCount == 0)
+    }
+
     // MARK: Auto-start (F-07)
 
     @Test("cold start: a stopped instance is auto-started before tunneling")

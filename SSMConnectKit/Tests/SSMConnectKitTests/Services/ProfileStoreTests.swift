@@ -37,6 +37,18 @@ struct ProfileStoreTests {
         #expect(store.activeProfile == fallback)
     }
 
+    @Test("Disabling automatic DCV opening persists while existing profiles keep the default")
+    func tunnelOnlyPersists() {
+        let defaults = makeDefaults()
+        let store = ProfileStore(store: defaults)
+        var profile = ConnectionProfile.example
+        #expect(profile.connectAction == .dcvViewer)
+        profile.connectAction = .tunnelOnly
+        store.addProfile(profile)
+        let reloaded = ProfileStore(store: defaults)
+        #expect(reloaded.activeProfile.connectAction == .tunnelOnly)
+    }
+
     @Test("importableProfiles maps ~/.aws/config SSO profiles, leaving tag + secret blank")
     func importFromConfig() {
         let store = ProfileStore(store: makeDefaults())

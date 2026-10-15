@@ -353,11 +353,13 @@ public final class ConnectionStateMachine {
             try Task.checkCancellation()
 
             // 6. Auto-login DCV — vanilla password (single-user) or identity token (multi-user).
-            switch profile.resolvedConnectMode {
-            case .singleUser:
-                await fetchSecretAndLaunchDCV()
-            case .multiUser:
-                await ensureSessionAndLaunchMultiUser(instanceId: instance.id)
+            if profile.connectAction == .dcvViewer {
+                switch profile.resolvedConnectMode {
+                case .singleUser:
+                    await fetchSecretAndLaunchDCV()
+                case .multiUser:
+                    await ensureSessionAndLaunchMultiUser(instanceId: instance.id)
+                }
             }
 
             // 7. Connected
@@ -433,6 +435,12 @@ public final class ConnectionStateMachine {
     /// one quick TCP check to classify *why*, so the user sees an accurate, distinct message:
     /// nothing listening → `tunnelNotEstablished`; listening but silent → `dcvServerNotReady`.
     private func assertEndpointReady(port: Int) async throws {
+        if profile.connectAction == .tunnelOnly {
+            guard await tunnelListener.isListening(host: "127.0.0.1", port: port, timeout: timeouts.tunnelListen) else {
+                throw DCVReadinessError.tunnelNotEstablished(port: port)
+            }
+            return
+        }
         if await readiness.waitUntilReady(port: port, timeout: timeouts.dcvReady, interval: timeouts.dcvReadyPollInterval) {
             return
         }

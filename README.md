@@ -92,6 +92,11 @@ The app starts with **no profile** - nothing about any AWS environment is baked 
    - **Multi-user** → set the **agent port** (default `8444`); no secret needed.
 4. **Save**, then **Connect**. With auto-connect enabled, it connects on launch/login from then on.
 
+To keep the connection headless, turn off **Open DCV Viewer automatically** under the profile's
+**Tunnel** settings. Connect and reconnect then keep only the SSM tunnel, without a DCV password
+fetch, desktop provisioning or Viewer launch. Existing profiles keep the Viewer enabled.
+**Open VS Code** and **Open Browser** remain independent actions.
+
 ## About
 
 Choose **About** in the menu for the installed version and build number, system

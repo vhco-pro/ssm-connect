@@ -2,8 +2,9 @@
 
 - **Status:** implemented preview, 2026-10-13; the user approved continuation and native SSH
   setup. Verified transport/menu/server and native fixture editing evidence is recorded below;
-  fresh-user, concurrent-window and full app-relaunch acceptance remain open. Native socket
-  transport and fixture editing/terminal use passed; broader socket workflows remain unverified.
+  fresh-user, cross-user socket hardening, enterprise-policy and complete app-drop acceptance
+  remain unverified limits accepted for stable release by the user on 2026-10-15. Concurrent
+  native windows and socket-mode language/debug flows are verified below.
 - **Requested outcome:** open the management VM's existing code folder in local VS Code,
   with a native editor UI rather than a DCV-rendered desktop.
 - **Related:** [web-forwards.spec.md](./web-forwards.spec.md),
@@ -344,8 +345,51 @@ remain open and release is still unapproved.
 - Preview web forwards returned to On through their native menu action, followed by Open
   Browser. The independently running main app retained the same process throughout.
 - The existing socket fixture displayed Microsoft's explicit Reload Window recovery dialog
-  after the drop. Automatic reconnect and unsaved-buffer recovery are not marked passed by
-  fresh SSH alone. A genuine fresh-Mac/user and enterprise-policy run also remain unverified.
+  after the drop. A subsequent live capture showed the same editor process reconnected, and
+  the recovered fixture project test passed. This does not establish automatic recovery in
+  every case or identify which prior reload attempt completed the connection.
+- A separate controlled native Reload Window test added an unsaved fixture marker, confirmed
+  it absent on the VM through an independent SSH read, reloaded the socket-mode window, and
+  saved the surviving buffer. The exact marker was then read back from the VM and its project
+  test passed. No second preview restart or main-app/DCV interruption was required.
+- A genuine fresh-Mac/user and enterprise-policy run remain unverified.
 
 No merge, public release, privileged remote changes or existing repository inspection was
 performed. The release gate remains with the human owner.
+
+## 13. Concurrent Native Workflows and Host Prerequisites (2026-10-15)
+
+- The fixture's `--socket-mode --second-window` creates only an owned remote subfolder and
+  opens it in the existing isolated editor profile. Both native windows resolved the same
+  approved remote authority. Their encoded workspace URIs identified the exact two folders.
+- A different marker was saved through each actual native editor window. Independent SSH
+  reads verified each marker in its intended folder and absent from the other. Both project
+  tests passed while both windows remained open. CLI launch alone was not counted as a pass.
+- Socket-mode TypeScript Go to Definition moved from the call site at line 2, column 18 to
+  its declaration at line 1, column 17 in the native editor.
+- The configured socket-mode debugger visibly paused, continued through the native action,
+  emitted `SSM_EDITOR_BUILD_OK=42` and the fixture markers in Debug Console, and ended normally.
+- The live native socket belonged to the mapped OS user, but its mode was `0775` under a
+  `1777` temporary directory. Group-write access means this observation does not establish
+  owner-only multi-user isolation. Private socket permissions/location or an independently
+  verified isolated group are a host/server prerequisite; no umask, socket, sshd or group
+  permissions were changed to force the test to pass.
+- Remaining external acceptance requires an approved clean Mac/OS user, a second provisioned
+  Linux identity for a real cross-user attempt, and the actual enterprise SSO/policy context.
+  Existing-user fixture passes are not substitutes for those environments. The earlier
+  preview's natural expiry also remains distinct from quitting an unexpired lease.
+
+## 14. Release Acceptance and Optional DCV Launch (2026-10-15)
+
+- The user approved merging this feature to main and publishing the normal stable release
+  for the existing users, with a colleague's installation providing real fresh-user feedback.
+  A new Mac or Linux account is not a prerequisite to this accepted release scope. Unverified
+  scenarios and the observed socket group-write permissions remain documented, not certified.
+- Each profile now offers **Open DCV Viewer automatically**, enabled for existing profiles.
+  Turning it off persists `connectAction = tunnelOnly`. Connect and reconnect still require
+  the owned local SSM listener, but skip DCV readiness, password fetch, virtual-desktop
+  provisioning and Viewer launch in both single-user and multi-user modes. Editor/browser
+  transports and their actions remain independent.
+- Focused tests cover persistence/default compatibility, both connect modes, reconnect, and
+  refusal when the local listener is absent. All 209 tests across 31 suites passed using the
+  matching Xcode Swift toolchain. Dependency versions and host configuration were unchanged.

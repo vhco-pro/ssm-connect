@@ -50,7 +50,7 @@ struct ProfileEditorView: View {
                 Section("Tunnel") {
                     portField("Local port", value: $draft.localPort)
                     portField("Remote port", value: $draft.remotePort)
-                    LabeledContent("Connect action", value: draft.connectAction.displayName)
+                    Toggle("Open DCV Viewer automatically", isOn: automaticDCVBinding)
                 }
 
                 Section("Connect mode") {
@@ -223,6 +223,10 @@ struct ProfileEditorView: View {
 
     private var webValidationError: String? {
         ProfileEditorValidation.webForwardsError(normalizedWebConfiguration)
+    }
+
+    private var automaticDCVBinding: Binding<Bool> {
+        Binding(get: { draft.connectAction == .dcvViewer }, set: { draft.connectAction = $0 ? .dcvViewer : .tunnelOnly })
     }
 
     private var sshUserBinding: Binding<String> {

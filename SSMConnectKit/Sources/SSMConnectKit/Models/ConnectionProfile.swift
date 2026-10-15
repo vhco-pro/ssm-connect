@@ -40,7 +40,7 @@ public struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
 
     // MARK: Connect action (Phase E/G)
 
-    /// What to launch once the tunnel is up. v1 = DCV Viewer auto-login (F-18, §13).
+    /// What to launch once the tunnel is up; existing profiles default to DCV Viewer.
     var connectAction: ConnectAction = .dcvViewer
 
     // MARK: Multi-user (Phase F)
