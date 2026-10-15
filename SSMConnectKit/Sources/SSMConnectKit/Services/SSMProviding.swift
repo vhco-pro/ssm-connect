@@ -5,6 +5,10 @@ import Foundation
 ///
 /// Uses the profile's **resource region** and the SSO-derived STS credentials.
 protocol SSMProviding: Sendable {
+    func startSSHSession(
+        instanceId: String, region: String, credentials: AWSCredentials
+    ) async throws -> SSMSessionResponse
+
     /// Poll `DescribeInstanceInformation` until the instance reports `PingStatus=Online` (F-08).
     /// Throws `SSMError.notOnlineInTime` on timeout.
     func waitForSSMOnline(

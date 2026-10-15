@@ -13,6 +13,19 @@ struct SSMServiceTests {
         SSMService(makeClient: { _, _ in client })
     }
 
+    @Test("WF-2: SSH uses AWS-StartSSHSession and port 22 without DCV parameters")
+    func sshSession() async throws {
+        let client = MockSSMClient()
+        let service = makeService(client: client)
+        let response = try await service.startSSHSession(
+            instanceId: instanceId, region: region, credentials: creds)
+        #expect(response.sessionId == "s-1")
+        let input = try #require(client.startSessionInputs.first)
+        #expect(input.documentName == "AWS-StartSSHSession")
+        #expect(input.target == instanceId)
+        #expect(input.parameters == ["portNumber": ["22"]])
+    }
+
     @Test("waitForSSMOnline returns once PingStatus is Online")
     func waitOnline() async throws {
         let client = MockSSMClient()

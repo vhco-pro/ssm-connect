@@ -92,7 +92,79 @@ The app starts with **no profile** - nothing about any AWS environment is baked 
    - **Multi-user** → set the **agent port** (default `8444`); no secret needed.
 4. **Save**, then **Connect**. With auto-connect enabled, it connects on launch/login from then on.
 
+To keep the connection headless, turn off **Open DCV Viewer automatically** under the profile's
+**Tunnel** settings. Connect and reconnect then keep only the SSM tunnel, without a DCV password
+fetch, desktop provisioning or Viewer launch. Existing profiles keep the Viewer enabled.
+**Open VS Code** and **Open Browser** remain independent actions.
+
+## About
+
+Choose **About** in the menu for the installed version and build number, system
+details, license, project and release-note links. Expand **Connection States** there for the
+icon/color reference; the dropdown itself stays focused on the current connection and actions.
+
+## Web Forwards
+
+Enable **Web Forwards** in a profile to use internal web applications in the local browser,
+independently of the DCV connection. Configure an optional SSH user (otherwise your mapped AWS
+identity), a SOCKS port, dot-prefixed proxy suffixes and any named local forwards. Local forwards
+with an open path appear as **Open** actions in the menu.
+
+Under **Settings > Profiles > Edit > Web Forwards**, enable SOCKS and use **Add Domain** for
+another suffix. Each row is editable and has a remove control. For example, `.internal.example.com`
+routes its subdomains through the workstation. Empty or invalid domain rows prevent Save until
+corrected or removed. Saved transport changes remain pending until **Apply Changes**; cancelling
+does not replace the active tunnel or browser routing.
+
+Choose a **Browser Mode**, then **Open Browser**. It starts web forwards when needed and opens
+a blank browser only after SOCKS is ready, without starting DCV. **Separate Browser** retains
+its own profile/logins per workstation and product. **Use My Browser** requires a selected Zen
+profile folder, a closed browser and explicit proxy-setup confirmation. It keeps that profile's
+logins in place without reading or importing them. **Restore Browser Settings** restores only
+owned proxy values and refuses later user/extension/policy changes; close Zen first.
+
+The verified preview matrix is Chrome **156.0.8078.12** (Separate Browser) and Zen **1.23.1b**
+(both modes). Other versions/products are unavailable until verified. Chrome existing-profile
+setup requires a separately approved extension and is not implemented. Shared Chromium/Firefox
+backends do not automatically enable Edge/Firefox or untested forks.
+
+**Advanced > Copy PAC URL / Reveal PAC File** remains available for manual browser setup.
+Only configured suffixes use SOCKS with workstation-side DNS; public sites stay direct. Retained
+routing keeps internal sites fail-closed while disconnected, including after SSM Connect quits.
+No system proxy, certificate or corporate policy is changed. **Apply Browser Setup** explicitly
+transfers a checked existing-profile proxy scope to another workstation; switching Settings
+profiles alone does not overwrite its owner.
+
+The host must support SSH key authorization through EC2 Instance Connect. The SSO role needs
+`ec2-instance-connect:SendSSHPublicKey` and permission to start the `AWS-StartSSHSession` document.
+The app generates a temporary key per attempt and deletes it on disconnect or quit. DCV Viewer
+and AWS CLI are not needed for web forwards. Native UI, live HTTP/websocket, PAC and cleanup
+checks have passed, and the earlier manual browser SSO flow is user-confirmed. Automated browser
+bootstrap tests now cover Chrome/Zen selective DNS/routing, outage behavior, conditional restore,
+native instance isolation/reuse, and the preview menu-to-SSH-to-browser path. SSO/session retention
+in this new flow and a fresh-Mac-only-app setup remain human checks. The earlier working-day
+observer recorded missing web listeners from 2026-10-13 03:42 UTC; it is not a working-day pass.
+
 ## Requirements
+
+### Native VS Code
+
+Enable **Remote Development** in the workstation profile, optionally set an absolute remote
+folder, then choose **Open VS Code**. This uses your native Visual Studio Code and Microsoft's
+Remote - SSH extension; VS Code owns its remote server, extensions, terminals and workspace UI.
+SSM Connect supplies authenticated SSH-over-SSM channels and refreshes EC2 Instance Connect
+authorization for every new SSH connection, including connections after the initial 60-second
+key window. No public SSH ingress or DCV connection is required.
+
+First setup asks before adding its owned Include to your SSH config. Existing SSH hosts remain
+unchanged. **Restore Editor Setup** removes only a still-matching Include; **Stop Remote Access**
+drops owned channels without closing VS Code or deleting remote code/server data. A missing
+editor/Remote-SSH extension is a prerequisite error, not a silent install. Native setup/launch,
+raw SSH commands across the authorization-expiry boundary and current server installation were
+verified on the management VM. Folder open/save, IntelliSense, project test/debug and user
+responsiveness remain acceptance checks in the opened native editor.
+
+### Platform
 
 - macOS 14 (Sonoma) or later, Apple Silicon
 - [Amazon DCV Viewer](https://www.amazondcv.com) (for the default DCV connect action):
@@ -150,9 +222,10 @@ and deleted right after the viewer opens.
   opaque bearer token - the same credential the SSM tunnel already required. The agent proves your
   identity by re-executing it against STS. A fresh token is minted per attempt to avoid expiry.
 
-Security: no secrets are written to UserDefaults or Keychain; the only disk touch is the transient
-`.dcv` file. No inbound security-group rules are ever suggested - all traffic is outbound over the
-SSM tunnel.
+Security: no secrets are written to UserDefaults or Keychain. DCV connection files and web-forward
+SSH keys are temporary and cleaned up; private keys live in restricted temporary directories.
+PAC files contain routing configuration, not credentials. No inbound security-group rules are
+ever suggested - all traffic is outbound over the SSM tunnel.
 
 ## Development
 
@@ -167,6 +240,23 @@ make rebuild  # clean build + launch
 ```
 
 The first build downloads `session-manager-plugin` (pinned + SHA-256 verified) from AWS.
+
+### Stability observation
+
+The optional read-only observer requires Node.js 18 or later. With app-owned web forwards and
+a real DCV Viewer session connected, supply the private HTTPS health endpoint and the profile's
+ports:
+
+```bash
+source ~/.config/web-forwards/env
+export WF_CHECK_URL
+node scripts/observe-web-forwards.mjs --socks-port 1080 --local-port 4466 --dcv-port 8443
+```
+
+It writes a restricted JSONL log under `~/.web-forwards/observations/`, sampling HTTP status,
+app-owned SSH and established Viewer streams every minute. Stop with Ctrl+C for a summary;
+`--samples 1` performs a one-shot check. Sleep and sampling gaps are reported as missing coverage,
+not a clean working-day result. Logs contain health data, not credentials or private target URLs.
 
 ### Releasing
 
