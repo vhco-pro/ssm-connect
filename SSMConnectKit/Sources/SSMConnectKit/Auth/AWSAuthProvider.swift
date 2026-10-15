@@ -159,6 +159,9 @@ final class AWSAuthProvider: AuthProviding {
                 try await Task.sleep(for: interval)
             } catch is SlowDownException {
                 try await Task.sleep(for: interval + .seconds(5))
+            } catch is InvalidGrantException {
+                if let completedLogin = try await validAccessToken(profile: profile) { return completedLogin }
+                throw AuthError.signInRequired
             }
         }
         throw AuthError.deviceAuthTimedOut

@@ -4,6 +4,26 @@ import Testing
 // Verifies: Fix opaque region-failure on Connect, Criterion: "An empty or malformed region entered in the Profile Editor disables Save (and shows a field-level error when non-empty-but-malformed); a valid region re-enables Save and clears the error."
 @Suite("ProfileEditorValidation")
 struct ProfileEditorValidationTests {
+    @Test("domain rows preserve configured suffixes and normalize new entries")
+    func domainRows() {
+        let suffixes = ProfileEditorValidation.normalizedProxySuffixes([
+            ".internal.example.com", "  .AZURE.EXAMPLE.COM\n",
+        ])
+        #expect(suffixes == [".internal.example.com", ".azure.example.com"])
+        let configuration = WebForwardsConfiguration(enabled: true, proxySuffixes: suffixes)
+        #expect(ProfileEditorValidation.webForwardsError(configuration) == nil)
+    }
+
+    @Test("an unfinished or invalid added domain disables Save until corrected or removed")
+    func unfinishedDomain() {
+        for suffix in ["", "   ", "example.com", ".invalid domain"] {
+            let configuration = WebForwardsConfiguration(enabled: true,
+                proxySuffixes: ProfileEditorValidation.normalizedProxySuffixes([".internal.example.com", suffix]))
+            #expect(ProfileEditorValidation.webForwardsError(configuration) != nil)
+        }
+        let configuration = WebForwardsConfiguration(enabled: true, proxySuffixes: [".internal.example.com"])
+        #expect(ProfileEditorValidation.webForwardsError(configuration) == nil)
+    }
 
     @Test("an empty region disables Save but shows no error (fresh form is quiet)")
     func emptyRegion() {

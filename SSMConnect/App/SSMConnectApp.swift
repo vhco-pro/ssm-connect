@@ -4,8 +4,7 @@ import SwiftUI
 
 // Task A1, A3 — SwiftUI App lifecycle, MenuBarExtra (F-01, NF-10, NF-11)
 // The menu shows a single current-state header + a context-aware primary action,
-// with the full 8-state list tucked behind an expandable "All States" submenu
-// (legend). The ConnectionStateMachine (Phase F) drives the whole flow; the
+// with the state reference in the About window. The ConnectionStateMachine drives the flow; the
 // ProfileStore (Phase G) supplies the active profile + global settings.
 @main
 struct SSMConnectApp: App {
@@ -14,14 +13,19 @@ struct SSMConnectApp: App {
     @State private var store: ProfileStore
     // Task F1 — the full connection state machine drives the menu + menu-bar icon.
     @State private var machine: ConnectionStateMachine
+    @State private var webForwards: WebForwardsStateMachine
+    @State private var remoteDevelopment: RemoteDevelopmentStateMachine
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let loginItem: LoginItemControlling = SMAppServiceLoginItem()
 
     init() {
         let store = ProfileStore()
         let machine = ConnectionStateMachine(profile: store.activeProfile, settings: store.settings)
+        let webForwards = WebForwardsStateMachine(profile: store.activeProfile, settings: store.settings, log: machine.log)
         _store = State(initialValue: store)
         _machine = State(initialValue: machine)
+        _webForwards = State(initialValue: webForwards)
+        _remoteDevelopment = State(initialValue: RemoteDevelopmentStateMachine(profile: store.activeProfile))
         machine.onLaunch()
 
         // Recover a zombie tunnel after the Mac wakes from sleep (F-13): re-check the connection
@@ -36,7 +40,7 @@ struct SSMConnectApp: App {
     var body: some Scene {
         // F-01: MenuBarExtra provides a menu-bar-only presence (no Dock icon via LSUIElement=true)
         MenuBarExtra {
-            MenuContentView(machine: machine, store: store)
+            MenuContentView(machine: machine, store: store, webForwards: webForwards, remoteDevelopment: remoteDevelopment)
         } label: {
             // Menu-bar icon reflects the current connection state.
             Image(systemName: machine.state.sfSymbol)
@@ -52,6 +56,11 @@ struct SSMConnectApp: App {
             LogView(log: machine.log)
         }
         .windowResizability(.contentMinSize)
+
+        Window("About SSM Connect", id: SSMConnectWindow.about) {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
     }
 }
 

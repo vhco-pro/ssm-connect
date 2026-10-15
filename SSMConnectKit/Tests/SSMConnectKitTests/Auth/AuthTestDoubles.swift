@@ -44,6 +44,7 @@ final class MockOIDCClient: SSOOIDCClienting, @unchecked Sendable {
     private(set) var deviceAuthCount = 0
     private(set) var createTokenCount = 0
     private(set) var lastCreateTokenInput: CreateTokenInput?
+    var onCreateToken: ((CreateTokenInput) -> Void)?
 
     func registerClient(_ input: RegisterClientInput) async throws -> RegisterClientOutput {
         registerCount += 1
@@ -57,6 +58,7 @@ final class MockOIDCClient: SSOOIDCClienting, @unchecked Sendable {
 
     func createToken(_ input: CreateTokenInput) async throws -> CreateTokenOutput {
         lastCreateTokenInput = input
+        onCreateToken?(input)
         let index = min(createTokenCount, createTokenResults.count - 1)
         createTokenCount += 1
         switch createTokenResults[index] {

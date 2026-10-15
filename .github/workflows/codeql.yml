@@ -18,6 +18,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -33,7 +37,7 @@ jobs:
           - language: actions
             runner: ubuntu-latest
           - language: swift
-            runner: macos-14
+            runner: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,25 +47,39 @@ jobs:
         run: |
           brew install xcodegen
           # XcodeGen emits a recent project format the runner's default Xcode can be too old to read.
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_*.app' | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
           xcodegen generate
 
       # Cache resolved SwiftPM dependency *sources* (aws-sdk-swift is large to clone)
       # — NOT the build products, so CodeQL still traces a full clean compile.
       - name: Cache SwiftPM sources (Swift)
+        id: swift-cache
         if: matrix.language == 'swift'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 2
         with:
           path: |
-            .build/DerivedData/SourcePackages
+            SSMConnectKit/.build/checkouts
+            SSMConnectKit/.build/repositories
             ~/Library/Caches/org.swift.swiftpm
-          key: codeql-spm-${{ hashFiles('SSMConnectKit/Package.resolved') }}
+          key: codeql-spm-v2-${{ runner.os }}-${{ hashFiles('SSMConnectKit/Package.resolved') }}
           restore-keys: |
-            codeql-spm-
+            codeql-spm-v2-${{ runner.os }}-
+
+      - name: Discard incomplete Swift source cache
+        if: matrix.language == 'swift' && steps.swift-cache.outcome == 'failure'
+        run: rm -rf SSMConnectKit/.build/checkouts SSMConnectKit/.build/repositories
+
+      - name: Run Swift unit tests
+        if: matrix.language == 'swift'
+        run: swift test --package-path SSMConnectKit --disable-automatic-resolution
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
@@ -75,14 +93,17 @@ jobs:
             -scheme SSMConnect \
             -destination 'platform=macOS' \
             -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath SSMConnectKit/.build \
             -skipPackagePluginValidation \
+            -skipPackageUpdates \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 
       - name: Autobuild (Actions)
         if: matrix.language == 'actions'
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: "/language:${{ matrix.language }}"

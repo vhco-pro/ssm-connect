@@ -9,6 +9,16 @@ final class MockSSMService: SSMProviding, @unchecked Sendable {
     private(set) var startSessionCount = 0
     private(set) var lastLocalPort: Int?
     private(set) var lastRemotePort: Int?
+    private(set) var startSSHSessionCount = 0
+    var onStartSSHSession: (@Sendable () -> Void)?
+
+    func startSSHSession(
+        instanceId: String, region: String, credentials: AWSCredentials
+    ) async throws -> SSMSessionResponse {
+        startSSHSessionCount += 1
+        onStartSSHSession?()
+        return try startSessionResult.get()
+    }
 
     func waitForSSMOnline(
         instanceId: String,

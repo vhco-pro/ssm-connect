@@ -57,6 +57,10 @@ targets:
           chmod +x "${HELPERS_DIR}/session-manager-plugin"
           mkdir -p "${RESOURCES_DIR}"
           cp "${SRCROOT}/.build/plugin/LICENSE" "${RESOURCES_DIR}/session-manager-plugin-LICENSE"
+          HELPER_CONFIGURATION=$(printf '%s' "${CONFIGURATION}" | tr '[:upper:]' '[:lower:]')
+          swift build --package-path "${SRCROOT}/SSMConnectKit" --product ssm-connect-proxy --configuration "${HELPER_CONFIGURATION}" --disable-automatic-resolution
+          cp "${SRCROOT}/SSMConnectKit/.build/${HELPER_CONFIGURATION}/ssm-connect-proxy" "${HELPERS_DIR}/ssm-connect-proxy"
+          chmod +x "${HELPERS_DIR}/ssm-connect-proxy"
 
           # Task I2/I3 — Re-seal the bundle for distribution. Embedding a binary AFTER Xcode
           # signed the app invalidates the outer signature, so we re-sign the plugin then the

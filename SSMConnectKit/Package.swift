@@ -11,18 +11,21 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "SSMConnectKit", targets: ["SSMConnectKit"]),
+        .executable(name: "ssm-connect-proxy", targets: ["SSMConnectProxy"]),
     ],
     dependencies: [
         // aws-sdk-swift — the only external dependency (spec §12.1).
         .package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.7.13"),
     ],
     targets: [
+        .executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectKit"]),
         .target(
             name: "SSMConnectKit",
             dependencies: [
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
                 .product(name: "AWSSSO", package: "aws-sdk-swift"),
                 .product(name: "AWSEC2", package: "aws-sdk-swift"),
+                .product(name: "AWSEC2InstanceConnect", package: "aws-sdk-swift"),
                 .product(name: "AWSSSM", package: "aws-sdk-swift"),
                 .product(name: "AWSSecretsManager", package: "aws-sdk-swift"),
             ]
