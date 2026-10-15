@@ -1,8 +1,9 @@
 # SPECIFICATION: Native VS Code workspace bootstrap over SSM
 
 - **Status:** implemented preview, 2026-10-13; the user approved continuation and native SSH
-  setup. Verified transport/menu/server evidence is recorded below; workspace-level acceptance
-  and fresh-user/multi-user socket-mode gates remain open.
+  setup. Verified transport/menu/server and native fixture editing evidence is recorded below;
+  fresh-user, concurrent-window and full app-relaunch acceptance remain open. Native socket
+  transport and fixture editing/terminal use passed; broader socket workflows remain unverified.
 - **Requested outcome:** open the management VM's existing code folder in local VS Code,
   with a native editor UI rather than a DCV-rendered desktop.
 - **Related:** [web-forwards.spec.md](./web-forwards.spec.md),
@@ -301,3 +302,50 @@ preview scope. Release remains unapproved.
 This adds isolated channel-stop/reconnect evidence, not a complete native-window app-quit/
 relaunch test or a genuine fresh-Mac/multi-user/enterprise-policy acceptance. Those gates
 remain open and release is still unapproved.
+
+## 11. Device-Login Handoff Follow-Up (2026-10-15)
+
+- A pending native device-code grant rejected with `InvalidGrantException` now checks for a
+  completed, still-valid login in the cache for the same SSO start URL and region. It adopts
+  that login without opening another authorization browser. Without one, it reports
+  `signInRequired` instead of exposing the SDK exception or looping device authorization.
+- Both rejection cases failed before the fix and passed afterward. All 13 authentication
+  tests passed, followed by the complete retained suite: 206 tests across 31 suites.
+- The current-source local Release package rebuilt and passed deep/strict signature
+  verification. This is a local package, not a published or notarized release.
+- The existing native editor fixture accepts an explicit approved `--profile-id` and an
+  isolated `--socket-mode`. Its temporary editor profile retains normal settings elsewhere,
+  uses the known Linux platform and local-server startup, and places the standard socket-mode
+  server installation under its disposable remote fixture rather than restarting the user's
+  existing server. Electron-only runner flags are removed from the editor child's environment.
+- `--socket-mode --verify` requires an actual native Unix-socket listener and resolved remote
+  authority. It explicitly does not certify workspace UI actions from CLI launch or log output.
+  Both native transport checks passed. The actual socket-mode window displayed the owned remote
+  source; a native edit/save was independently read back through SSH and the project test passed.
+  The actual integrated terminal also ran that project test and wrote an independently verified
+  remote proof. No existing user repository was inspected.
+- This verifies native socket-mode transport, file editing and terminal use on the tested
+  workstation. Socket-mode debugger/language-service flows, different Linux users and genuinely
+  fresh-Mac/enterprise-policy scenarios are not inferred from those passes.
+- Normal app, DCV, browser, SSH and editor settings were not restarted or overwritten.
+  Only owned temporary fixture editor instances were restarted during this verification.
+
+## 12. Approved Preview Recovery (2026-10-15)
+
+- The user approved one deliberate preview quit/relaunch while leaving the main app/DCV
+  untouched. A matching updated Debug app/helper was built and signed in a separate build
+  directory before the old preview was normally terminated.
+- Before that quit, the old 24-hour lease naturally expired. A fresh SSH command refused
+  authorization rather than bypassing expiry. This is expiry evidence, not proof that the
+  subsequent quit caused that original disconnect.
+- The updated preview relaunched with the saved workstation configuration. Its native
+  Open VS Code action created a new process-owned lease generation; a fresh authorized
+  channel reached the existing disposable fixture and its previously saved content.
+- Preview web forwards returned to On through their native menu action, followed by Open
+  Browser. The independently running main app retained the same process throughout.
+- The existing socket fixture displayed Microsoft's explicit Reload Window recovery dialog
+  after the drop. Automatic reconnect and unsaved-buffer recovery are not marked passed by
+  fresh SSH alone. A genuine fresh-Mac/user and enterprise-policy run also remain unverified.
+
+No merge, public release, privileged remote changes or existing repository inspection was
+performed. The release gate remains with the human owner.

@@ -125,6 +125,32 @@ struct AWSAuthProviderTests {
         #expect(sso.callCount == 1)
     }
 
+    @Test("A rejected pending device grant adopts a completed shared login")
+    func rejectedDeviceGrantUsesNewValidCachedLogin() async throws {
+        let cache = MockSSOCache(stored: nil)
+        let oidc = MockOIDCClient()
+        oidc.createTokenResults = [.failure(InvalidGrantException())]
+        oidc.onCreateToken = { _ in cache.stored = validToken() }
+        let sso = MockSSOClient()
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+        _ = try await provider.authenticate(profile: profile)
+        #expect(oidc.deviceAuthCount == 1 && recorder.urls.count == 1)
+        #expect(sso.lastInput?.accessToken == "cached-access")
+    }
+
+    @Test("A rejected device grant without shared login reports sign-in required")
+    func rejectedDeviceGrantRequiresNewSignIn() async throws {
+        let cache = MockSSOCache(stored: nil)
+        let oidc = MockOIDCClient()
+        oidc.createTokenResults = [.failure(InvalidGrantException())]
+        let sso = MockSSOClient()
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+        await #expect(throws: AuthError.signInRequired) { _ = try await provider.authenticate(profile: profile) }
+        #expect(sso.callCount == 0 && recorder.urls.count == 1)
+    }
+
     @Test("Device authorization polls through AuthorizationPending before succeeding")
     func deviceAuthorizationPolls() async throws {
         let cache = MockSSOCache(stored: nil)
