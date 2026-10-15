@@ -35,11 +35,20 @@ xcodebuild build \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$DERIVED" \
+  -clonedSourcePackagesDirPath SSMConnectKit/.build \
   -skipPackagePluginValidation \
+  -skipPackageUpdates \
+  -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   -quiet
 
 echo "==> Verifying signature"
+for helper in session-manager-plugin ssm-connect-proxy; do
+  if [[ ! -x "$RELEASE_APP/Contents/Helpers/$helper" ]]; then
+    echo "ERROR: Required embedded helper missing or not executable: $helper" >&2
+    exit 1
+  fi
+done
 codesign --verify --deep --strict "$RELEASE_APP"
 
 echo "==> Packaging $ZIP (ditto preserves the bundle + code signature)"
