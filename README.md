@@ -310,11 +310,12 @@ sha256 via a scheduled workflow in that tap (no manual cask edit needed).
 
 ### Notarization (upgrade path)
 
-The app is ad-hoc signed for personal/Homebrew distribution. To remove all Gatekeeper friction for
-wider distribution, enroll in the Apple Developer Program, obtain a *Developer ID Application*
-certificate, sign the app + plugin with `--options=runtime` (Hardened Runtime), then
-`xcrun notarytool submit … --wait` and `xcrun stapler staple`. No code changes are required - only
-the signing/release pipeline.
+The current v0.6.0 release is ad-hoc signed and not notarized. The
+[trusted-distribution specification](docs/specs/macos-trusted-distribution.spec.md) defines the
+organization Developer ID signing, Hardened Runtime, notarization, stapling and CI credential
+requirements. Implementation is pending organization enrollment. The final stapled archive must
+pass distribution assessment and match Homebrew's checksum before normal-install guidance changes.
+Signing does not itself implement editor-lease renewal or same-workspace upgrade recovery.
 
 ## License
 
