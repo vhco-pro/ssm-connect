@@ -190,6 +190,40 @@ struct ProfileDocumentTests {
         } else { Issue.record("Expected the retained forward") }
     }
 
+    @Test("CFG-04: Port edits, swaps, reordering and persistence retain each forward's unknown values")
+    func forwardMetadataFollowsTheEditedItem() throws {
+        var profile = portableExample()
+        profile.webForwards?.localForwards.append(.init(name: "Second", localPort: 8081, remoteHost: "localhost", remotePort: 3001))
+        var fields = try PortableProfileDocument(profile: profile).fields
+        var web = try #require(fields["webForwards"]?.object)
+        guard case var .array(forwards) = web["localForwards"] else { Issue.record("Missing forwards"); return }
+        for index in forwards.indices {
+            var value = try #require(forwards[index].object)
+            value["futureOwner"] = .string("forward-\(index)")
+            forwards[index] = .object(value)
+        }
+        web["localForwards"] = .array(forwards)
+        fields["webForwards"] = .object(web)
+        let document = try PortableProfileDocument(fields: fields)
+        for swapPorts in [false, true] {
+            var edited = try document.profile(localID: UUID())
+            edited.webForwards?.localForwards[0].localPort = swapPorts ? 8081 : 9090
+            if swapPorts { edited.webForwards?.localForwards[1].localPort = 8080 }
+            edited.webForwards?.localForwards.reverse()
+            edited = try JSONDecoder().decode(ConnectionProfile.self, from: JSONEncoder().encode(edited))
+            let updated = try document.updating(profile: edited)
+            let data = try ProfileDocumentCodec.write(updated, format: .yaml)
+            #expect(!String(decoding: data, as: UTF8.self).contains("portableOptions"))
+            let loaded = try ProfileDocumentCodec.read(data, format: .yaml)
+            guard case let .array(result) = loaded.fields["webForwards"]?.object?["localForwards"] else {
+                Issue.record("Missing saved forwards"); return
+            }
+            #expect(result[0].object?["futureOwner"] == .string("forward-1"))
+            #expect(result[1].object?["futureOwner"] == .string("forward-0"))
+            #expect(result[1].object?["localPort"] == .number(Decimal(swapPorts ? 8081 : 9090)))
+        }
+    }
+
     @Test("CFG-09: Unsafe/oversized YAML, duplicate or credential fields",
           arguments: ["password: secret", "x: !execute command", "x: &owned value\ny: *owned",
                       "x: 1\nx: 2", "x: [1, 2]\nx: 3", "---\nx: 1\n---\nx: 2"])

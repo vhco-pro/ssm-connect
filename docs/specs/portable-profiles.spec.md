@@ -248,3 +248,26 @@ The resulting GUI executables identify as Windows x86-64 PE images, and the YAML
 the published sidecar even with single-file publishing. These are framework-dependent build
 payloads, not verified installers: .NET 10 Windows Desktop and a usable Session Manager plugin
 are still runtime prerequisites. No Windows payload was installed or executed.
+
+## 10. Independent macOS Release Candidate (2026-10-16)
+
+The macOS release branch is based on current main `9d0f74b`, retaining both maintenance merges.
+The original dirty worktree, Windows branch and running editor/DCV/app sessions are unchanged.
+This candidate is published for review in [PR #26](https://github.com/vhco-pro/ssm-connect/pull/26).
+
+Independent correctness review found two release blockers, both corrected before merge:
+
+- Saving a connected profile could change the shared auth context while the desktop retained
+  its original target, stranding Reconnect or Stop. Established-target authorization is now
+  retained separately; saved configuration is pending until explicit adoption. Eight regression
+  cases cover display-name/target edits with reconnect, stop, disconnect and wake recovery.
+- Per-forward unknown values followed an editable local port, so port changes/swaps could lose
+  or transfer them. These values now travel with the native edited item and private persistence,
+  not an editable matching key; the public document never exposes the internal metadata wrapper.
+  Regression coverage includes port changes, swaps, reordering and native persistence.
+
+The reviewer confirmed both original findings addressed and found no high-confidence, tightly
+coupled defect in the fix hunks. The exact-current-main full Release suite passed **247 tests
+across 34 suites**. Hosted checks and candidate packaging are tracked separately from this local
+test evidence. Automatic editor-lease continuation remains explicitly unimplemented under
+[LEASE-01 through LEASE-08](./remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16).

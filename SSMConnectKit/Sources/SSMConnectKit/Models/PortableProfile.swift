@@ -58,6 +58,7 @@ indirect enum ProfileValue: Equatable, Codable, Sendable {
 
 struct PortableProfileDocument: Equatable, Codable, Sendable {
     static let schemaVersion = 2
+    private static let forwardKeys: Set<String> = ["name", "localPort", "remoteHost", "remotePort", "openPath"]
     private(set) var fields: [String: ProfileValue]
 
     var id: UUID {
@@ -135,7 +136,19 @@ struct PortableProfileDocument: Equatable, Codable, Sendable {
         var web: WebForwardsConfiguration?
         if let value = fields["webForwards"], value != .null {
             try validateBlockShape(value, field: "webForwards")
-            web = try decode(WebForwardsConfiguration.self, value: value, field: "webForwards")
+            var normalized = value.object ?? [:]
+            if case let .array(forwards) = normalized["localForwards"] {
+                normalized["localForwards"] = .array(forwards.map { value in
+                    .object((value.object ?? [:]).filter { Self.forwardKeys.contains($0.key) })
+                })
+            }
+            web = try decode(WebForwardsConfiguration.self, value: .object(normalized), field: "webForwards")
+            if case let .array(forwards) = value.object?["localForwards"] {
+                for index in forwards.indices {
+                    web?.localForwards[index].portableOptions = (forwards[index].object ?? [:])
+                        .filter { !Self.forwardKeys.contains($0.key) }
+                }
+            }
             if let web, web.enabled, let error = ProfileEditorValidation.webForwardsError(web) {
                 throw PortableProfileError.invalid("webForwards: \(error)")
             }
@@ -198,12 +211,12 @@ struct PortableProfileDocument: Equatable, Codable, Sendable {
             var merged = merge(fields["webForwards"]?.object ?? [:], encoded, known: [
                 "enabled", "sshUser", "socksPort", "proxySuffixes", "localForwards", "browser", "browserMode"
             ])
-            if case let .array(oldForwards) = fields["webForwards"]?.object?["localForwards"],
-               case let .array(newForwards) = encoded["localForwards"] {
-                merged["localForwards"] = .array(newForwards.map { new in
+            if case let .array(newForwards) = encoded["localForwards"] {
+                merged["localForwards"] = .array(newForwards.enumerated().map { index, new in
                     guard let newObject = new.object else { return new }
-                    let old = oldForwards.first { $0.object?["localPort"] == newObject["localPort"] }?.object ?? [:]
-                    return .object(merge(old, newObject, known: ["name", "localPort", "remoteHost", "remotePort", "openPath"]))
+                    let options = web.localForwards[index].portableOptions
+                    let modeled = newObject.filter { Self.forwardKeys.contains($0.key) }
+                    return .object(merge(options, modeled, known: Self.forwardKeys))
                 })
             }
             object["webForwards"] = .object(merged)

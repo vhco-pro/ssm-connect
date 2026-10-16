@@ -17,6 +17,7 @@ private final class SessionAuthProvider: AuthProviding {
     var holdLogin = false
     private(set) var silentCount = 0
     private(set) var loginCount = 0
+    private(set) var authenticatedProfiles: [ConnectionProfile] = []
 
     init(now: Date) {
         credentials = AWSCredentials(accessKeyId: "fixture", secretAccessKey: "fixture", sessionToken: "fixture",
@@ -26,11 +27,13 @@ private final class SessionAuthProvider: AuthProviding {
     func authenticate(profile: ConnectionProfile) async throws -> AWSCredentials { try await signIn(profile: profile) }
     func refreshIfNeeded(profile: ConnectionProfile) async throws -> AWSCredentials {
         silentCount += 1
+        authenticatedProfiles.append(profile)
         if let silentError { throw silentError }
         return credentials
     }
     func signIn(profile: ConnectionProfile) async throws -> AWSCredentials {
         loginCount += 1
+        authenticatedProfiles.append(profile)
         while holdLogin { try await Task.sleep(for: .milliseconds(1)) }
         try Task.checkCancellation()
         return credentials
@@ -268,6 +271,65 @@ struct AuthorizationSessionTests {
         web.stop()
         machine.disconnect()
         await web.awaitStopped()
+        await machine.awaitInFlightTask()
+        session.cancel()
+    }
+
+    @Test("AUTH-05 and AUTH-06: Connected profile edits preserve active authorization until explicit adoption",
+          arguments: ["reconnect", "stop", "disconnect", "wake"], [false, true])
+    func connectedProfileEditsDoNotStrandActions(action: String, changedTarget: Bool) async throws {
+        let clock = AuthorizationClock()
+        let provider = SessionAuthProvider(now: clock.now())
+        var original = profile
+        original.connectAction = .tunnelOnly
+        let session = AuthorizationSession(profile: original, provider: provider, now: { clock.now() })
+        let tunnel = RecordingTunnelProvider(handles: [])
+        let ec2 = MockEC2Service()
+        let machine = ConnectionStateMachine(authProvider: session, ec2: ec2, ssm: MockSSMService(), tunnel: tunnel,
+            secrets: MockSecretsService(), dcv: MockDCVLauncher(), readiness: StubReadinessProbe(ready: false),
+            tunnelListener: StubTunnelListenerProbe(), instanceIds: MockInstanceIdStore(),
+            clipboard: ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil),
+            notifier: MockNotifier(), profile: original)
+        machine.connect()
+        await machine.awaitInFlightTask()
+        try #require(machine.state == .connected)
+        let handle = try #require(tunnel.issuedHandles.first)
+        var saved = original
+        saved.name = "Saved name"
+        if changedTarget { saved.roleName = "OtherRole"; saved.instanceTagValue = "other-workstation" }
+        machine.apply(profile: saved, settings: .default)
+        #expect(machine.profile == original)
+        #expect(machine.pendingProfile == saved)
+        #expect(handle.isActive)
+        #expect(machine.authorizationSession?.profile == original)
+        #expect(session.profile == saved)
+        switch action {
+        case "reconnect":
+            machine.reconnect()
+            await machine.awaitInFlightTask()
+            #expect(machine.state == .connected)
+            #expect(machine.profile == saved)
+            #expect(provider.authenticatedProfiles.last == saved)
+        case "stop":
+            machine.stopWorkstation()
+            await machine.awaitInFlightTask()
+            #expect(machine.state == .disconnected)
+            #expect(ec2.stopCount == 1)
+            #expect(machine.profile == saved)
+        case "disconnect":
+            machine.disconnect()
+            await machine.awaitInFlightTask()
+            #expect(machine.state == .disconnected)
+            #expect(machine.profile == saved)
+        default:
+            await machine.handleSystemWake()
+            await machine.awaitInFlightTask()
+            #expect(machine.state == .connected)
+            #expect(machine.profile == original)
+            #expect(machine.pendingProfile == saved)
+            #expect(provider.authenticatedProfiles.last == original)
+        }
+        machine.disconnect()
         await machine.awaitInFlightTask()
         session.cancel()
     }

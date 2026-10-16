@@ -64,6 +64,18 @@ public final class AuthorizationSession: AuthProviding {
         status = .idle
     }
 
+    func retaining(profile: ConnectionProfile) -> AuthorizationSession {
+        let retained = AuthorizationSession(profile: profile, provider: provider, now: now, sleep: sleep, leadTime: leadTime)
+        if self.profile == profile {
+            retained.credentials = credentials
+            retained.credentialsExpiry = credentialsExpiry
+            retained.metadata = metadata
+            retained.status = status == .ready ? .ready : .idle
+            if retained.credentials != nil { retained.scheduleRenewal() }
+        }
+        return retained
+    }
+
     func cancel() {
         generation += 1
         request?.cancel()

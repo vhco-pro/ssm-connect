@@ -97,9 +97,7 @@ To keep the connection headless, turn off **Open DCV Viewer automatically** unde
 fetch, desktop provisioning or Viewer launch. Existing profiles keep the Viewer enabled.
 **Open VS Code** and **Open Browser** remain independent actions.
 
-## Profile files and authorization recovery (in development)
-
-These additions are local branch work, not part of published v0.5.2.
+## Profile files and authorization recovery
 
 Under **Settings > Profiles > Files**, **Open Profile File** previews a versioned YAML or JSON
 document. **Attach File** makes the file the source of truth; **Import as Local Copy** remains
@@ -128,6 +126,9 @@ permission. One explicit login resumes pending operations in the same selected c
 the profile or stopping the operation cancels that recovery. Established transports remain
 separate from authorization for new operations. Token/role expiry is not an SSO session deadline,
 and successful login is not proof that a disconnected editor reconnected.
+Saving a connected profile stages the changes; the established desktop target and its
+authorization remain intact until explicit Reconnect or Disconnect. Automatic wake recovery
+does not silently adopt the new target.
 
 Windows parity and real expiry/revocation/native-UI acceptance remain unverified.
 Editor access also still has an independent 24-hour local lease: credential renewal does not

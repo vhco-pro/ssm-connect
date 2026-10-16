@@ -70,6 +70,8 @@ public final class ConnectionStateMachine {
     // MARK: Working state
 
     private var credentials: AWSCredentials?
+    private var retainedAuthorization: AuthorizationSession?
+    private(set) var pendingProfile: ConnectionProfile?
     private var currentHandle: TunnelHandle?
     private var monitorTask: Task<Void, Never>?
     private var connectTask: Task<Void, Never>?
@@ -88,7 +90,13 @@ public final class ConnectionStateMachine {
         self.init(authProvider: authorization, profile: profile, settings: settings)
     }
 
-    var authorizationSession: AuthorizationSession? { authProvider as? AuthorizationSession }
+    var authorizationSession: AuthorizationSession? { retainedAuthorization ?? authProvider as? AuthorizationSession }
+
+    var authorizationSessions: [AuthorizationSession] {
+        var sessions = [authProvider as? AuthorizationSession].compactMap { $0 }
+        if let retainedAuthorization { sessions.append(retainedAuthorization) }
+        return sessions
+    }
 
     init(
         authProvider: AuthProviding = AWSAuthProvider(),
@@ -148,20 +156,29 @@ public final class ConnectionStateMachine {
 
     // MARK: - Public API (F1)
 
-    /// Apply a new active profile / settings. Ignored while a connection is in flight so we
-    /// never swap the target out from under an active tunnel (takes effect on next connect).
+    /// Saved configuration is staged while connected; the established target keeps its own auth.
     public func apply(profile: ConnectionProfile, settings: AppSettings) {
         clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
+        self.settings = settings
+        if state == .connected, self.profile != profile {
+            if retainedAuthorization == nil, let session = authorizationSession {
+                retainedAuthorization = session.retaining(profile: self.profile)
+            }
+            pendingProfile = profile
+        } else if state == .connected {
+            pendingProfile = nil
+        }
+        (authProvider as? AuthorizationSession)?.apply(profile: profile)
+        if state == .connected { return }
         if authorizationSession != nil, self.profile != profile, state != .connected {
+            pendingProfile = profile
             disconnect()
             self.profile = profile
         }
         guard state == .disconnected else {
-            self.settings = settings // settings (e.g. auto-reconnect) are safe to update live
             return
         }
         self.profile = profile
-        self.settings = settings
     }
 
     /// Called once on app launch: sweep stale DCV files and auto-connect if configured (F-03).
@@ -184,7 +201,7 @@ public final class ConnectionStateMachine {
         let healthy = await readiness.waitUntilReady(port: port, timeout: .seconds(8), interval: .seconds(2))
         guard !healthy else { return }
         log.log(.tunnel, "Workstation not responding after wake from sleep; reconnecting…")
-        reconnect()
+        reconnect(adoptPending: false)
     }
 
     /// Run the full connection flow. No-op if already connecting/connected.
@@ -201,16 +218,18 @@ public final class ConnectionStateMachine {
             await previous?.value
             await self.teardownTunnel()
             self.resetToDisconnected()
+            self.adoptPendingProfile()
         }
     }
 
     /// Tear down and re-run the full flow (re-resolves the instance, F-14).
-    func reconnect() {
+    func reconnect(adoptPending: Bool = true) {
         let previous = connectTask
         previous?.cancel()
         launchTask {
             await previous?.value
             await self.teardownTunnel()
+            if adoptPending { self.adoptPendingProfile() }
             await self.runConnect()
         }
     }
@@ -229,6 +248,7 @@ public final class ConnectionStateMachine {
                     try await ec2.stopInstance(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
                 }
                 self.resetToDisconnected()
+                self.adoptPendingProfile()
                 await self.notifier.post(.stopped)
             } catch {
                 self.fail(error)
@@ -283,7 +303,9 @@ public final class ConnectionStateMachine {
 
             // 1. Authenticate (F-04/F-05)
             state = .authenticating
-            let authProvider = self.authProvider
+            let authProvider: any AuthProviding
+            if let authorizationSession { authProvider = authorizationSession }
+            else { authProvider = self.authProvider }
             let profile = self.profile
             let creds = try await withStageTimeout("Sign-in", timeouts.authenticate) {
                 try await authProvider.authenticate(profile: profile)
@@ -383,6 +405,7 @@ public final class ConnectionStateMachine {
             await notifier.post(.connected)
         } catch is CancellationError {
             // disconnect()/reconnect() cancelled us; they own the resulting state.
+            if !Task.isCancelled { fail(AuthError.signInRequired) }
             return
         } catch {
             await teardownTunnel()
@@ -693,6 +716,13 @@ public final class ConnectionStateMachine {
     private func setCredentials(_ creds: AWSCredentials) {
         credentials = creds
         credentialsExpiry = creds.expiration
+    }
+
+    private func adoptPendingProfile() {
+        if let pendingProfile { profile = pendingProfile }
+        pendingProfile = nil
+        retainedAuthorization?.cancel()
+        retainedAuthorization = nil
     }
 
     private func teardownTunnel() async {

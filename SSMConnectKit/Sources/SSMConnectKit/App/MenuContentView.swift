@@ -38,13 +38,20 @@ public struct MenuContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let authorization = machine.authorizationSession, let detail = authorization.detailLine {
-                Text(detail).font(.caption).foregroundStyle(.secondary)
-                if authorization.status == .signInRequired {
-                    Button("Sign In with SSO") { authorization.signIn() }
-                } else if case .unavailable = authorization.status {
-                    Button("Retry Authorization") { authorization.retry() }
+            ForEach(machine.authorizationSessions.indices, id: \.self) { index in
+                let authorization = machine.authorizationSessions[index]
+                if let detail = authorization.detailLine {
+                    Text("\(authorization.profile.name): \(detail)").font(.caption).foregroundStyle(.secondary)
+                    if authorization.status == .signInRequired {
+                        Button("Sign In with SSO") { authorization.signIn() }
+                    } else if case .unavailable = authorization.status {
+                        Button("Retry Authorization") { authorization.retry() }
+                    }
                 }
+            }
+            if let pending = machine.pendingProfile {
+                Text("Saved profile changes pending: \(pending.name). Reconnect to apply.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             // Live connection details (instance, tunnel, elapsed) when connected (F-12).
@@ -220,7 +227,6 @@ public struct MenuContentView: View {
     }
 
     private func applyLatestConfiguration() {
-        machine.authorizationSession?.apply(profile: store.activeProfile)
         machine.apply(profile: store.activeProfile, settings: store.settings)
         webForwards?.apply(profile: store.activeProfile, settings: store.settings)
         remoteDevelopment?.apply(profile: store.activeProfile)
