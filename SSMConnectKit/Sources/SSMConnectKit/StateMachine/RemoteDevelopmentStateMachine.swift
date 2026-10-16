@@ -31,6 +31,7 @@ import Observation
     private var renewalGeneration = 0
     private var keys: [UUID: SSHKeyMaterial] = [:]
     private var leases: [UUID: URL] = [:]
+    private var grantedLeases: [UUID: RemoteSSHLease] = [:]
     private var leaseExpiries: [UUID: Date] = [:]
 
     public convenience init(profile: ConnectionProfile, authorization: AuthorizationSession? = nil) {
@@ -74,7 +75,7 @@ import Observation
         self.renewalSleep = renewalSleep
         self.writeLease = writeLease
         self.launchEditor = launchEditor
-        AppQuitHandler.shared.register { [weak self] in self?.stopAll() }
+        AppQuitHandler.shared.register { [weak self] in self?.terminateForQuit() }
     }
 
     var isActive: Bool { leases[profile.id] != nil }
@@ -133,12 +134,15 @@ import Observation
 
     func stop() { task?.cancel(); stop(profileID: profile.id) }
 
+    func terminateForQuit() { stopAll() }
+
     private func stop(profileID: UUID) {
         if profileID == profile.id {
             cancelContinuation()
             leaseMessage = nil
         }
         leaseExpiries.removeValue(forKey: profileID)
+        grantedLeases.removeValue(forKey: profileID)
         if let path = leases.removeValue(forKey: profileID) { try? FileManager.default.removeItem(at: path) }
         let key = keys.removeValue(forKey: profileID)
         Task { try? await Task.sleep(for: .seconds(1)); key?.remove() }
@@ -189,6 +193,7 @@ import Observation
         try Task.checkCancellation()
         if let path = leases[profile.id] {
             let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: path))
+            guard lease == grantedLeases[profile.id] else { throw RemoteSSHError.configurationConflict }
             if try !lease.canReuse(profile: profile, instanceID: instance.id, user: user, now: now()) {
                 stop(profileID: profile.id)
             }
@@ -209,6 +214,7 @@ import Observation
             try setup.writeHost(contents, profileID: profile.id)
             keys[profile.id] = key
             leases[profile.id] = leaseURL
+            grantedLeases[profile.id] = lease
             leaseExpiries[profile.id] = lease.expiresAt
         }
         try Task.checkCancellation()
@@ -221,7 +227,8 @@ import Observation
     }
 
     func checkLeaseContinuation() {
-        guard let expiry = leaseExpiry, expiry.timeIntervalSince(now()) <= 300 else { return }
+        guard let expiry = leaseExpiry else { return }
+        guard expiry.timeIntervalSince(now()) <= 300 else { scheduleContinuation(); return }
         beginRenewal()
     }
 
@@ -245,11 +252,14 @@ import Observation
         guard let expiry = leaseExpiry else { return }
         let delay = max(0, expiry.timeIntervalSince(now()) - 300)
         let sleep = renewalSleep
+        let selected = profile
+        let generation = renewalGeneration
         continuationTask = Task { [weak self] in
             do {
                 try await sleep(.seconds(delay))
                 try Task.checkCancellation()
-                self?.checkLeaseContinuation()
+                guard let self, self.profile == selected, self.renewalGeneration == generation else { return }
+                self.checkLeaseContinuation()
             } catch is CancellationError { return }
             catch { self?.leaseMessage = "Editor lease renewal could not be scheduled. Use Renew Editor Access." }
         }
@@ -274,10 +284,11 @@ import Observation
             for attempt in 0..<3 {
                 do {
                     try Task.checkCancellation()
-                    try await self.renewLease(profile: selected)
+                    let extended = try await self.renewLease(profile: selected)
                     try Task.checkCancellation()
                     guard generation == self.renewalGeneration else { return }
-                    self.leaseMessage = nil
+                    self.leaseMessage = extended ? nil
+                        : "The existing editor lease deadline is already later. It was not shortened; automatic renewal remains scheduled."
                     self.scheduleContinuation()
                     return
                 } catch {
@@ -311,17 +322,19 @@ import Observation
     }
 
     private func readOwnedLease() throws -> RemoteSSHLease {
-        guard let url = leases[profile.id], let owner = ownerIdentity() else { throw RemoteSSHError.invalidLease }
+        guard let url = leases[profile.id], let owner = ownerIdentity(),
+              let granted = grantedLeases[profile.id] else { throw RemoteSSHError.invalidLease }
         let data = try Data(contentsOf: url)
         guard data.count < 128 * 1024 else { throw RemoteSSHError.invalidLease }
         let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: data)
+        guard lease == granted else { throw RemoteSSHError.configurationConflict }
         guard lease.ownerPID == owner.pid, lease.ownerLaunchDate == owner.launchDate,
               lease.ownerBundleID == owner.bundleID else { throw RemoteSSHError.invalidLease }
         try lease.validate(path: url.path, ownerActive: lease.expiresAt > now())
         return lease
     }
 
-    private func renewLease(profile: ConnectionProfile) async throws {
+    private func renewLease(profile: ConnectionProfile) async throws -> Bool {
         guard self.profile == profile, profile.remoteDevelopment?.enabled == true,
               let url = leases[profile.id] else { throw RemoteSSHError.invalidLease }
         guard setup.isInstalled else { throw RemoteSSHError.configurationConflict }
@@ -356,9 +369,13 @@ import Observation
               try Data(contentsOf: url) == originalData else { throw RemoteSSHError.configurationConflict }
         let current = try readOwnedLease()
         guard current.continues(original, ownerActive: true, now: now()) else { throw RemoteSSHError.invalidLease }
-        let renewed = current.extending(until: now().addingTimeInterval(24 * 60 * 60))
+        let expiry = now().addingTimeInterval(24 * 60 * 60)
+        guard expiry > current.expiresAt else { return false }
+        let renewed = current.extending(until: expiry)
         try writeLease(try JSONEncoder().encode(renewed), url)
+        grantedLeases[profile.id] = renewed
         leaseExpiries[profile.id] = renewed.expiresAt
+        return true
     }
 }
 

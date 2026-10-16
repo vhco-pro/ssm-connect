@@ -494,6 +494,56 @@ Acceptance for this slice is deterministic LEASE-01 through LEASE-06 and LEASE-0
 the coordinator/proxy seams. LEASE-07's real 24-hour native working-day observation and complete
 UPGRADE-01 through UPGRADE-06 remain separate unverified gates; synthetic tests cannot close them.
 
+### 15.5 Local Implementation and Review Evidence
+
+The follow-up is committed for review in [PR #28](https://github.com/vhco-pro/ssm-connect/pull/28),
+not installed into the running v0.6.0 app. Signing prerequisites are independently documented in
+[SIGN-01 through SIGN-12](./macos-trusted-distribution.spec.md); organization enrollment is pending.
+
+The coordinator schedules renewal and persists a later deadline without changing an in-use key
+or generation. Proxy supervision checks the current same-owner lease deadline instead of its
+captured original expiry. The coordinator retains its own granted snapshot: a disk replacement
+before or during renewal is a conflict, not an ownership transfer. No new editor window, EC2
+start or extra channel is performed by the renewal itself.
+
+Independent review identified three gaps in the first candidate: an early timer wake could
+lose scheduling, a backwards clock correction could shorten the deadline, and a pre-attempt
+file replacement could be adopted as the granted generation/key. All three were corrected and
+confirmed addressed in a bounded follow-up review. New regressions exercise the exact cases.
+
+The final post-fix local Release suite passed **263 tests across 35 suites** with live probes
+disabled. This includes an actually timed 60-second attempt budget, ten cancellation/context
+cases, three pre-attempt file replacement cases and two independently authorized mock EIC/SSM
+channels after rolling past the original expiry. An owned child process also remained alive
+under the renewed predicate and stopped on revocation; no existing user process was used.
+
+This is executed coordinator/proxy evidence, not a native 24-hour session or proof that every
+editor/agent process survives all disconnections. App build, hosted checks and eventual native
+overnight acceptance are recorded independently.
+
+The following bounded verdict block is recorded verbatim from the reviewer:
+
+| Criterion / verification scope | Verdict | Evidence |
+|---|---|---|
+| LEASE-01 — deterministic continuation | **met** | Automatic pre-deadline renewal, early-wake re-arming and held-owned-child continuity passed without another editor launch. |
+| LEASE-02 — coordinator deduplication and stable key | **met** | Concurrent triggers produce one renewal; repeated renewals preserve the owned generation and key. |
+| LEASE-03 — deterministic fresh-channel authorization | **met** | Two post-original-expiry proxy authorizations, separated by 65 synthetic seconds, each perform fresh authorization → EIC push → SSM for the same instance/user/key. |
+| LEASE-04 — bounded failure and recovery | **met** | Sign-in/error handling, explicit retry and bounded 30/60-second backoffs passed. A measured 60-second cancellation-budget test passed in the previously observed full run. |
+| LEASE-05 — cancellation and ownership | **met** | Ten context/cancellation cases passed, including the production-registered quit-cleanup entry point. Pre-attempt generation/key/expiry replacements are rejected before authorization. |
+| LEASE-06 — persistence and conflict failures | **met** | Failed persistence preserves the existing lease; conflicting replacements remain untouched and produce actionable errors. |
+| LEASE-08 — accepted rolling limits | **met** | Repeated finite 24-hour renewals preserve generation/key; backward-clock renewal cannot shorten the existing deadline. |
+| Native EIC/SSM transport and concurrent native SSH key loading | **not verified** | Native transport probe remained skipped; deterministic seam coverage does not establish native execution. |
+| LEASE-07 — native overnight / 24-hour working session | **not verified** | No native long-session observation established by this review. |
+| UPGRADE-01…06 — app upgrade/relaunch continuity | **not verified** | Separate gates; not established by rolling-lease tests. |
+| Reviewer-observed post-fix targeted run | **met** | 29 tests / 2 suites passed; the previously measured 60-second case was intentionally excluded. |
+| Final post-fix full run — independent reviewer observation | **not verified** | Parent reports 263 tests / 35 suites passed, including 64.251-second elapsed budget-test execution; reviewer did not inspect this final run. |
+| Final isolated app build | **not verified** | Parent reports build still running; no final result observed by reviewer. |
+
+After that reviewer snapshot, the author observed the final isolated ARM64 Release app build
+complete successfully. The app and both embedded helpers passed strict signature verification.
+This author-observed build evidence does not change the reviewer's recorded observation scope.
+No candidate was installed or launched; the active user app/editor/lease remain unchanged.
+
 ## 16. Upgrade and Relaunch Workspace Continuity (2026-10-16)
 
 **Status: owner clarified the required outcome; same-workspace reconnect was observed during

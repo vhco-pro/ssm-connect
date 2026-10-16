@@ -201,6 +201,42 @@ struct EditorLeaseContinuationTests {
         #expect(fixture.launches == 1)
     }
 
+    @Test("LEASE-01: Early timer wakes rearm against wall-clock changes rather than losing renewal")
+    func earlyWakeRearmsUntilTheActualBoundary() async throws {
+        let sleeper = LeaseSleeper()
+        let fixture = try LeaseFixture(sleep: { try await sleeper.sleep($0) })
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        try await waitAsync { await sleeper.durations.contains(.seconds(86100)) }
+        fixture.clock.advance(86099)
+        await sleeper.resume(.seconds(86100))
+        try await waitAsync { await sleeper.durations.contains(.seconds(1)) }
+        #expect(fixture.auth.refreshCallCount == 0)
+        #expect(fixture.writes == 1)
+        fixture.clock.advance(1)
+        await sleeper.resume(.seconds(1))
+        try await wait { fixture.writes == 2 }
+        await fixture.machine.awaitLeaseRenewal()
+        #expect(fixture.auth.refreshCallCount == 1)
+        #expect(fixture.launches == 1)
+    }
+
+    @Test("LEASE-08: A backward wall-clock correction cannot shorten an existing lease")
+    func rollbackPreservesDeadlineAndSchedulesAgain() async throws {
+        let sleeper = LeaseSleeper()
+        let fixture = try LeaseFixture(sleep: { try await sleeper.sleep($0) })
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        let before = try Data(contentsOf: fixture.leaseURL)
+        fixture.clock.advance(-60)
+        fixture.machine.renewAccess()
+        await fixture.machine.awaitLeaseRenewal()
+        #expect(try Data(contentsOf: fixture.leaseURL) == before)
+        #expect(fixture.writes == 1)
+        #expect(fixture.machine.leaseMessage?.contains("not shortened") == true)
+        try await waitAsync { await sleeper.durations.contains(.seconds(86160)) }
+    }
+
     @Test("LEASE-08: Renewal across declared key/lease-lifetime limits")
     func eachApprovedRollingLeaseIsFiniteAndRevalidated() async throws {
         let fixture = try LeaseFixture()
@@ -270,7 +306,7 @@ struct EditorLeaseContinuationTests {
     }
 
     @Test("LEASE-05: Stop, quit, profile/target/user change or revocation races renewal",
-          arguments: ["stop", "profile", "owner", "generation", "instance", "user", "setup", "deadline", "key"])
+          arguments: ["stop", "quit", "profile", "owner", "generation", "instance", "user", "setup", "deadline", "key"])
     func changedContextNeverExtendsLeaseOrRecreatesAccess(change: String) async throws {
         let fixture = try LeaseFixture()
         defer { fixture.cleanup() }
@@ -279,6 +315,7 @@ struct EditorLeaseContinuationTests {
         fixture.ec2.onResolve = {
             switch change {
             case "stop": fixture.machine.stop()
+            case "quit": fixture.machine.terminateForQuit()
             case "profile":
                 var changed = fixture.profile
                 changed.roleName = "ChangedRole"
@@ -306,8 +343,38 @@ struct EditorLeaseContinuationTests {
         fixture.machine.checkLeaseContinuation()
         await fixture.machine.awaitLeaseRenewal()
         #expect(fixture.writes == 1 && fixture.launches == 1)
-        if change == "stop" { #expect(!FileManager.default.fileExists(atPath: fixture.leaseURL.path)) }
+        if change == "stop" || change == "quit" { #expect(!FileManager.default.fileExists(atPath: fixture.leaseURL.path)) }
         else { #expect(try fixture.lease().expiresAt == original.expiresAt) }
+    }
+
+    @Test("LEASE-05 and LEASE-06: Disk replacement before renewal cannot become the owner's granted lease",
+          arguments: ["generation", "key", "expiry"])
+    func preAttemptReplacementIsRejectedBeforeAuthorization(change: String) async throws {
+        let fixture = try LeaseFixture()
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        let original = try fixture.lease()
+        let keyPath: String
+        if change == "key" {
+            let alternative = fixture.root.appendingPathComponent("alternative/key")
+            try BrowserPrivateFiles.write(Data("another-fixture-key".utf8), to: alternative)
+            try BrowserPrivateFiles.write(Data("ssh-ed25519 another-fixture".utf8), to: URL(fileURLWithPath: alternative.path + ".pub"))
+            keyPath = alternative.path
+        } else { keyPath = original.keyPath }
+        let replacement = RemoteSSHLease(profile: original.profile, instanceID: original.instanceID, user: original.user,
+            keyPath: keyPath, pluginPath: original.pluginPath, ownerPID: original.ownerPID,
+            ownerLaunchDate: original.ownerLaunchDate, ownerBundleID: original.ownerBundleID,
+            generation: change == "generation" ? UUID() : original.generation,
+            expiresAt: change == "expiry" ? original.expiresAt.addingTimeInterval(300) : original.expiresAt)
+        try BrowserPrivateFiles.write(try JSONEncoder().encode(replacement), to: fixture.leaseURL)
+        let bytes = try Data(contentsOf: fixture.leaseURL)
+        fixture.clock.advance(86100)
+        fixture.machine.checkLeaseContinuation()
+        await fixture.machine.awaitLeaseRenewal()
+        #expect(fixture.auth.refreshCallCount == 0)
+        #expect(fixture.writes == 1 && fixture.launches == 1)
+        #expect(try Data(contentsOf: fixture.leaseURL) == bytes)
+        #expect(fixture.machine.leaseMessage?.contains("not extended") == true)
     }
 
     @Test("LEASE-06: Renewal or atomic lease persistence fails")
@@ -438,5 +505,37 @@ struct EditorLeaseContinuationTests {
             ownerLaunchDate: original.ownerLaunchDate, ownerBundleID: original.ownerBundleID,
             generation: original.generation, expiresAt: renewed.expiresAt)
         #expect(!wrongKey.continues(original, ownerActive: true, now: later))
+    }
+
+    @Test("LEASE-03: Independent channels after the original deadline each refresh EIC authorization for the same identity")
+    func freshProxyChannelsAuthorizeTheStableKeyAfterRollingExpiry() async throws {
+        let fixture = try LeaseFixture()
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        let original = try fixture.lease()
+        fixture.clock.advance(86100)
+        fixture.machine.checkLeaseContinuation()
+        await fixture.machine.awaitLeaseRenewal()
+        fixture.clock.advance(301)
+        let renewed = try fixture.lease()
+        try #require(renewed.continues(original, ownerActive: true, now: fixture.clock.date))
+        try renewed.validate(path: fixture.leaseURL.path, ownerActive: true)
+        let events = WebEventRecorder()
+        let eic = FakeInstanceConnect(events)
+        let ssm = MockSSMService()
+        ssm.onStartSSHSession = { events.append("session") }
+        let publicKey = try String(contentsOfFile: renewed.keyPath + ".pub", encoding: .utf8)
+        for _ in 0..<2 {
+            _ = try await RemoteSSHProxyRuntime.authorizeChannel(renewed, auth: fixture.auth, ec2: fixture.ec2,
+                                                                 instanceConnect: eic, ssm: ssm)
+            fixture.clock.advance(65)
+        }
+        #expect(eic.publicKeys == [publicKey, publicKey])
+        #expect(eic.user == renewed.user)
+        #expect(ssm.startSSHSessionCount == 2)
+        #expect(events.values == ["push", "session", "push", "session"])
+        #expect(fixture.auth.refreshCallCount == 3)
+        #expect(renewed.generation == original.generation && renewed.keyPath == original.keyPath)
+        #expect(fixture.launches == 1)
     }
 }
