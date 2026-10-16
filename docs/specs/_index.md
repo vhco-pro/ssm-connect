@@ -2,6 +2,7 @@
 
 | Spec | Date | Description |
 |------|------|-------------|
+| [remote-browser-private-dns](./remote-browser-private-dns.spec.md) | 2026-10-16 | Proposed selective, fail-closed private-domain browsing in VS Code; source-verified preview remote proxy, native Web Forwards reuse and mandatory supported-API/prototype gates. |
 | [macos-trusted-distribution](./macos-trusted-distribution.spec.md) | 2026-10-16 | Organization Developer ID signing, notarization/stapling, restricted CI credentials and final-artifact release gates; pending enrollment and implementation. |
 | [ssm-connect](./ssm-connect.spec.md) | 2026-10-16 | Released macOS baseline with local auth freshness/recovery follow-up; real expiry, native-UI and Windows acceptance remain open. |
 | [web-forwards](./web-forwards.spec.md) | 2026-10-15 | Shipped SOCKS/PAC and local forwards over SSH-in-SSM, independent from DCV; retained live-test limits are stated. |
