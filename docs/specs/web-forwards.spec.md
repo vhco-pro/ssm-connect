@@ -247,6 +247,15 @@ the private observation log; it must not be reported as a clean working-day coex
 
 ## 6. Design notes
 
+### Replacement continuity follow-up
+
+Local native routing settings survive a VM replacement, but the live SSH/SSM tunnel does not.
+Current retry bounds and SSM registration alone do not prove readiness of a fresh user/home,
+private DNS/routes or persisted user services. The separate
+[replacement contract](./logical-workstation-replacement.spec.md) defines expected-rebuild waiting,
+same-profile rediscovery and actual domain/dashboard recovery acceptance. It is not implemented
+by the editor's same-owner rolling-lease fix or by changing an AMI reference alone.
+
 ### 6.1 Why SSH inside SSM, and not more port-forward sessions
 
 The app could open extra `AWS-StartPortForwardingSession[ToRemoteHost]` sessions, which is what it

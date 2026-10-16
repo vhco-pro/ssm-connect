@@ -597,3 +597,14 @@ or extension-host process survived, or that an unattended future upgrade will re
 
 The observed v0.6.0 handover establishes same-workspace reconnectability, not automatic recovery
 or complete agent continuity. UPGRADE-01 through UPGRADE-06 remain unverified as a complete feature.
+
+## 17. Physical Workstation Replacement Is a Separate Use Case
+
+Keeping the Mac-side authority stable does not yet make a replaced EC2 instance reconnectable
+from the original Recent workspace. The proxy and same-owner renewal deliberately reject a changed
+instance; existing AC-R6/AC-R9 are not a passed transparent-rebuild contract.
+
+[REBUILD-01 through REBUILD-11](./logical-workstation-replacement.spec.md) specify coordinated
+logical-profile rebinding, saved-user/home state and native forwarding after a real replacement.
+An interruption is allowed; preserving destroyed-VM processes is not required. No changed-instance
+guard, editor host-key check or production operational hold is removed by that specification.
