@@ -279,7 +279,13 @@ unit-testable without a real plugin binary (D8). The handle wires the process's 
 | **`session-manager-plugin` sourcing** | Download the **official AWS-signed** macOS plugin package at build time, verify its signature/checksum, then embed the extracted binary (ADR-7). Most-secure option per the author's preference — avoids trusting a locally-built or arbitrary binary |
 | **`session-manager-plugin` licensing** | Apache 2.0 ([aws/session-manager-plugin](https://github.com/aws/session-manager-plugin)). Bundling is permitted. Include the LICENSE file in `Contents/Resources/` |
 
-**Upgrade path (only if shared with other users):** enroll in the Apple Developer Program ($99/yr) → obtain a `Developer ID Application` certificate → sign app + plugin with `--options=runtime` (Hardened Runtime) → `xcrun notarytool submit … --wait` → `xcrun stapler staple`. This removes all Gatekeeper friction. No code changes required — only the signing/release pipeline changes. See ADR-4.
+**Trusted-distribution follow-up (2026-10-16):** organization enrollment, Developer ID signing,
+Hardened Runtime, notarization/stapling and final-artifact verification are now specified in
+[SIGN-01 through SIGN-12](./macos-trusted-distribution.spec.md). Membership and implementation are
+pending; v0.6.0 remains ad hoc. Normal launch must no longer require stripping quarantine after
+the trusted release passes its gates, but ordinary download confirmation and enterprise policy
+prompts may remain. Signing does not itself implement editor-lease or upgrade/session recovery.
+ADR-4 records the historical v1 choice.
 
 ### 6.4 Bundled `session-manager-plugin` — Invocation Contract
 

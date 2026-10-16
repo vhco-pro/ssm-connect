@@ -466,3 +466,57 @@ SSO-session expiry. The incident establishes manual recovery only.
 
 No acceptance criterion above is marked met by the October 16 manual recovery. Windows must run
 its own native ownership/process/file tests before claiming the same continuation behavior.
+
+## 16. Upgrade and Relaunch Workspace Continuity (2026-10-16)
+
+**Status: owner clarified the required outcome; same-workspace reconnect was observed during
+the v0.6.0 upgrade, but automatic upgrade/relaunch recovery is not implemented or accepted as
+passed.** This is separate from extending a lease while its existing owner remains running.
+
+The durable identity is the stored local workstation profile UUID and its SSH authority, not
+an SSM session ID, temporary key, lease generation or app PID. Those transport/owner values may
+change during an upgrade without creating a new remote workspace identity. Ordinary launches
+must not allocate a replacement profile UUID. Import as Local Copy remains an intentionally
+different identity and must not inherit an existing profile's access.
+
+During the October 16 upgrade, the original VS Code window reconnected to the same SSH authority,
+instance and Linux user through the installed v0.6.0 helper. Its logs reported the existing
+remote VS Code Server process rather than a replacement installation. The development preview
+used a different app bundle/storage namespace, so transferring its owned SSH integration to the
+installed app was a one-time migration. This observation does not prove that every running agent
+or extension-host process survived, or that an unattended future upgrade will recover itself.
+
+### Required Behavior
+
+- For an explicitly requested upgrade/relaunch of previously enabled editor access, retain the
+  profile UUID, exact workstation/user and original workspace authority. Revalidate authorization,
+  instance and ownership before creating fresh process-bound access.
+- Recover access for the original VS Code window instead of opening a random/new workspace or
+  unconditionally creating another window. Do not close/reload the editor, discard buffers,
+  reinstall/delete VS Code Server state, reset extension storage or restart remote agents.
+- Reestablish the owned transport after the old app exits; do not reuse a dead owner's lease or
+  copy its PID/generation as if still valid. Preserve host-key trust and unrelated SSH hosts.
+- Keep recovery idempotent and bounded. If SSO or an ownership/target decision is needed, expose
+  that specific action; do not fall back to another workstation or silently enable auto-connect.
+- Explicit Stop Remote Access, revocation or intentional Quit must not be undone by background
+  recovery. Define the upgrade/relaunch resume intent separately from those cancellation actions.
+- Preserve access to the same agent/conversation context where the existing editor/server
+  supports it. Durable chat history and live agent execution are distinct: a dead remote process
+  cannot be claimed restored merely because the SSH authority reconnects.
+- Treat the macOS first-launch trust warning separately from transport/session recovery. The
+  ad-hoc-signed v0.6.0 release is not notarized; proper signed/notarized distribution is a separate
+  requirement, not permission to disable system-wide launch protections.
+
+### Acceptance Criteria
+
+| ID | Scenario | Required evidence |
+| --- | --- | --- |
+| UPGRADE-01 | Upgrade/relaunch with an existing remote workspace open | The original profile UUID/SSH authority and exact target/user remain stable; fresh access is established without another workstation/profile or forced new editor window. |
+| UPGRADE-02 | Existing agent/conversation and unsaved editor state | Native before/after checks show the same original workspace, buffers and existing agent/conversation context remain accessible. Report separately whether live agent execution continued; SSH/server reuse alone is insufficient. |
+| UPGRADE-03 | New app PID/key/generation and expired initial EIC authorization | The original window opens new authenticated channels through the new owner, without weakening lease/host-key checks or requiring a permanent remote key. |
+| UPGRADE-04 | Repeated upgrade/recovery, including preview-to-installed migration | Recovery is idempotent; checked migration preserves unrelated integration and trust. Later ordinary upgrades need no repeat preview migration or identity reset. |
+| UPGRADE-05 | Stop/revocation/intentional Quit or changed target races recovery | No recreation of stopped access, stale-owner adoption, wrong-target replay or accidental global auto-connect enablement. |
+| UPGRADE-06 | Missing authorization, damaged integration or macOS launch refusal | Distinct actionable recovery state, original workspace retained, and no claim of success until the original window reconnects. |
+
+The observed v0.6.0 handover establishes same-workspace reconnectability, not automatic recovery
+or complete agent continuity. UPGRADE-01 through UPGRADE-06 remain unverified as a complete feature.
