@@ -401,10 +401,11 @@ performed. The release gate remains with the human owner.
 
 ## 15. Automatic Editor-Lease Continuation (2026-10-16)
 
-**Status: required follow-up, explicitly requested by the owner on 2026-10-16; not implemented
-or accepted as passed.** Credential renewal does not implement editor-lease continuation.
-The current release candidate still requires explicit Open VS Code after a local lease expires.
-This known limitation must appear in its release notes rather than being described as fixed.
+**Status: rolling same-owner renewal explicitly accepted on 2026-10-16; implementation and
+verification in progress on a follow-up branch.** Released v0.6.0 does not implement continuation.
+The new slice must be judged against section 15.4 and executed evidence, not described as already
+installed or as proof of unattended upgrade recovery. Explicit Open is still needed after a
+lease has already expired; rolling renewal must complete before that deadline.
 
 ### 15.1 Observed Failure and Recovery
 
@@ -466,6 +467,32 @@ SSO-session expiry. The incident establishes manual recovery only.
 
 No acceptance criterion above is marked met by the October 16 manual recovery. Windows must run
 its own native ownership/process/file tests before claiming the same continuation behavior.
+
+### 15.4 Accepted Rolling-Renewal Slice (2026-10-16)
+
+The owner selected rolling same-owner renewal while organization signing enrollment is pending.
+For this slice, each lease remains finite at 24 hours, with renewal due five minutes before its
+deadline. Use one in-flight renewal and a 60-second overall attempt budget; transient failure
+retries are bounded to two further attempts after 30 and 60 seconds, never past the current
+deadline. Sign-in-required, access-denied, identity/ownership changes and file conflicts are
+actionable terminal renewal results, not automatic retry loops.
+
+Renewal must silently obtain fresh authorization, resolve the same running instance/user and
+atomically persist the new deadline only if the owned lease/context is still current. Keep its
+key and generation stable while the same app owns access, so existing channels can observe the
+new deadline rather than being closed at the original timestamp. There is no separate hard
+overall duration for this explicitly approved rolling mode; the key remains limited to that
+owner/generation, and every extension requires revalidation. Stop, quit, owner loss or changed
+target cancels renewal and does not transfer that grant to a new process.
+
+This slice must not start EC2, open another editor window, create a new SSM channel merely to
+extend the lease, restore stopped access, or claim automatic app-upgrade/relaunch recovery.
+Expose lease renewal/error state separately from AWS authorization and a Renew Editor Access
+retry action that does not launch VS Code. A known failed deadline remains visible.
+
+Acceptance for this slice is deterministic LEASE-01 through LEASE-06 and LEASE-08 behavior at
+the coordinator/proxy seams. LEASE-07's real 24-hour native working-day observation and complete
+UPGRADE-01 through UPGRADE-06 remain separate unverified gates; synthetic tests cannot close them.
 
 ## 16. Upgrade and Relaunch Workspace Continuity (2026-10-16)
 

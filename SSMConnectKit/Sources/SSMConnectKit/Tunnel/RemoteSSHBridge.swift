@@ -36,6 +36,21 @@ struct RemoteSSHLease: Codable, Sendable {
         return expiresAt > now
     }
 
+    func continues(_ original: RemoteSSHLease, ownerActive: Bool, now: Date = Date()) -> Bool {
+        guard ownerActive, generation == original.generation,
+              ownerPID == original.ownerPID, ownerBundleID == original.ownerBundleID,
+              ownerLaunchDate == original.ownerLaunchDate, keyPath == original.keyPath,
+              pluginPath == original.pluginPath else { return false }
+        return (try? canReuse(profile: original.profile, instanceID: original.instanceID,
+                              user: original.user, now: now)) == true
+    }
+
+    func extending(until expiry: Date) -> RemoteSSHLease {
+        RemoteSSHLease(profile: profile, instanceID: instanceID, user: user, keyPath: keyPath,
+            pluginPath: pluginPath, ownerPID: ownerPID, ownerLaunchDate: ownerLaunchDate,
+            ownerBundleID: ownerBundleID, generation: generation, expiresAt: expiry)
+    }
+
     var ownerIsActive: Bool {
         guard expiresAt > Date(), let application = NSRunningApplication(processIdentifier: ownerPID),
               !application.isTerminated, application.bundleIdentifier == ownerBundleID,
@@ -106,9 +121,9 @@ enum RemoteSSHConfiguration {
 
 public enum RemoteSSHProxyRuntime {
     private static func current(_ lease: RemoteSSHLease, path: String) -> Bool {
-        guard lease.ownerIsActive, let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let current = try? JSONDecoder().decode(RemoteSSHLease.self, from: data) else { return false }
-        return current.generation == lease.generation
+        return current.continues(lease, ownerActive: current.ownerIsActive)
     }
     public static func run(configurationPath: String) async throws -> Int32 {
         let data = try Data(contentsOf: URL(fileURLWithPath: configurationPath))
