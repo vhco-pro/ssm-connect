@@ -84,6 +84,12 @@ public final class ConnectionStateMachine {
         self.init(profile: profile, settings: settings, timeouts: .default)
     }
 
+    public convenience init(profile: ConnectionProfile, settings: AppSettings, authorization: AuthorizationSession) {
+        self.init(authProvider: authorization, profile: profile, settings: settings)
+    }
+
+    var authorizationSession: AuthorizationSession? { authProvider as? AuthorizationSession }
+
     init(
         authProvider: AuthProviding = AWSAuthProvider(),
         ec2: EC2Providing = EC2Service(),
@@ -132,6 +138,7 @@ public final class ConnectionStateMachine {
     /// Synchronous best-effort plugin teardown for app termination (F-13). `applicationWillTerminate`
     /// can't await `terminate()`, so signal the child process directly (SIGTERM, then SIGKILL).
     func terminateTunnelForQuit() {
+        connectTask?.cancel()
         monitorTask?.cancel()
         guard let pid = tunnelPID, pid > 0 else { return }
         kill(pid, SIGTERM)
@@ -143,8 +150,12 @@ public final class ConnectionStateMachine {
 
     /// Apply a new active profile / settings. Ignored while a connection is in flight so we
     /// never swap the target out from under an active tunnel (takes effect on next connect).
-    func apply(profile: ConnectionProfile, settings: AppSettings) {
+    public func apply(profile: ConnectionProfile, settings: AppSettings) {
         clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
+        if authorizationSession != nil, self.profile != profile, state != .connected {
+            disconnect()
+            self.profile = profile
+        }
         guard state == .disconnected else {
             self.settings = settings // settings (e.g. auto-reconnect) are safe to update live
             return
@@ -206,7 +217,7 @@ public final class ConnectionStateMachine {
 
     /// Stop the workstation instance and disconnect (F-15).
     func stopWorkstation() {
-        guard let instanceId, let credentials else { return }
+        guard let instanceId, credentials != nil else { return }
         let previous = connectTask
         previous?.cancel()
         launchTask {
@@ -214,7 +225,9 @@ public final class ConnectionStateMachine {
             await self.teardownTunnel()
             do {
                 self.log.log(.ec2, "Stopping instance \(instanceId)…")
-                try await self.ec2.stopInstance(instanceId: instanceId, region: self.profile.resourceRegion, credentials: credentials)
+                try await self.withReauth { [ec2 = self.ec2, profile = self.profile] credentials in
+                    try await ec2.stopInstance(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
+                }
                 self.resetToDisconnected()
                 await self.notifier.post(.stopped)
             } catch {
@@ -642,16 +655,36 @@ public final class ConnectionStateMachine {
     /// Run `op` with the current credentials. If it fails with an expired-credentials error,
     /// re-authenticate once and retry — without tearing down an active tunnel (F-17).
     private func withReauth<T>(_ op: (AWSCredentials) async throws -> T) async throws -> T {
-        guard let creds = credentials else { throw AuthError.signInRequired }
+        var creds = credentials
+        if let session = authorizationSession {
+            creds = try await session.authenticate(profile: profile)
+            if let creds { setCredentials(creds) }
+        }
+        guard let creds else { throw AuthError.signInRequired }
+        try Task.checkCancellation()
         do {
             return try await op(creds)
         } catch {
-            guard isExpiredCredentials(error) else { throw error }
-            log.log(.auth, "SSO session expired; re-authenticating…")
+            guard isExpiredCredentials(error) || AWSAuthProvider.isRejectedAuthorization(error) else { throw error }
+            log.log(.auth, "AWS authorization rejected; renewing credentials…")
             await notifier.post(.signInRequired)
-            let fresh = try await authProvider.authenticate(profile: profile)
+            let fresh: AWSCredentials
+            if let session = authorizationSession {
+                fresh = try await session.recover(profile: profile)
+            } else {
+                fresh = try await authProvider.authenticate(profile: profile)
+            }
+            try Task.checkCancellation()
             setCredentials(fresh)
-            return try await op(fresh)
+            do { return try await op(fresh) }
+            catch {
+                if let session = authorizationSession,
+                   isExpiredCredentials(error) || AWSAuthProvider.isRejectedAuthorization(error) {
+                    session.requireSignIn()
+                    throw AuthError.signInRequired
+                }
+                throw error
+            }
         }
     }
 
@@ -741,6 +774,7 @@ public final class ConnectionStateMachine {
 
     /// Default heuristic for detecting expired/unauthorized SSO credentials across SDK services.
     nonisolated static func defaultExpiredCredentialsCheck(_ error: Error) -> Bool {
+        if AWSAuthProvider.isRejectedAuthorization(error) { return true }
         let description = String(reflecting: error)
         return description.contains("ExpiredToken")
             || description.contains("UnauthorizedAccess")

@@ -20,12 +20,21 @@ struct SSMConnectApp: App {
 
     init() {
         let store = ProfileStore()
-        let machine = ConnectionStateMachine(profile: store.activeProfile, settings: store.settings)
-        let webForwards = WebForwardsStateMachine(profile: store.activeProfile, settings: store.settings, log: machine.log)
+        let authorization = AuthorizationSession(profile: store.activeProfile)
+        let machine = ConnectionStateMachine(profile: store.activeProfile, settings: store.settings, authorization: authorization)
+        let webForwards = WebForwardsStateMachine(profile: store.activeProfile, settings: store.settings,
+                                                log: machine.log, authorization: authorization)
+        let remoteDevelopment = RemoteDevelopmentStateMachine(profile: store.activeProfile, authorization: authorization)
+        store.configurationDidChange = { profile, settings in
+            authorization.apply(profile: profile)
+            machine.apply(profile: profile, settings: settings)
+            webForwards.apply(profile: profile, settings: settings)
+            remoteDevelopment.apply(profile: profile)
+        }
         _store = State(initialValue: store)
         _machine = State(initialValue: machine)
         _webForwards = State(initialValue: webForwards)
-        _remoteDevelopment = State(initialValue: RemoteDevelopmentStateMachine(profile: store.activeProfile))
+        _remoteDevelopment = State(initialValue: remoteDevelopment)
         machine.onLaunch()
 
         // Recover a zombie tunnel after the Mac wakes from sleep (F-13): re-check the connection
@@ -63,5 +72,3 @@ struct SSMConnectApp: App {
         .windowResizability(.contentSize)
     }
 }
-
-

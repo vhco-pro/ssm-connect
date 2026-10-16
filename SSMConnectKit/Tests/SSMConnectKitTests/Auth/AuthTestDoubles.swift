@@ -78,6 +78,7 @@ final class MockSSOClient: SSOClienting, @unchecked Sendable {
         )
     )
     var error: (any Error)?
+    var onGetRoleCredentials: ((GetRoleCredentialsInput) throws -> Void)?
 
     private(set) var callCount = 0
     private(set) var lastInput: GetRoleCredentialsInput?
@@ -85,6 +86,7 @@ final class MockSSOClient: SSOClienting, @unchecked Sendable {
     func getRoleCredentials(_ input: GetRoleCredentialsInput) async throws -> GetRoleCredentialsOutput {
         callCount += 1
         lastInput = input
+        try onGetRoleCredentials?(input)
         if let error { throw error }
         return output
     }

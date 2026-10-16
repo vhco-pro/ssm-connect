@@ -2,15 +2,15 @@
 
 | Field       | Value                                                      |
 |-------------|------------------------------------------------------------|
-| Version     | 1.3                                                        |
-| Status      | Implemented & shipped — open-source, Homebrew cask (2026-06-06) |
-| Repository  | [vhco-pro/ssm-connect](https://github.com/vhco-pro/ssm-connect) (private) |
+| Version     | 1.4                                                        |
+| Status      | macOS v0.5.0 shipped (2026-10-15); open follow-up requirements are marked separately |
+| Repository  | [vhco-pro/ssm-connect](https://github.com/vhco-pro/ssm-connect) (public) |
 | App identity | Name "SSM Connect"; bundle id `pro.vhco.ssm-connect`      |
 | Platform    | macOS (native Swift / SwiftUI), min macOS 14 (Sonoma)      |
-| Default profile | Account 111122223333 (factory-sts prod); resource region `eu-central-1`; SSO region `eu-west-1` |
-| Design intent | General-purpose, config-driven SSM-tunnel connector — the factory workstation is just the default profile, nothing is hardcoded |
+| Default profile | None; first launch starts empty and the user explicitly imports or creates a profile |
+| Design intent | General-purpose, config-driven SSM connector; no AWS environment is baked into the app |
 | Author      | michielvha                                                 |
-| Date        | 2026-06-05                                                 |
+| Date        | 2026-10-15 (original design 2026-06-05)                      |
 | Companion   | `ec2-cloud-workstation-dcv.spec.md` (server-side spec, in the `one-b2c` workspace) |
 | Runbook     | `workstation-client-setup.md` (manual flow being replaced, in the `one-b2c` workspace) |
 
@@ -20,9 +20,21 @@
 
 **SSM Connect** is a native macOS menu-bar application that fully automates the manual `~/bin/workstation-connect` shell script and the step-by-step runbook for connecting to the EC2 + Amazon DCV cloud workstation. On launch (or at login) it transparently handles AWS SSO authentication, EC2 instance discovery by tag, instance start + SSM readiness wait, SSM port-forward tunnel establishment, DCV password retrieval from Secrets Manager, and DCV Viewer launch — with zero manual terminal commands. The user sees a single menu-bar icon reflecting connection state and can connect, disconnect, or check status from a dropdown menu.
 
-**Design intent — a general-purpose tool, not a one-off.** Although the author's immediate need is a single factory-sts workstation, the app is designed as a **general, config-driven "get me into my cloud workstation" utility**: nothing about the connection (AWS account, SSO start URL, SSO region, resource region, instance tag, secret id, local/remote ports, and the viewer app to launch) is hardcoded. The factory workstation ships as the **default connection profile**, but the app supports **multiple named profiles** (§F-18) so it can drive any SSM-reachable EC2 workstation. First launch bootstraps the default profile from the user's `~/.aws/config`. This generality is a primary goal — the author is building it because no approachable "zero-config SSM workstation launcher" is known to exist.
+**Design intent: a general-purpose tool, not a one-off.** Account, SSO/resource regions, role,
+instance selector, secret reference, ports and client choices belong to named profiles (F-18).
+First launch has no configured profile and auto-connect is off. The user explicitly creates a
+profile or imports selected SSO facts from `~/.aws/config`, then supplies the workstation selector.
+Neither a factory environment nor an automatic import is shipped as a default.
 
-The app does NOT replace the Amazon DCV Viewer itself — it orchestrates everything _before_ and _around_ the viewer. The post-tunnel "connect action" (launch DCV Viewer) is itself configurable so the same tunnel machinery can later drive RDP/VNC/SSH clients (§13, future).
+The app does not replace DCV Viewer. Per-profile automatic DCV opening is optional; disabling it
+keeps the SSM listener without DCV provisioning, password fetch or Viewer launch. Independent
+[web forwards](./web-forwards.spec.md), [managed browser access](./browser-bootstrap.spec.md) and
+[native VS Code](./remote-vscode.spec.md) ship in v0.5.0 and do not require starting DCV.
+
+This document describes the released baseline, not proof that every original goal passed. Section
+13 records the newly observed authentication UX failure. [Portable profiles](./portable-profiles.spec.md)
+and the [cross-platform reconciliation](./cross-platform-client.spec.md#17-reconciliation-findings-2026-10-15)
+are follow-up design work, not features already present in the macOS release.
 
 > **Region note (from spike):** the SSO portal and the workstation live in **different regions** — SSO/OIDC + token cache are in `eu-west-1`, while EC2/SSM/Secrets Manager are in `eu-central-1`. The app MUST keep "SSO region" and "resource region" as separate config fields. Conflating them is a likely first-implementation bug.
 
@@ -42,22 +54,22 @@ The app does NOT replace the Amazon DCV Viewer itself — it orchestrates everyt
 |------|----------|-------------|-------|
 | F-01 | P0 | **Menu-bar presence.** App runs as a macOS menu-bar app (`MenuBarExtra` / `NSStatusItem`) with NO Dock icon. A single SF Symbol icon in the menu bar reflects the current connection state (see §5 state machine). Clicking it reveals a dropdown menu with status, actions, and settings access. | SwiftUI `MenuBarExtra` (macOS 13+) or fallback `NSStatusItem` for macOS 12 support |
 | F-02 | P0 | **Launch at login.** App registers itself as a login item via `SMAppService.mainApp` (macOS 13+) so it starts automatically when the user logs in. This is user-toggleable from the Settings view and from System Settings → Login Items. | `SMAppService` is the Apple-blessed replacement for `SMLoginItemSetEnabled`. Requires the `com.apple.developer.login-item` entitlement only if using a helper-app pattern; `SMAppService.mainApp` does not |
-| F-03 | P0 | **Auto-connect on launch.** When the app launches (including at login), it automatically begins the full connection flow (F-05 → F-12) unless the user has explicitly disabled auto-connect in Settings. A manual "Connect" button is always available in the menu. | Default: auto-connect enabled |
+| F-03 | P0 | **Auto-connect on launch.** Default off. When explicitly enabled and the active profile is configured, app launch starts that profile's connection flow. Manual Connect remains available. Viewer launch depends on the profile's connect action. | An empty first launch makes no AWS calls or automatic profile import. |
 | F-04 | P0 | **AWS SSO authentication (native).** The app performs AWS SSO/OIDC login entirely in-process using `aws-sdk-swift`. Flow: `SSOOIDC.RegisterClient` → `SSOOIDC.StartDeviceAuthorization` → open the `verificationUriComplete` in the default browser → poll `SSOOIDC.CreateToken` (grant `urn:ietf:params:oauth:grant-type:device_code`) until the user completes browser auth → `SSO.GetRoleCredentials` to obtain temporary STS credentials. All SSO/OIDC calls use the profile's **SSO region** (e.g. `eu-west-1`), which is distinct from the **resource region** used for EC2/SSM/Secrets (e.g. `eu-central-1`). Credentials are held in memory for the session. | See ADR-1 for rationale. SSO region ≠ resource region (spike-confirmed) |
 | F-05 | P0 | **SSO token cache reuse + silent refresh.** Before triggering a new browser login, the app checks `~/.aws/sso/cache/*.json` for an existing token whose `startUrl`/`region` match the active profile. (1) If the `accessToken` is non-expired, reuse it directly for `SSO.GetRoleCredentials`. (2) If expired but a `refreshToken` is present (the cache contains `clientId`, `clientSecret`, `refreshToken`, `registrationExpiresAt` — spike-confirmed), attempt a **silent refresh** via `SSOOIDC.CreateToken` with `grantType=refresh_token` before falling back to the browser flow (F-04). Only if both fail does the browser open. A silent refresh that the server **rejects** (e.g. `InvalidGrantException` / `ExpiredTokenException` from a stale or revoked refresh token) MUST NOT surface as a sign-in failure — it falls through transparently to the browser device-auth flow (F-04). | Cache format is identical to AWS CLI v2, so a recent `aws sso login` makes the app fully silent. Silent refresh avoids a browser round-trip for ~the SSO session lifetime. **After a browser device-auth login the app writes the new token back to `~/.aws/sso/cache` (CLI-compatible, `0600`)** so the *next* connect reuses/refreshes it instead of re-opening the browser (impl 2026-06-06) |
 | F-06 | P0 | **Resolve instance by tag.** The app calls `EC2.DescribeInstances` with filters `tag:Name=<configured-tag>` and `instance-state-name=running,stopped` to resolve the workstation instance ID. The instance ID is NEVER hardcoded or persisted — it is resolved fresh on every connect attempt. | Default tag: `example-workstation`. Configurable in Settings (F-18). If zero or multiple instances match, surface an error (see Edge Cases §8) |
 | F-07 | P0 | **Start instance if stopped.** If the resolved instance is in state `stopped`, the app calls `EC2.StartInstances` and then polls `EC2.DescribeInstances` until the state is `running`. The menu-bar shows the "Starting" state with a progress indicator. | Polling interval: 5 s. Timeout: 5 min (configurable). If still not running after timeout → error state |
 | F-08 | P0 | **Wait for SSM registration.** After the instance reaches `running`, the app polls `SSM.DescribeInstanceInformation` (filter by instance ID) until `PingStatus == "Online"`. Only then does it proceed to tunnel setup. | Polling interval: 5 s. Timeout: 3 min. On first boot after a bootstrap change, SSM registration can take 60–90 s; on a warm start 15–30 s |
 | F-09 | P0 | **SSM port-forward tunnel.** The app establishes an SSM port-forwarding session: `SSM.StartSession` with document `AWS-StartPortForwardingSession` and parameters `portNumber=["8443"]`, `localPortNumber=["<configured-local-port>"]`. It passes the `StartSession` response (stream URL + token + session ID) to the bundled `session-manager-plugin` binary, which handles the WebSocket data-channel protocol. The tunnel maps `localhost:<localPort>` → instance `:8443`. | See ADR-1 for the bundled-plugin decision. Default local port: 8443 (configurable via F-18). The tunnel process is a managed child process; see F-13 for lifecycle |
-| F-10 | P0 | **Launch DCV Viewer with auto-login.** Once the tunnel is confirmed active (first successful health-check on `127.0.0.1:<localPort>`), the app writes a short-lived DCV **connection file** (`.dcv`, INI format — `[connect]` with `host=127.0.0.1`, `port=<localPort>`, `user=ec2-user`, `password=<fetched secret>`, `weburlpath=/`) to a `0600` temp file, launches Amazon DCV Viewer on it via `NSWorkspace.shared.open(_:configuration:)`, and **deletes the file after a short grace period** (so the viewer can read it first — see ADR-8 implementation note). Before launching the viewer the app **probes `127.0.0.1:<localPort>` (HTTPS, self-signed-cert-tolerant) until the in-VM DCV server answers** — `PingStatus=Online` (SSM agent) does not imply the DCV server is listening yet, and launching too early surfaced `cannot connect a new stream: endpoint is unreachable` (impl 2026-06-06). **This probe is a hard gate (#9, v0.3.0+, see `docs/specs/resilient-dcv-viewer-launch.spec.md`):** if the server doesn't answer within budget the app bounded-retries the establish, then surfaces a distinct retryable error (`dcvServerNotReady` / `tunnelNotEstablished`) and does **not** launch the viewer — it never opens into an unverified endpoint. This logs the user straight into the DCV session with no manual entry. **Host MUST be the IPv4 loopback `127.0.0.1`, not `localhost`:** the SSM port-forward binds IPv4 only, but `localhost` resolves to IPv6 `::1` first on macOS, and the Viewer connects to `::1` without falling back → the same `endpoint is unreachable` error (root-caused 2026-06-29, see `docs/specs/bug-ipv6-localhost-endpoint-unreachable.spec.md`). | The `.dcv` route is the only DCV automation hook for credential injection (the running viewer has no API). The password-on-disk window is deliberate and bounded — see ADR-8 and F-11. If DCV Viewer is missing, see F-16. The post-tunnel "connect action" remains configurable (§13) |
-| F-11 | P0 | **DCV password fetch, auto-login & copy.** The app calls `SecretsManager.GetSecretValue` for the profile's secret ID (default `ec2/workstation-dcv-password`) using the **resource region**, holds the plaintext in memory, and uses it two ways: (a) injected into the temp `.dcv` connection file for auto-login (F-10, ADR-8), and (b) **copied to the macOS clipboard** (`NSPasteboard`) on connect, because the user must re-enter it for the in-VM desktop/lock-screen login after the DCV session opens. It is also displayed (masked, reveal-on-click) in the menu with a "Copy Password" button. The password is NEVER persisted to UserDefaults or Keychain, and the only disk touch is the transient `0600` `.dcv` file deleted right after launch (ADR-8). | Clipboard auto-clear after 30 s (configurable, NF-03; 0 = disabled). Fetch happens once per connect; re-fetched on manual reconnect |
+| F-10 | P0 | **Optional DCV Viewer auto-login.** With `dcvViewer` selected, require an owned listener and bounded DCV-server readiness before launch. Use IPv4 loopback `127.0.0.1`, a private `0600` temporary connection file and bounded cleanup after the Viewer can consume it (ADR-8). Readiness failure is retryable and must not launch into an unverified endpoint. | With `tunnelOnly`, require the local SSM listener but skip DCV readiness, desktop provisioning, password fetch and Viewer launch, including reconnect. Both single-user and multi-user opt-out regressions passed. |
+| F-11 | P0 | **Single-user DCV password handling.** Only the DCV-enabled single-user path retrieves a configured Secrets Manager reference using the resource region. The password is held in memory, supplied through the transient DCV file and optionally copied to the clipboard. It is never persisted in profiles, UserDefaults, Keychain or logs. Multi-user identity-based access does not fall back to a shared password. | No built-in secret ID. Tunnel-only, browser and editor actions do not fetch a DCV password. Clipboard policy remains NF-03; transient file exposure is the deliberate ADR-8 exception. |
 | F-12 | P0 | **Status display.** The menu dropdown shows: current state (with icon), instance ID (once resolved), instance state, tunnel status (PID, local port), elapsed connection time, last error (if any), and the masked DCV password with copy button. | Refreshes on state transitions and on a 30 s poll for tunnel health |
 | F-13 | P0 | **Tunnel lifecycle management.** The `session-manager-plugin` child process is monitored. If it exits unexpectedly, the app transitions to `Error` state, surfaces the reason, and (if auto-reconnect is enabled) retries the tunnel after a 5 s backoff (up to 3 retries, then manual intervention required). On app quit (`applicationWillTerminate`), the app sends `SIGTERM` to the plugin process and waits up to 5 s for graceful exit, then `SIGKILL`. No orphaned plugin processes. | Also handles: plugin process crash, SIGPIPE, broken pipe on the WebSocket |
 | F-14 | P1 | **Manual reconnect.** A "Reconnect" menu item tears down the existing tunnel (if any), re-resolves the instance (F-06), and re-runs the full connection flow. Useful after network changes, VPN reconnects, or if the instance was replaced (new instance ID). | |
 | F-15 | P1 | **Manual stop instance.** A "Stop Workstation" menu item (with confirmation dialog) calls `EC2.StopInstances` on the current instance. It updates status to "Stopping…" and clears the tunnel. Useful to force an early stop without waiting for the 4-hour idle timer. | Confirmation dialog: "Stop the cloud workstation? It will shut down and can be restarted later." |
 | F-16 | P1 | **DCV Viewer detection.** On launch and before attempting to open DCV Viewer (F-10), the app checks that `/Applications/DCV Viewer.app` exists (and optionally checks `LSApplicationQueriesSchemes` / `NSWorkspace.urlForApplication(withBundleIdentifier:)` for `com.amazon.dcv.viewer`). If missing, it shows an alert with install instructions: "Amazon DCV Viewer is required. Install it via: `brew install --cask dcv-viewer`" and a button linking to the DCV download page. The connection flow pauses at the "Connected (tunnel up)" state but does NOT fail — the tunnel remains available for manual DCV Viewer use. | |
-| F-17 | P1 | **SSO session expiry handling.** If any AWS API call returns an `ExpiredTokenException` or `UnauthorizedAccessException` mid-session (e.g. SSO token expires after 8–12 h), the app transitions to the `Authenticating` state, triggers a new SSO login flow (F-04), and upon success resumes from the step that failed. The tunnel is NOT torn down preemptively — it remains up as long as the plugin process is alive (SSM sessions have their own credential scope). | |
-| F-18 | P1 | **Connection profiles / configuration (multi-profile).** Configuration is modeled as a **list of named connection profiles**, with one marked active (default). Each profile holds: display name, AWS SSO start URL, **SSO region**, account ID, role name, **resource region** (separate from SSO region), EC2 instance tag key + value, Secrets Manager secret id (optional), local tunnel port, remote port (default 8443), and the **connect action** (default: launch `/Applications/DCV Viewer.app` at `https://localhost:<localPort>`; configurable command/URL template for future RDP/VNC/SSH). Global settings: auto-connect on launch, auto-reconnect on tunnel drop, clipboard auto-clear delay. Profiles + settings are stored in `UserDefaults` (no secrets). On first launch the app seeds a default profile from `~/.aws/config` (reads the `[profile workstation-prd]` / `[sso-session ...]` blocks for SSO start URL + regions) and from the fixed environment facts. | Single-workstation users simply use the one default profile and never see the multi-profile UI complexity; the list model just makes multi-instance/multi-account a config change, not a code change (see ADR-5) |
+| F-17 | P1 | **Authentication freshness and recovery.** Reuse/silent refresh precedes interactive SSO. Preserve healthy transports while recovering authorization for new operations. Proactive expiry warnings, an explicit Sign In action and same-target pending-action recovery are required follow-up behavior in section 13. | Failed real UX observation on 2026-10-15; proactive behavior is not claimed implemented. |
+| F-18 | P1 | **Named connection profiles.** Each profile stores SSO start URL/region, account/role, resource region, instance tag, optional secret reference, ports, connect mode/action and optional web/browser/editor configuration. `dcvViewer` remains the default action; `tunnelOnly` skips DCV-specific work. Global auto-connect/reconnect and clipboard preferences remain separate. | Released macOS persistence is JSON data in UserDefaults, not a public file format. No profiles are preseeded. Only explicit AWS-config import ships on main; portable file editing is follow-up work. |
 | F-19 | P2 | **Connection log.** The app maintains an in-memory ring buffer (last 200 log lines) of connection events (state transitions, API calls, errors, timestamps). Viewable from a "Show Log" menu item in a separate window. Not persisted to disk. Useful for troubleshooting. | |
 | F-20 | P2 | **Notification support.** The app posts macOS `UNUserNotification` notifications for key events: "Connected to workstation", "Workstation stopped (idle timeout)", "Tunnel disconnected — reconnecting…", "SSO login required". Respects the user's macOS notification settings. | |
 
@@ -300,7 +312,7 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 |------|----------------------|
 | F-01 | **Given** the app is launched, **when** the user looks at the macOS menu bar, **then** a status icon is visible with no Dock icon. Clicking the icon reveals a dropdown with connection status and action buttons |
 | F-02 | **Given** the user enables "Launch at Login" in Settings, **when** the user logs in to macOS, **then** the app starts automatically as a menu-bar app (visible in System Settings → Login Items) |
-| F-03 | **Given** auto-connect is enabled and a valid SSO session exists, **when** the app launches at login, **then** the full connection flow completes without user interaction and DCV Viewer opens |
+| F-03 | **Given** auto-connect is enabled and a configured profile has valid authorization, **when** the app launches, **then** it connects using the selected action; DCV opens only when enabled. A default empty installation makes no connection attempt. |
 | F-04 | **Given** no valid SSO token exists, **when** the app begins the connection flow, **then** the default browser opens to the AWS SSO authorization page, the menu shows "Waiting for browser login…", and upon successful browser auth the app obtains STS credentials and proceeds |
 | F-05 | **Given** the user recently ran `aws sso login --profile workstation-prd`, **when** the app checks `~/.aws/sso/cache/`, **then** it finds and reuses the valid token without opening the browser |
 | F-05 | **Given** a cached token is expired and its `refreshToken` is rejected by `CreateToken` (`InvalidGrantException`), **when** the app signs in, **then** it silently falls back to the browser device-auth flow rather than reporting a sign-in error |
@@ -308,14 +320,14 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 | F-07 | **Given** the instance is in state `stopped`, **when** the app connects, **then** it starts the instance, shows "Starting instance…" in the menu, and proceeds once `running` |
 | F-08 | **Given** the instance is `running` but SSM agent is not yet registered, **when** the app polls SSM, **then** it waits (showing "Waiting for SSM…") until `PingStatus=Online` before opening the tunnel |
 | F-09 | **Given** SSM reports `Online`, **when** the app starts the tunnel, **then** `localhost:8443` accepts TCP connections and forwards them to the instance's port 8443 via the SSM WebSocket channel |
-| F-10 | **Given** the tunnel is active and DCV Viewer is installed, **when** the app reaches the Connected state, **then** it writes a `0600` temp `.dcv` connection file, launches DCV Viewer on it, deletes the file after a short grace period (so the viewer reads it first), and the viewer connects to `127.0.0.1:<localPort>` and logs in automatically without manual host/password entry |
-| F-11 | **Given** the tunnel is active, **when** the app connects, **then** the DCV password is fetched from Secrets Manager, injected into the `.dcv` file for auto-login (F-10), and copied to the clipboard so the user can paste it for the in-VM desktop login. The password is never written to UserDefaults or Keychain, and the only disk artifact is the transient `.dcv` file deleted right after launch |
+| F-10 | **Given** automatic DCV opening is enabled and the Viewer is installed, **when** listener/DCV readiness succeeds, **then** the private temporary connection file is launched and cleaned up. With opening disabled, both connect modes and reconnect keep the owned listener without any DCV-specific action. |
+| F-11 | **Given** DCV-enabled single-user access has a secret reference, **when** it connects, **then** the password is used only through the bounded file/clipboard flow. Tunnel-only, editor and browser actions make no DCV-secret call. |
 | F-12 | **Given** the app is connected, **when** the user opens the menu, **then** the current instance ID, connection duration, tunnel PID, and local port are displayed |
 | F-13 | **Given** the tunnel process exits unexpectedly, **when** auto-reconnect is enabled, **then** the app retries the tunnel within 5 s (up to 3 attempts). On app quit, no `session-manager-plugin` processes remain |
 | F-14 | **Given** a network change occurs, **when** the user clicks "Reconnect", **then** the existing tunnel is torn down, the instance is re-resolved by tag, and a new tunnel is established |
 | F-15 | **Given** the user clicks "Stop Workstation" and confirms, **when** the API call succeeds, **then** the instance transitions to `stopping`/`stopped` and the menu reflects "Disconnected" |
-| F-16 | **Given** DCV Viewer is not installed at `/Applications/DCV Viewer.app`, **when** the app reaches the Connected state, **then** it shows an alert with install instructions and keeps the tunnel running |
-| F-17 | **Given** an SSO token expires during an active session, **when** an AWS API call fails with `ExpiredTokenException`, **then** the app re-triggers SSO login and resumes without tearing down the active tunnel |
+| F-16 | **Given** automatic DCV opening is selected but the Viewer is missing, **when** the tunnel becomes ready, **then** show installation guidance and keep the tunnel. Viewer installation is not a prerequisite for tunnel-only, web or native editor access. |
+| F-17 | **Given** authorization needs renewal, **when** refresh or a new channel is attempted, **then** refresh is silent if possible; otherwise Sign In Required and one recovery action are visible without destroying healthy transports. Section 13 defines the follow-up tests; these are not all passed. |
 | F-18 | **Given** the user has two connection profiles (e.g. `workstation-prd` and a second workstation) and switches the active profile, **when** the app reconnects, **then** it uses that profile's own SSO region, resource region, account/role, tag and ports — and changing a profile's resource region (e.g. to `us-east-1`) targets EC2/SSM/Secrets calls there while SSO auth still uses that profile's SSO region |
 | F-19 | **Given** an error occurs during connection, **when** the user opens "Show Log", **then** timestamped log entries show the exact API call and error response |
 | F-20 | **Given** the app connects successfully, **when** macOS notification permissions are granted, **then** a notification "Connected to workstation" is posted |
@@ -348,15 +360,15 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 
 - **Server-side provisioning / Terraform** — this spec covers the macOS client only. The EC2 instance, IAM roles, security groups, and bootstrap are managed by the `ec2-cloud-workstation-dcv.spec.md` (in the `one-b2c` repo)
 - **Replacing DCV Viewer** — the app orchestrates DCV Viewer; it does not implement a DCV client
-- **Non-DCV connect targets (RDP / VNC / SSH)** — the connect action is configurable (F-18) and the architecture supports it, but v1 ships and tests only the DCV Viewer launch. Driving other clients is a future, config-only extension (§13)
-- **Windows / Linux client** — v1 is macOS-only. A cross-platform path (Tauri, Electron) is documented as a future alternative (see ADR-2)
+- **Generic RDP/VNC/custom commands** remain out of scope. Independent browser and native Remote-SSH workflows are shipped capabilities, not a configurable arbitrary-command runner.
+- **Windows / Linux release parity** is not certified by the macOS release. A substantial native WPF/Swift-module branch exists; see the cross-platform spec. Linux desktop support is not added by this work.
 - **Idle auto-stop management** — the 4-hour idle timer runs server-side (systemd timer on the instance). The app does not manage or configure it
-- **AWS CLI installation** — the app removes the dependency on AWS CLI. DCV Viewer is still required
+- **AWS CLI installation** is not required. DCV Viewer is required only for the DCV action, not browser/editor/tunnel-only access.
 - **VPN management** — the app assumes network connectivity to AWS endpoints is available (directly or via VPN). It does not manage VPN connections
 - **Password rotation or generation** — the DCV password is managed out-of-band in Secrets Manager
 - **iOS / iPadOS companion app** — not in scope
 
-> **Now in scope (was previously out):** **multi-profile / multi-instance / multi-account** support via the connection-profiles model (F-18, ADR-5). A single-workstation user just uses the one default profile.
+> Multi-profile, multi-instance and multi-account use are supported through explicitly configured profiles. A single-workstation user creates or imports one profile; the app does not choose an environment for them.
 
 ## 10. Architecture Decision Records
 
@@ -449,7 +461,10 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 
 **Context:** The immediate need is one factory-sts workstation, but the author wants a *general* tool with nothing hardcoded, that could connect to any SSM-reachable EC2 workstation.
 
-**Decision:** Model configuration as a list of named **connection profiles** (F-18), each fully describing a connection (SSO + resource regions, account, role, tag, secret, ports, connect action). Ship one default profile seeded from `~/.aws/config`. The single-workstation experience is just "one profile"; multi-account/multi-instance is the same model with more entries.
+**Decision:** Model configuration as named connection profiles (F-18), each describing its own
+SSO/resource regions, account, role, selector, secret reference, ports and client options. First
+launch starts empty; creation and AWS-config import are explicit. A single-workstation user
+configures one profile; multiple accounts/workstations use the same model with more entries.
 
 **Rationale:** Making the connection data a config object (not constants) costs almost nothing now and avoids a rewrite if the workstation fleet grows or the tool is reused for other environments. Directly serves the "general tool" intent.
 
@@ -503,7 +518,7 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 
 **Decision:** Adopt GitVersion as a **single-job workflow that needs no GitHub App / bot** — just the repo's built-in `GITHUB_TOKEN`. (GitVersion / the reusable `michielvha/gitversion-tag-action` only need a token with `contents: write` to push the tag; the stackweaver repos use a release-bot App **only** because a tag pushed by `GITHUB_TOKEN` can't *trigger a second workflow* — and the chained `tag.yml → release.yml` pattern relies on that trigger. Here tag + build happen in one job, so no second-workflow trigger is needed and `GITHUB_TOKEN` suffices.)
 - `gitversion.yml` (GitHubFlow, **`v` tag prefix**, `increment: None` + ContinuousDeployment) derives the next semantic version from conventional-commit messages (`feat:` → minor, `fix:`/`perf:`/`refactor:` → patch, `BREAKING CHANGE`/`!:` → major, `chore`/`docs`/`ci`/etc → **no bump → same version → no release**).
-- `.github/workflows/release.yml` — on every push to `main`, a `macos-14` runner computes the version with GitVersion and gates on whether `vX.Y.Z` is already tagged. Only on a **new** version does it tag with the reusable `michielvha/gitversion-tag-action` (`prefix: v`, pushing with `GITHUB_TOKEN`), stamp `Info.plist`, build the ad-hoc-signed `.app` via `scripts/release.sh`, and `gh release create` the Release with the zip asset. A no-bump push resolves to the existing version → the whole build/release is skipped.
+- `.github/workflows/release.yml` runs on eligible main pushes using `macos-26`. It invokes the reusable tagging action, stamps `Info.plist`, builds/signs/packages and publishes the ZIP in one job. The intended no-bump behavior is to skip an already released version, but the inspected action unconditionally creates its computed tag: that idempotence guard is an observed implementation gap, not a verified feature. Maintenance release merge subjects must not accidentally request an existing tag; the workflow still needs an explicit existing-version/no-op acceptance test.
 - The Homebrew cask (`version` + `sha256`) is bumped automatically by a **`sync-cask` workflow inside `vhco-pro/homebrew-tap`** that watches this repo's releases (schedule + `workflow_dispatch`) and rewrites its own cask with **its own `GITHUB_TOKEN`** — so no cross-repo App, PAT, or deploy-key is needed anywhere.
 
 **Consequences:** Releases are cut by merging conventional commits to `main` — no manual version picking, tagging, or artifact upload, and **no GitHub App / cross-repo secret anywhere** (release uses the repo's own `GITHUB_TOKEN`; the cask bump uses the tap's own `GITHUB_TOKEN`). The cask trails a release by at most the tap's poll interval (~30 min) unless its `sync-cask` workflow is dispatched manually. The macOS artifact is ad-hoc signed; the notarization upgrade path (ADR-4) plugs into the same `release.yml` when pursued.
@@ -516,15 +531,15 @@ The plugin opens a WebSocket to `StreamUrl`, performs the SSM data-channel hands
 |---|----------|----------|
 | 1 | Apple Developer account for signing/notarization | **Not required for v1.** App is for the author's own Mac → ad-hoc/personal-team signing + Homebrew tap, no notarization. Paid Developer ID is a documented upgrade path only if shared with other users (ADR-4, NF-06) |
 | 2 | DMG vs Homebrew for delivery | **Homebrew tap cask only.** `brew install --cask` to install, `brew upgrade` to update. No DMG (ADR-4, ADR-6) |
-| 3 | Multi-account / multi-instance support | **In scope via config-driven multi-profile model** (F-18, ADR-5). Single workstation = one default profile; design accommodates many with zero code change |
+| 3 | Multi-account / multi-instance support | **In scope via named profiles** (F-18, ADR-5). The user explicitly configures one or more; first launch is empty. |
 | 4 | Minimum macOS version | **macOS 14 (Sonoma).** Author is on macOS 26 / Xcode 26.5 / Swift 6.3; no need to support old hardware (NF-10) |
 | 5 | `session-manager-plugin` binary source | **Download the official AWS-signed macOS package at build time, verify signature/checksum, embed** (most secure; ADR-7) |
 | 6 | Auto-update mechanism | **Homebrew (`brew upgrade`).** No in-app updater in v1 (ADR-6) |
-| 7 | Hardcoded vs configurable connection | **Fully configurable, nothing hardcoded.** General-purpose tool; factory workstation is just the seeded default profile read from `~/.aws/config` (§1 design intent, F-18, ADR-5) |
-| A | Homebrew tap repository | **`vhco-pro/homebrew-tap`** (public), `Casks/ssm-connect.rb`. `brew install --cask vhco-pro/tap/ssm-connect`. The cask version + sha256 are bumped automatically by `release.yml` (ADR-9) |
+| 7 | Hardcoded vs configurable connection | **No environment baked in.** The user creates a profile or explicitly imports selected SSO facts from AWS config (§1, F-18, ADR-5). |
+| A | Homebrew tap repository | **`vhco-pro/homebrew-tap`** (public), `Casks/ssm-connect.rb`. `brew install --cask vhco-pro/tap/ssm-connect`. The tap's own `sync-cask` workflow updates its version/checksum after publication (ADR-9). |
 | B | App identity | **Name "SSM Connect", bundle id `pro.vhco.ssm-connect`, repo [`vhco-pro/ssm-connect`](https://github.com/vhco-pro/ssm-connect)** — **open-sourced (public) under Apache-2.0** (2026-06-06). All AWS-environment identifiers were stripped from the binary, docs, and git history before going public. Menu-bar icon = SF Symbols per state (§5) |
 | C | `aws-sdk-swift` SSO-OIDC maturity | **De-risked — spike compiles & links.** `aws-sdk-swift` **1.7.13** (GA): `AWSSSOOIDC` (`RegisterClient`, `StartDeviceAuthorization`, `CreateToken` with `device_code` + `refresh_token` grants), `AWSSSO` (`GetRoleCredentials`), `AWSEC2`, `AWSSSM` (`StartSession`, `DescribeInstanceInformation`), `AWSSecretsManager` (`GetSecretValue`) all build on Swift 6.3. No preview/SPI gates hit (§12.1) |
-| D | Connect-action generality | **Store the connect action as config now** (each profile has a connect-action; default = launch DCV Viewer at `https://localhost:<port>`). v1 ships and tests **only the DCV path**; RDP/VNC/SSH are config-only future additions (F-18, §9). No hardcoding |
+| D | Connect-action generality | v0.5.0 stores `dcvViewer` or `tunnelOnly` and independently supports web/browser/native Remote-SSH actions. Generic custom command, RDP and VNC launchers remain out of scope. |
 
 ### 11.2 Remaining Open Questions
 
@@ -599,3 +614,107 @@ Confirmed on the author's machine to de-risk planning:
 | **`session-manager-plugin` architecture** | LOW | The Homebrew formula currently installs an arm64 binary on Apple Silicon. Confirm x86_64 is available for universal build, or build from source (Go cross-compile is trivial) |
 | **Corporate proxy TLS interception** | LOW | The app uses `URLSession` which respects the system trust store. If the corporate CA is in the System Keychain, it should work transparently. If not, the user sees a clear error (NF-12) |
 | **SSM tunnel stability over hours** | MEDIUM | The SSM WebSocket session may time out after extended use (AWS default: 20 min idle on the *management* session, but port-forwarding sessions with active data flow are kept alive). Monitor in testing; the auto-reconnect (F-13) is the safety net |
+
+## 13. Authentication Freshness and Recovery Follow-Up (2026-10-15)
+
+**Status: local macOS implementation added on 2026-10-16; complete cross-client/live acceptance
+is not established.** The owner reported that
+working access appeared broken and only discovered the need to sign in again and reconnect by
+experimentation. Reauthentication restored access according to the owner. This is a failed
+usability test, not seamless recovery evidence. The exact expired item was not established.
+
+SSO access tokens, refreshable SSO authorization, temporary role credentials, local editor leases
+and established SSM channels have distinct lifetimes. A listening port is not end-to-end health;
+an expiring token does not prove a healthy established tunnel must be closed.
+Automatic continuation of the independently expiring editor lease, including the observed
+October 16 timer-driven disconnect, is required separately by
+[LEASE-01 through LEASE-08](./remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16).
+It is not implemented by the credential-renewal changes in this release candidate.
+
+### 13.1 Required Behavior
+
+- Track known expiry metadata for the selected authorization context and owned leases. Do not
+    invent an SSO-session expiry countdown from a short-lived access token or role credential.
+- Attempt silent renewal before known credential expiry, with a proposed five-minute lead time,
+    bounded retries and deduplication. If renewal succeeds, do not ask for another browser login.
+- When interactive login is required, show persistent **Sign In Required** and a **Sign In with
+    SSO** action in the client. Where a non-renewable deadline is known, warn before that deadline;
+    if it is unknown, state uncertainty rather than promise uninterrupted access.
+- A desktop notification is supplementary. With notifications denied, the menu and affected
+    actions must still make the needed recovery obvious. Do not add audio or steal editor focus.
+- One explicit sign-in serves pending operations in the same authorization context. After
+    successful login, retry the original authorized operation against the same account, role,
+    workstation and user; revalidate cancellation, target identity and lease generation first.
+- Retain healthy DCV/web/editor transports and editor buffers while obtaining fresh authorization.
+    Report established-channel health separately from ability to open a new channel. Do not make
+    a successful sign-in look like proof that a disconnected editor automatically reconnected.
+- Unexpected revocation, offline errors and role-access denial need distinct results. Revocation
+    may require sign-in; a missing permission-set assignment must not trigger a login loop.
+- Profile changes, Stop and app exit cancel pending recovery. Logging and notifications contain
+    no tokens, credentials, session responses or presigned URLs.
+
+### 13.2 Acceptance Evidence Still Required
+
+| ID | Scenario | Required Result |
+| --- | --- | --- |
+| AUTH-01 | Known expiry approaches and silent renewal succeeds | Synthetic-clock test observes one bounded renewal, no browser prompt and unchanged healthy transports. |
+| AUTH-02 | Silent renewal is rejected or authorization is not renewable | Visible Sign In Required and one SSO action; known deadline warnings appear before expiry without relying on notification permission. |
+| AUTH-03 | Owner signs in with editor/browser work pending | One interactive flow; the same-target operation resumes without a second manual reconnect action. End-to-end channel recovery is measured separately. |
+| AUTH-04 | Authorization is revoked unexpectedly | First detected rejection becomes actionable; no retry storm, misleading generic connection error or credential disclosure. |
+| AUTH-05 | Profile changes or Stop occurs during login | No retry against a different target and no recreation of stopped access. |
+| AUTH-06 | Existing channel survives credential expiry | Client keeps that channel and its buffers; new operations accurately indicate sign-in needs. |
+| AUTH-07 | Offline or permission-set access is denied | Actionable network/access result, not an unnecessary browser-login loop. |
+
+The v0.5.0 auth handoff unit tests and earlier fixture reload/save tests do not satisfy these
+proactive UX criteria by themselves. Both native-client behavior and controlled expiry/revocation
+tests are required before this follow-up can be called complete.
+
+### 13.3 Local macOS Follow-Up (2026-10-16)
+
+`AuthorizationSession` is shared by desktop, web/browser and editor preparation. It records role
+credential expiry separately from cached SSO access-token expiry/refreshability, schedules silent
+renewal with a five-minute lead and deduplicates concurrent requests. A failed renewal does not
+tear down established transports or start an automatic browser-login loop.
+
+When interaction is required, the menu persistently displays Sign In Required and Sign In with
+SSO without depending on notification permission. One explicit device login serves same-context
+pending requests. Selected-profile changes are delivered directly from `ProfileStore`, even with
+the menu closed, and cancel stale recovery. Stop/cancellation prevents pending operations from
+resuming. AWS operations retry a rejected authorization at most once. Offline, role-assignment
+denial and sign-in-required outcomes remain distinct. Native editor lease expiry is displayed
+separately; neither token nor role expiry is described as the SSO session deadline.
+
+The AWS provider attempts refresh before known token expiry, propagates offline/cancellation
+instead of treating them as rejected login, and does not reuse a rejected cached token during
+explicit sign-in. Cache-persistence failures are reported without logging token contents.
+
+Synthetic-clock/coordinator tests cover AUTH-01 through AUTH-07. Mock-backed desktop and browser
+state machines also verify that one SSO action resumes preparation, and a healthy tunnel remains
+active during a sign-in warning. These are not proof of real revocation timing, interrupted editor
+reconnection, enterprise IdP behavior, notification-denied native UI or Windows parity. Live
+test opt-ins remain disabled and the running app/sessions were not replaced or restarted.
+
+The final local Release suite passed **245 tests in 34 suites**, followed by an isolated signed
+ARM64 app build and unpacked-archive signature verification. The combined artifact and environment
+evidence is recorded in the [portable-profile verification](./portable-profiles.spec.md#executed-local-verification).
+This is local verification, not hosted CI, Windows evidence or release publication.
+
+### 13.4 Windows Portable/Tray Follow-Up (2026-10-16)
+
+The parallel Windows worktree now has a shared authorization coordinator, a production SDK backend
+and persistent tray sign-in/retry state. It tracks role and access-token expiries separately,
+deduplicates bounded renewal and explicit login, and does not label those dates as an SSO session
+deadline. The workflow preserves a healthy active target while staging a saved selection; only
+explicit reconnect/disconnect adopts it. Profile changes cancel pending recovery without silently
+redirecting access, including change-away/change-back and cancellation callback re-entry.
+
+The backend's SDK-compatible cache adapter uses tested public types in Core 4.0.101's
+`Credentials.Internal` namespace. This dependency is isolated and covered by SDK adapter tests;
+no reflection, SDK Logout, shared-cache deletion or live authorization was used. Fresh explicit
+login does not reuse a rejected cached grant. Role denial and offline results remain distinct.
+
+The combined .NET run passed 122 domain, 91 workflow and 11 SDK adapter tests. The focused
+authorization suite passed 40 tests across 21 sequential runs after a callback re-entry race was
+fixed by retiring state/generation/waiters before invoking cancellation. These are portable/mock
+results, not actual Windows/IdP/session-retention acceptance. Windows browser/editor orchestration
+is still absent and explicitly unsupported; no resumed Windows editor workflow is claimed.

@@ -97,6 +97,45 @@ To keep the connection headless, turn off **Open DCV Viewer automatically** unde
 fetch, desktop provisioning or Viewer launch. Existing profiles keep the Viewer enabled.
 **Open VS Code** and **Open Browser** remain independent actions.
 
+## Profile files and authorization recovery (in development)
+
+These additions are local branch work, not part of published v0.5.2.
+
+Under **Settings > Profiles > Files**, **Open Profile File** previews a versioned YAML or JSON
+document. **Attach File** makes the file the source of truth; **Import as Local Copy** remains
+independent. **Export Profile** writes portable configuration, not native preferences or credentials.
+The [schema](contracts/connection-profile.schema.json) and
+[example YAML](contracts/fixtures/profiles/v2-current.yaml) describe the v2 format.
+Legacy v1 JSON remains readable and migrates only on explicit Save or Export.
+
+The normal visual editor saves back to an attached file after checking its loaded revision.
+The first save asks permission to use canonical formatting, which may remove YAML comments.
+External changes are detected every two seconds, validated and kept pending until **Apply External
+Changes**. Existing connections are not redirected or reconnected by that Apply; web transport
+changes retain their separate **Apply Changes** action. A missing, invalid or read-only source
+keeps the last good profile. Use **Locate File**, **Detach**, or **Save a Local Copy** to recover.
+
+Profiles carry configuration and secret *references*, never secret values, cookies, keys,
+process/lease ownership or local browser/helper paths. Select a machine-local browser profile
+and grant integration consent separately. Opening, attaching or importing a file never enables
+auto-connect or performs AWS, browser or SSH setup. Infrastructure metadata may still be private:
+review an export before sharing it.
+
+The app shares authorization between desktop, browser and editor preparation. It attempts silent
+renewal five minutes before known credential/token expiry. When renewal requires interaction,
+the menu shows **Sign In Required** and **Sign In with SSO**, independently of notification
+permission. One explicit login resumes pending operations in the same selected context; changing
+the profile or stopping the operation cancels that recovery. Established transports remain
+separate from authorization for new operations. Token/role expiry is not an SSO session deadline,
+and successful login is not proof that a disconnected editor reconnected.
+
+Windows parity and real expiry/revocation/native-UI acceptance remain unverified.
+Editor access also still has an independent 24-hour local lease: credential renewal does not
+extend it automatically. If it expires, use **Open VS Code** in the same owning app, then retry
+the original workspace. That action may open another window; it does not replace the original
+workspace. [Automatic lease continuation](docs/specs/remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16)
+is specified as follow-up work, not claimed as fixed by this candidate.
+
 ## About
 
 Choose **About** in the menu for the installed version and build number, system

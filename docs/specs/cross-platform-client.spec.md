@@ -1,9 +1,13 @@
 # SPECIFICATION: Cross-Platform SSM Connect Client
 
-- **Status:** accepted — Phase 0 feasibility spikes in progress; implementation remains gated
-- **Date:** 2026-08-17
-- **Scope:** refactor the existing macOS implementation into explicit boundaries and add a Windows client
+- **Status:** native-shell architecture accepted; local macOS and parallel Windows profile/auth increments are implemented and portable-tested. Reconciliation of browser/editor adapters and native Windows/live acceptance remains open; full parity is not established.
+- **Date:** 2026-10-15 (original design 2026-08-17)
+- **Scope:** reuse the existing modular Swift/WPF work, preserve current macOS behavior, and extend portable configuration, browser access and native VS Code across platforms.
 - **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md), which remains the source of truth for current macOS behavior
+- **Follow-up contract:** [portable profiles](./portable-profiles.spec.md); proactive SSO recovery is specified in [section 13 of the client spec](./ssm-connect.spec.md#13-authentication-freshness-and-recovery-follow-up-2026-10-15).
+
+Section 17 supersedes the stale Phase 0-only status and scopes the new reconciliation. Earlier
+spike tables are dated historical evidence, not a claim that the branch still contains only spikes.
 
 ## 1. Summary
 
@@ -202,7 +206,8 @@ events and issue commands; they MUST NOT reproduce connection rules.
 
 ### 6.1 Connection profile
 
-Create a JSON Schema with an explicit `schemaVersion`. Version 1 MUST cover:
+The existing branch implements a JSON Schema with an explicit `schemaVersion`. Its version 1
+profile covers:
 
 - Stable profile ID and display name.
 - SSO start URL, SSO region, account ID, role name, and resource region.
@@ -211,7 +216,8 @@ Create a JSON Schema with an explicit `schemaVersion`. Version 1 MUST cover:
 - Local and remote DCV ports.
 - Single-user secret ID.
 - Multi-user agent remote port.
-- Connect action and non-secret client preferences that are supported on both platforms.
+- The DCV-only connect action. Global app preferences remain local and are not part of this
+  implemented v1 document; this corrects the original proposal to include client preferences.
 
 The schema MUST NOT contain cached AWS credentials, access tokens, DCV passwords, presigned STS
 URLs, tunnel session responses, or local temporary-file paths.
@@ -219,6 +225,13 @@ URLs, tunnel session responses, or local temporary-file paths.
 Each client MAY retain native storage internally. Both clients MUST support export and import of the
 portable profile document. Unknown optional fields MUST be preserved where practical, and newer
 unsupported required schema versions MUST fail with an actionable message.
+
+These are contract requirements, not certification of every UI persistence path. The inspected
+macOS UI imports a local copy with a fresh UUID and later exports the native model without the
+DTO's unknown-field bag. The new [portable-profile spec](./portable-profiles.spec.md) explicitly
+requires GUI round-trip and identity/ownership tests, YAML/JSON equivalence, current capability
+coverage and a checked file-backed editing workflow. Do not silently extend v1's DCV-only action
+or claim these additional behaviors are already implemented.
 
 ### 6.2 Workflow conformance fixtures
 
@@ -481,7 +494,93 @@ These questions MUST be answered in Phase 0 rather than guessed during implement
 
 ## 16. Planning Gate
 
-The owner has accepted the native-shells direction. The implementation plan MUST begin with and
-track Phase 0 spikes and MUST identify a rollback point after each Swift target extraction. No
-Swift target refactor or production Windows UI work may begin until AWS SSO, the SSM plugin, DCV
-launch in both auth modes, and installer lifecycle have succeeded on actual Windows 11 x64.
+The original planning gate required all Phase 0 runtime checks before broad target extraction or
+Windows UI work. The branch now contains that implementation; do not restart the same rewrite
+because the main-branch document was not updated. Section 17 defines reconciliation and
+capability-scoped validation for the owner's new priorities. Existing runtime observations must
+be checked against the actual branch/version and must not certify new adapters automatically.
+
+## 17. Reconciliation Findings (2026-10-15)
+
+### 17.1 Inspected Baselines and Executed Checks
+
+- Released macOS baseline: v0.5.0, main commit
+  `0ba81578e5a502c89304ab80406565ce3b23b39d`.
+- Existing port: `chore/windows-phase-0-spikes`, commit
+  `33b68c1365a2ad325068190ddeb098b49467cdfe`, dated 2026-08-20.
+- Relative to that main baseline, the port has 28 unique commits and is one large, squashed
+  feature commit behind. This is not a small textual merge despite the one-commit count.
+- Source includes domain/workflow/AWS/macOS/UI Swift targets, WPF settings/tray code, .NET AWS
+  and process adapters, profile schema/validators, both clients' file import/export controls,
+  and shared exchange/conformance fixtures.
+- The unchanged .NET domain suite passed 102 tests and workflow suite passed 40 tests on macOS
+  with .NET SDK 10.0.401. These are portable-layer tests, not Windows runtime or UI proof.
+- A non-checkout merge analysis reported 16 conflicting paths around the manifest, moved domain
+  types, SSM interfaces, plugin handling, UI composition and new browser/editor workflows.
+
+### 17.2 Reuse and Rework
+
+Retain the native SwiftUI/WPF direction, separate portable DTO/schema boundary, existing provider
+seams and verified portable tests. Do not replace the native clients with another UI framework
+or discard the branch as an abandoned spike.
+
+Reconcile all current macOS behavior and regression tests, not just fields that compile:
+
+- `tunnelOnly` must skip DCV readiness, password/desktop provisioning and launch while requiring
+  a live owned listener. The existing portable v1 schema only accepts `dcvViewer`.
+- Web forwards, managed browser setup/restore and the native Remote-SSH coordinator/bridge are
+  absent from the inspected port. Move platform-neutral rules into the appropriate boundaries;
+  implement and verify OS-specific process, file-lock, browser and SSH behavior separately.
+- Carry current authentication handoff, lease renewal/identity checks, bounded owned-process
+  shutdown, profile-switch cancellation, and setup/restore regressions into the modular targets.
+- Preserve main's stable empty-store profile identity. The port's getter still creates a fresh
+  template on every read; choosing that old implementation would restore a fixed first-run bug.
+- Portable DTO preservation does not establish GUI preservation. The macOS UI's import-as-copy
+  behavior and lost unknown-field state need explicit contract/identity reconciliation.
+
+### 17.3 Updated Product Priorities and Gates
+
+The owner requested reusable text configuration and prioritizing Windows browser access and native
+VS Code over fixing DCV first. Keep DCV as an optional capability; do not gate an independently
+verified browser/editor feature on perfect Windows DCV. Do not weaken macOS DCV regression gates.
+
+The shared contract must represent current configuration and the
+[observed SSO recovery failure](./ssm-connect.spec.md#13-authentication-freshness-and-recovery-follow-up-2026-10-15).
+Schema migration and attached-file semantics are specified separately; the owner accepted the
+attached-source/canonical-save direction on 2026-10-15 and continued implementation on 2026-10-16.
+Their local verification does not waive the OS-specific acceptance gates below.
+
+An actual Windows run is still required for each Windows capability being declared supported:
+native AWS SSO recovery, raw plugin/proxy I/O, OpenSSH execution/forwarding, per-channel EIC
+authorization, ACLs, process ownership/cleanup, browser routing and editor reconnection. A passing
+C# test on macOS cannot prove those behaviors. SSH lease ownership must use Windows equivalents
+of user identity and process creation time; POSIX permission checks are not portable substitutes.
+
+Retain installer, signing and upgrade/uninstall requirements for any declared Windows release.
+Existing unsigned branch artifacts are not proof of signed distribution. Do not certify isolated
+multi-user Remote-SSH merely because socket mode connects: the earlier live socket was group
+writable, and actual cross-user isolation remains a separate host/security acceptance.
+
+Reconcile in accepted user-visible increments, preserving rollback points and current tests.
+This status update authorizes neither a wholesale merge nor privileged workstation changes.
+
+### 17.4 Executed Local Follow-Up (2026-10-16)
+
+Work is preserved in two uncommitted worktrees: the existing macOS branch and
+`feature/windows-profile-auth-followups`, based on port baseline `33b68c1`. No existing worktree
+was reset, merged, switched, installed or restarted.
+
+The Windows increment adds safe v2 YAML/JSON plus v1 reading, actual-client export crossing,
+checked attached-file editing and staging in WPF, shared auth freshness/recovery and a tunnel-only
+path that never performs DCV readiness, password fetch, desktop provisioning or launch. Healthy
+targets remain active when saved selection changes. Missing web/browser/editor adapters are
+explicit configuration failures, not silent fallback paths.
+
+Evidence: 245 Swift tests; 122 .NET domain, 91 workflow, 11 SDK and 6 persisted-store tests;
+all Windows projects cross-build without warnings/errors. Six native filesystem cases are
+explicitly skipped on macOS. Both actual-client v2 export directions and the retained v1/39-case
+workflow contracts validate. Workflow lint, MSI XML and packaged YAML notice checks pass.
+
+Native Windows UI/SSO/ACL/rename/installer execution, browser/editor adapters and parity with the
+current macOS transport integrations remain separate work. The refreshed macOS candidate is
+unreleased and uninstalled; no hosted CI, commit, push or release was performed.

@@ -1,8 +1,8 @@
 # SPECIFICATION: Web forwards (internal web UIs in the local browser, over the SSM tunnel)
 
-- **Status:** implemented locally, 2026-10-12; native UI and live transport tested 2026-10-13.
-  Automated tests and the native Debug build pass. Interactive browser SSO is user-confirmed
-  on 2026-10-13; working-day/DCV observation is in progress. The shell script
+- **Status:** shipped in macOS v0.5.0 on 2026-10-15; native UI and live transport tested 2026-10-13.
+  Automated and native evidence is recorded below. Interactive browser SSO was user-confirmed
+  on 2026-10-13; the deferred working-day/DCV observation remains unverified, not a release claim. The shell script
   ([`scripts/web-forwards.sh`](../../scripts/web-forwards.sh)) remains the reference mechanism.
 - **Area:** new tunnel type next to the DCV port-forward (F-09). Touches `ConnectionProfile`,
   `SSMProviding`/`SSMService`, the `Tunnel/` layer, the menu and the profile editor.

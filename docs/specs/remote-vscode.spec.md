@@ -1,6 +1,6 @@
 # SPECIFICATION: Native VS Code workspace bootstrap over SSM
 
-- **Status:** implemented preview, 2026-10-13; the user approved continuation and native SSH
+- **Status:** shipped in macOS v0.5.0 on 2026-10-15; the user approved continuation and native SSH
   setup. Verified transport/menu/server and native fixture editing evidence is recorded below;
   fresh-user, cross-user socket hardening, enterprise-policy and complete app-drop acceptance
   remain unverified limits accepted for stable release by the user on 2026-10-15. Concurrent
@@ -49,11 +49,16 @@ builds, tests and most workspace/language extensions run on the management VM th
 Server. This removes streamed-desktop latency; it does not make a remote compiler or network
 round-trip as fast as a local one. No source synchronization or filesystem mount is required.
 
-The existing implementation proves AWS authentication, user mapping, EIC key authorization and
-SSH-over-SSM forwarding. It currently launches `ssh -N -T`, has no editor bootstrap or SSH host
-entry, and owns a key for that forwarding connection's lifetime. Adding a loopback forward to
-port 22 would still require a separate SSH authentication for VS Code, including fresh EIC
-authorization. Browser PAC configuration does not configure Remote SSH.
+The released implementation uses an owned SSH alias/config fragment and a bundled raw-stream
+proxy helper. Each independent SSH channel checks the credential-free lease, owning app/process,
+generation, target and user, silently obtains AWS authorization, refreshes the temporary EIC public
+key authorization and starts its own SSH-over-SSM channel. It is not a DCV or SOCKS dependency.
+Browser PAC configuration does not configure Remote SSH.
+
+The owner's later SSO expiry/reconnect experience is a failed usability test. Proactive sign-in
+status and same-target pending-action recovery remain follow-up requirements in
+[AUTH-01 through AUTH-07](./ssm-connect.spec.md#13-authentication-freshness-and-recovery-follow-up-2026-10-15),
+not outcomes established by the earlier fixture reload/save tests.
 
 ## 2. User Experience
 
@@ -393,3 +398,71 @@ performed. The release gate remains with the human owner.
 - Focused tests cover persistence/default compatibility, both connect modes, reconnect, and
   refusal when the local listener is absent. All 209 tests across 31 suites passed using the
   matching Xcode Swift toolchain. Dependency versions and host configuration were unchanged.
+
+## 15. Automatic Editor-Lease Continuation (2026-10-16)
+
+**Status: required follow-up, explicitly requested by the owner on 2026-10-16; not implemented
+or accepted as passed.** Credential renewal does not implement editor-lease continuation.
+The current release candidate still requires explicit Open VS Code after a local lease expires.
+This known limitation must appear in its release notes rather than being described as fixed.
+
+### 15.1 Observed Failure and Recovery
+
+The existing editor-access lease expired on **2026-10-16 at 12:00:07 CEST**. The original
+VS Code SSH channel closed at that same instant; subsequent attempts failed in the local proxy
+before SSH could reach the workstation. The lease owner and restricted key files still existed,
+and the matching cached AWS SSO access token was valid. This was a local lease-lifetime failure,
+not evidence that the remote project, AWS login or workstation had disappeared.
+
+The supported Open VS Code action in the same running lease-owning app renewed access after
+checking the same selected profile. The original workspace reconnected at **15:07:55 CEST**,
+with the same SSH authority, instance and Linux user. No app/workstation restart, installation,
+direct-SSH fallback or manual lease extension was used. The action also opened an extra editor
+window; the original window reconnected and neither was closed.
+
+The renewed lease expires on **2026-10-17 at 15:07:45 CEST** (`2026-10-17T13:07:45Z`).
+That is an observed deadline for this recovery, not a promised automatic extension or an AWS
+SSO-session expiry. The incident establishes manual recovery only.
+
+### 15.2 Required Behavior
+
+- While the app continues to own explicitly enabled access to the same workstation/user, renew
+  its editor lease before the known local deadline without another Open VS Code action, a new
+  editor window, focus changes, app restart or discarded editor/terminal state.
+- Bind continuation to the existing app identity/launch, local profile identity, authorization
+  context, resolved instance, OS user and owned generation. Revalidate these before committing
+  a renewal and before resuming any pending channel; a changed target is not a renewal.
+- Deduplicate renewal across editor windows and independent proxy invocations. Use a bounded
+  renewal attempt and retry/backoff policy; a failed renewal must not spin, continually prompt
+  or quietly grant an unlimited lease. Specify lead time, budgets and maximum key/lease lifetime
+  before implementing; the five-minute auth lead is not an implicit lease-lifetime policy.
+- Do not rotate/delete an identity file beneath in-flight native SSH authentication. Separate
+  continuation of healthy established channels from authorization to open new channels; avoid
+  an avoidable timer-driven disconnect during a valid same-owner renewal.
+- If fresh interactive authorization is needed, expose persistent Sign In Required and one SSO
+  action before a known deadline when possible. A valid AWS token does not remove a local lease
+  failure, and a successful login does not itself prove editor reconnection.
+- Stop Remote Access, app exit, owner mismatch, explicit revocation and changed target/user
+  still fail closed. A renewal racing Stop/profile change must not recreate stopped access,
+  redirect the old workspace or adopt another owner's key/generation.
+- Preserve healthy DCV/web transports, normal SSH configuration, host-key checks and local
+  VS Code buffers. Never fix a lease failure by modifying a remote repository, sshd, permanent
+  authorized keys, user/group policy, or by weakening ownership/authentication checks.
+- Show distinct local lease, AWS authorization and established-channel status, with an actionable
+  recovery error and no tokens, credentials, session responses or presigned URLs in diagnostics.
+
+### 15.3 Acceptance Criteria
+
+| ID | Scenario | Required evidence |
+| --- | --- | --- |
+| LEASE-01 | Same-owner editor remains open across its original lease deadline | Synthetic-clock and controlled native tests observe one completed pre-deadline renewal; the original workspace/channel stays usable without Open, a new window or focus change. |
+| LEASE-02 | Multiple windows/proxies reach renewal together | One bounded renewal per owned context/generation; concurrent SSH key loading succeeds and no in-use key is deleted. |
+| LEASE-03 | A reconnect opens a fresh channel after the original deadline and EIC's 60-second window | The same existing authority reaches the same instance/user through SSM with fresh EIC authorization; no permanent key or manual reconnect preparation. |
+| LEASE-04 | Renewal needs SSO, is offline, or access is denied | Distinct persistent status and bounded recovery; no prompt/retry storm or false claim that successful sign-in proves the editor connected. |
+| LEASE-05 | Stop, quit, profile/target/user change or revocation races renewal | No stale continuation, access recreation, wrong-target replay or owner/generation crossover; valid healthy unrelated transports remain untouched. |
+| LEASE-06 | Renewal or atomic lease persistence fails | Actionable local-lease error; no silent deadline extension, partial lease or unsafe fallback; local buffers survive any unavoidable channel loss. |
+| LEASE-07 | Native long-working-day/overnight session spans at least the initial 24-hour boundary | Existing-window open/save, integrated terminal and project/language/debug actions pass before and after continuation; an SSH marker/listener or a fresh replacement window alone does not satisfy this criterion. |
+| LEASE-08 | Renewal across declared key/lease-lifetime limits | Tests enforce the explicitly accepted limits, cancellation and key-generation handover without indefinite extension or mid-authentication key deletion. |
+
+No acceptance criterion above is marked met by the October 16 manual recovery. Windows must run
+its own native ownership/process/file tests before claiming the same continuation behavior.

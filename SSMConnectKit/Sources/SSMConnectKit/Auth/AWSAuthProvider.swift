@@ -3,6 +3,7 @@ import AWSSSO
 import AWSSSOOIDC
 import ClientRuntime
 import Foundation
+import OSLog
 
 /// Default `AuthProviding` backed by `aws-sdk-swift` (B3, B4).
 ///
@@ -25,6 +26,9 @@ final class AWSAuthProvider: AuthProviding {
     private let openURL: @Sendable (URL) -> Void
     /// Override the server-provided device-auth poll interval (tests use a tiny value).
     private let pollIntervalOverride: Duration?
+    private let now: @Sendable () -> Date
+    private let renewalLeadTime: TimeInterval
+    private let logger = Logger(subsystem: "pro.vhco.ssm-connect", category: "Authentication")
 
     init(
         cache: SSOCacheReading = SSOCacheReader(),
@@ -33,30 +37,52 @@ final class AWSAuthProvider: AuthProviding {
         openURL: @escaping @Sendable (URL) -> Void = { url in
             Task { @MainActor in NSWorkspace.shared.open(url) }
         },
-        pollIntervalOverride: Duration? = nil
+        pollIntervalOverride: Duration? = nil,
+        now: @escaping @Sendable () -> Date = { Date() },
+        renewalLeadTime: TimeInterval = 300
     ) {
         self.cache = cache
         self.makeOIDCClient = makeOIDCClient
         self.makeSSOClient = makeSSOClient
         self.openURL = openURL
         self.pollIntervalOverride = pollIntervalOverride
+        self.now = now
+        self.renewalLeadTime = renewalLeadTime
     }
 
     // MARK: - AuthProviding
 
     func authenticate(profile: ConnectionProfile) async throws -> AWSCredentials {
         if let accessToken = try await validAccessToken(profile: profile) {
-            return try await roleCredentials(profile: profile, accessToken: accessToken)
+            do {
+                return try await roleCredentials(profile: profile, accessToken: accessToken)
+            } catch {
+                guard Self.isRejectedAuthorization(error) else { throw error }
+            }
         }
-        let accessToken = try await deviceAuthorize(profile: profile)
-        return try await roleCredentials(profile: profile, accessToken: accessToken)
+        return try await signIn(profile: profile)
     }
 
     func refreshIfNeeded(profile: ConnectionProfile) async throws -> AWSCredentials {
         guard let accessToken = try await validAccessToken(profile: profile) else {
             throw AuthError.signInRequired
         }
+        do {
+            return try await roleCredentials(profile: profile, accessToken: accessToken)
+        } catch {
+            guard Self.isRejectedAuthorization(error) else { throw error }
+            throw AuthError.signInRequired
+        }
+    }
+
+    func signIn(profile: ConnectionProfile) async throws -> AWSCredentials {
+        let accessToken = try await deviceAuthorize(profile: profile)
         return try await roleCredentials(profile: profile, accessToken: accessToken)
+    }
+
+    func authorizationMetadata(profile: ConnectionProfile) async throws -> AuthorizationMetadata? {
+        guard let token = try cache.token(startUrl: profile.ssoStartUrl, region: profile.ssoRegion) else { return nil }
+        return AuthorizationMetadata(accessTokenExpiry: token.expiresAt, canRefresh: token.canRefresh(at: now()))
     }
 
     // MARK: - Steps
@@ -67,8 +93,9 @@ final class AWSAuthProvider: AuthProviding {
         guard let token = try cache.token(startUrl: profile.ssoStartUrl, region: profile.ssoRegion) else {
             return nil
         }
-        if !token.isExpired { return token.accessToken }
-        guard token.canRefresh else { return nil }
+        let now = now()
+        if token.expiresAt.timeIntervalSince(now) > renewalLeadTime { return token.accessToken }
+        guard token.canRefresh(at: now) else { return token.isExpired(at: now) ? nil : token.accessToken }
 
         // Silent refresh is best-effort: a rejected/expired refresh token (e.g.
         // InvalidGrantException) must NOT fail the whole sign-in — fall back to the
@@ -83,9 +110,13 @@ final class AWSAuthProvider: AuthProviding {
                 refreshToken: token.refreshToken
             ))
         } catch {
+            if error is CancellationError { throw error }
+            guard Self.isRejectedAuthorization(error) else { throw error }
             return nil
         }
-        guard let newAccessToken = output.accessToken, !newAccessToken.isEmpty else { return nil }
+        guard let newAccessToken = output.accessToken, !newAccessToken.isEmpty else {
+            throw AuthError.deviceAuthorizationFailed
+        }
 
 
         // Persist the refreshed token back to its existing cache file (best-effort, NF-01).
@@ -93,13 +124,14 @@ final class AWSAuthProvider: AuthProviding {
             startUrl: token.startUrl,
             region: token.region,
             accessToken: newAccessToken,
-            expiresAt: Date().addingTimeInterval(TimeInterval(output.expiresIn)),
+            expiresAt: now.addingTimeInterval(TimeInterval(output.expiresIn)),
             clientId: token.clientId,
             clientSecret: token.clientSecret,
             refreshToken: output.refreshToken ?? token.refreshToken,
             registrationExpiresAt: token.registrationExpiresAt
         )
-        try? cache.update(refreshed)
+        do { try cache.update(refreshed) }
+        catch { logger.error("Could not persist the renewed SSO token. A later operation may require sign-in.") }
         return newAccessToken
     }
 
@@ -181,7 +213,7 @@ final class AWSAuthProvider: AuthProviding {
             startUrl: profile.ssoStartUrl,
             region: profile.ssoRegion,
             accessToken: accessToken,
-            expiresAt: Date().addingTimeInterval(TimeInterval(output.expiresIn)),
+            expiresAt: now().addingTimeInterval(TimeInterval(output.expiresIn)),
             clientId: clientId,
             clientSecret: clientSecret,
             refreshToken: output.refreshToken,
@@ -189,7 +221,8 @@ final class AWSAuthProvider: AuthProviding {
                 ? Date(timeIntervalSince1970: TimeInterval(registrationExpiresAt))
                 : nil
         )
-        try? cache.update(token)
+        do { try cache.update(token) }
+        catch { logger.error("Could not persist the SSO login. A later operation may require sign-in.") }
     }
 
     /// Exchanges an SSO `accessToken` for temporary STS credentials (F-04).
@@ -239,5 +272,13 @@ final class AWSAuthProvider: AuthProviding {
     static func isRoleAccessDenied(_ error: Error) -> Bool {
         if (error as? HTTPError)?.httpResponse.statusCode == .forbidden { return true }
         return (error as? ServiceError)?.typeName == "ForbiddenException"
+    }
+
+    static func isRejectedAuthorization(_ error: Error) -> Bool {
+        if error as? AuthError == .signInRequired || error is InvalidGrantException { return true }
+        guard let name = (error as? ServiceError)?.typeName else { return false }
+        return ["UnauthorizedException", "ExpiredToken", "ExpiredTokenException",
+                "UnauthorizedAccess", "UnauthorizedAccessException", "InvalidGrantException",
+                "InvalidClientException", "UnauthorizedClientException"].contains(name)
     }
 }

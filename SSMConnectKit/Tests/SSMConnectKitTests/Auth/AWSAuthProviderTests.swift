@@ -68,6 +68,61 @@ struct AWSAuthProviderTests {
         #expect(sso.lastInput?.accessToken == "cached-access")
     }
 
+    @Test("AUTH-01: A refreshable token renews before its known expiry")
+    func tokenRenewsBeforeExpiry() async throws {
+        let now = Date()
+        let expired = refreshableExpiredToken()
+        let token = SSOToken(startUrl: expired.startUrl, region: expired.region, accessToken: expired.accessToken,
+            expiresAt: now.addingTimeInterval(299), clientId: expired.clientId, clientSecret: expired.clientSecret,
+            refreshToken: expired.refreshToken, registrationExpiresAt: expired.registrationExpiresAt)
+        let oidc = MockOIDCClient()
+        let recorder = URLRecorder()
+        let provider = AWSAuthProvider(cache: MockSSOCache(stored: token), makeOIDCClient: { _ in oidc },
+            makeSSOClient: { _ in MockSSOClient() }, openURL: { recorder.record($0) }, now: { now })
+        _ = try await provider.refreshIfNeeded(profile: profile)
+        #expect(oidc.createTokenCount == 1)
+        #expect(oidc.lastCreateTokenInput?.grantType == "refresh_token")
+        #expect(recorder.urls.isEmpty)
+    }
+
+    @Test("AUTH-04: A revoked cached token falls through to a fresh interactive login")
+    func revokedCachedTokenIsNotReused() async throws {
+        let oidc = MockOIDCClient()
+        let sso = MockSSOClient()
+        sso.onGetRoleCredentials = { input in
+            if input.accessToken == "cached-access" { throw AuthError.signInRequired }
+        }
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: MockSSOCache(stored: validToken()), oidc: oidc, sso: sso, recorder: recorder)
+        _ = try await provider.authenticate(profile: profile)
+        #expect(sso.callCount == 2)
+        #expect(oidc.deviceAuthCount == 1)
+        #expect(sso.lastInput?.accessToken == "access-token")
+    }
+
+    @Test("AUTH-07: Offline silent refresh does not start browser sign-in")
+    func networkRefreshFailureIsNotALoginFailure() async throws {
+        let oidc = MockOIDCClient()
+        oidc.createTokenResults = [.failure(URLError(.notConnectedToInternet))]
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: MockSSOCache(stored: refreshableExpiredToken()), oidc: oidc,
+                                    sso: MockSSOClient(), recorder: recorder)
+        await #expect(throws: URLError.self) { _ = try await provider.authenticate(profile: profile) }
+        #expect(recorder.urls.isEmpty)
+        #expect(oidc.deviceAuthCount == 0)
+    }
+
+    @Test("AUTH-05: Cancelled silent refresh never opens a browser")
+    func cancelledRefreshPropagatesCancellation() async throws {
+        let oidc = MockOIDCClient()
+        oidc.createTokenResults = [.failure(CancellationError())]
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: MockSSOCache(stored: refreshableExpiredToken()), oidc: oidc,
+                                    sso: MockSSOClient(), recorder: recorder)
+        await #expect(throws: CancellationError.self) { _ = try await provider.authenticate(profile: profile) }
+        #expect(recorder.urls.isEmpty)
+    }
+
     @Test("Expired token triggers a silent refresh and cache write-back, no browser")
     func silentRefresh() async throws {
         let cache = MockSSOCache(stored: refreshableExpiredToken())

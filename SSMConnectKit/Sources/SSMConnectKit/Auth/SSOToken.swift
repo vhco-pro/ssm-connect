@@ -20,15 +20,19 @@ struct SSOToken: Equatable, Sendable {
     let registrationExpiresAt: Date?
 
     /// Whether the `accessToken` is at or past its expiry.
-    var isExpired: Bool { Date() >= expiresAt }
+    var isExpired: Bool { isExpired(at: Date()) }
+
+    func isExpired(at now: Date) -> Bool { now >= expiresAt }
 
     /// Whether a silent refresh (`CreateToken grant_type=refresh_token`) is possible.
-    var canRefresh: Bool {
+    var canRefresh: Bool { canRefresh(at: Date()) }
+
+    func canRefresh(at now: Date) -> Bool {
         guard let refreshToken, !refreshToken.isEmpty,
               let clientId, !clientId.isEmpty,
               let clientSecret, !clientSecret.isEmpty else { return false }
         // A registration that has itself expired cannot be used to refresh.
-        if let registrationExpiresAt, Date() >= registrationExpiresAt { return false }
+        if let registrationExpiresAt, now >= registrationExpiresAt { return false }
         return true
     }
 }

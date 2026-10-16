@@ -1,0 +1,47 @@
+{
+  "accountId": "000000000000",
+  "connectAction": "tunnelOnly",
+  "futureOptional": {
+    "label": "preserve"
+  },
+  "id": "44444444-4444-4444-8444-444444444444",
+  "instanceTagKey": "Name",
+  "instanceTagValue": "example-workstation",
+  "localPort": 8443,
+  "name": "Example Headless Workstation",
+  "remoteDevelopment": {
+    "enabled": true,
+    "folder": "/home/example/code"
+  },
+  "remotePort": 8443,
+  "requiredCapabilities": [
+    "browserBootstrap",
+    "remoteDevelopment",
+    "tunnelOnly",
+    "webForwards"
+  ],
+  "resourceRegion": "eu-central-1",
+  "roleName": "ExampleWorkstationRole",
+  "schemaVersion": 2,
+  "ssoRegion": "eu-west-1",
+  "ssoStartUrl": "https://d-0000000000.awsapps.com/start",
+  "webForwards": {
+    "browser": "zen",
+    "browserMode": "existing",
+    "enabled": true,
+    "localForwards": [
+      {
+        "localPort": 8080,
+        "name": "Application",
+        "openPath": "/",
+        "remoteHost": "localhost",
+        "remotePort": 3000
+      }
+    ],
+    "proxySuffixes": [
+      ".example.invalid"
+    ],
+    "socksPort": 1080,
+    "sshUser": "example"
+  }
+}

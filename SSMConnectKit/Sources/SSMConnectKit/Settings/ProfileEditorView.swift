@@ -8,25 +8,45 @@ struct ProfileEditorView: View {
     @State private var webConfiguration: WebForwardsConfiguration
     @State private var remoteConfiguration: RemoteDevelopmentConfiguration
     @State private var proxyDomains: [ProxyDomainDraft]
-    private let onSave: (ConnectionProfile) -> Void
+    @State private var saveError: String?
+    private let attachedFile: URL?
+    private let attachedFileIsWritable: Bool
+    private let onSave: (ConnectionProfile) throws -> Void
+    private let onSaveCopy: ((ConnectionProfile) throws -> Void)?
 
     private struct ProxyDomainDraft: Identifiable {
         let id = UUID()
         var suffix: String
     }
 
-    init(profile: ConnectionProfile, onSave: @escaping (ConnectionProfile) -> Void) {
+    init(profile: ConnectionProfile, attachedFile: URL? = nil, attachedFileIsWritable: Bool = true,
+         onSaveCopy: ((ConnectionProfile) throws -> Void)? = nil,
+         onSave: @escaping (ConnectionProfile) throws -> Void) {
         _draft = State(initialValue: profile)
         _webConfiguration = State(initialValue: profile.webForwards ?? .init())
         _remoteConfiguration = State(initialValue: profile.remoteDevelopment ?? .init())
         _proxyDomains = State(initialValue: (profile.webForwards?.proxySuffixes ?? [])
             .map { ProxyDomainDraft(suffix: $0) })
         self.onSave = onSave
+        self.attachedFile = attachedFile
+        self.attachedFileIsWritable = attachedFileIsWritable
+        self.onSaveCopy = onSaveCopy
     }
 
     var body: some View {
         VStack(spacing: 0) {
             Form {
+                if let attachedFile {
+                    Section("Attached profile file") {
+                        Text(attachedFile.path).font(.caption).textSelection(.enabled)
+                        if !attachedFileIsWritable {
+                            Text("Attached file is read-only or unavailable. Save a Local Copy to keep edits.")
+                                .font(.caption).foregroundStyle(.red)
+                        }
+                        Text("Save updates this file with canonical formatting and may remove comments. Legacy v1 files upgrade to v2 on explicit save. External changes cause a conflict, not an overwrite. Machine-specific browser paths remain local.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Section("General") {
                     TextField("Display name", text: $draft.name)
                 }
@@ -172,6 +192,13 @@ struct ProfileEditorView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                if let onSaveCopy {
+                    Button("Save a Local Copy") {
+                        do { try onSaveCopy(normalizedDraft); dismiss() }
+                        catch { saveError = error.localizedDescription }
+                    }
+                    .disabled(!isValid)
+                }
                 Button("Save") {
                     // Trim region fields on commit so stored profiles are clean.
                     draft.resourceRegion = AWSRegion.normalize(draft.resourceRegion)
@@ -180,13 +207,16 @@ struct ProfileEditorView: View {
                         ? normalizedWebConfiguration : nil
                     draft.remoteDevelopment = remoteConfiguration.enabled || draft.remoteDevelopment != nil
                         ? remoteConfiguration : nil
-                    onSave(draft)
-                    dismiss()
+                    do { try onSave(draft); dismiss() }
+                    catch { saveError = error.localizedDescription }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!isValid)
+                .disabled(!isValid || (attachedFile != nil && !attachedFileIsWritable))
             }
             .padding(12)
+            if let saveError {
+                Text(saveError).font(.caption).foregroundStyle(.red).padding(.horizontal, 12).padding(.bottom, 8)
+            }
         }
         .frame(width: 460, height: 640)
     }
@@ -207,6 +237,15 @@ struct ProfileEditorView: View {
             && (!webConfiguration.enabled || webValidationError == nil)
             && (!remoteConfiguration.enabled || remoteConfiguration.folder == nil || remoteConfiguration.folder == ""
                 || (try? RemoteSSHConfiguration.folderURI(alias: RemoteSSHConfiguration.alias(draft.id), folder: remoteConfiguration.folder!)) != nil)
+    }
+
+    private var normalizedDraft: ConnectionProfile {
+        var profile = draft
+        profile.resourceRegion = AWSRegion.normalize(profile.resourceRegion)
+        profile.ssoRegion = AWSRegion.normalize(profile.ssoRegion)
+        profile.webForwards = webConfiguration.enabled || profile.webForwards != nil ? normalizedWebConfiguration : nil
+        profile.remoteDevelopment = remoteConfiguration.enabled || profile.remoteDevelopment != nil ? remoteConfiguration : nil
+        return profile
     }
 
     private func trimmed(_ value: String) -> String {

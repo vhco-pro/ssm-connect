@@ -1,14 +1,13 @@
 # SPECIFICATION: Managed browser bootstrap for web forwards
 
-- **Status:** implemented preview, 2026-10-13; user requested implementation and end-to-end tests.
-  Automated/local native evidence is recorded below. Human SSO/session-retention, fresh-user
-  setup and final UX acceptance remain pending. No release/publication is implied.
+- **Status:** shipped in macOS v0.5.0 on 2026-10-15 within the owner's accepted release scope.
+  Automated/local native evidence is recorded below. Fresh-user/enterprise-policy and arbitrary
+  real identity-provider/session behavior remain unverified; publication does not certify them.
 - **Area:** web-forwards menu, profile settings, browser discovery/launch and browser-owned data.
 - **Related:** [web-forwards.spec.md](./web-forwards.spec.md), especially WF-6, WF-9 and section 6.4;
   [ssm-connect.spec.md](./ssm-connect.spec.md), F-18 and the menu layout.
-- **Gate:** preview build authorized by the user's request to see it working before judging it.
-  Review of the built experience and the browser evidence are required before final acceptance.
-  No commit, push or release is implied by preview authorization.
+- **Gate:** the original preview authorization did not imply publication. The owner subsequently
+  approved the stable v0.5.0 release on 2026-10-15 with the remaining limits documented.
 - **Accepted design decision (2026-10-13):** the user agreed to offering both existing-browser
   setup and isolated browser profiles. This approves both choices in the design, not a write to
   any real browser's settings or a claim that either implementation is complete.
