@@ -131,11 +131,18 @@ authorization remain intact until explicit Reconnect or Disconnect. Automatic wa
 does not silently adopt the new target.
 
 Windows parity and real expiry/revocation/native-UI acceptance remain unverified.
-Editor access also still has an independent 24-hour local lease: credential renewal does not
-extend it automatically. If it expires, use **Open VS Code** in the same owning app, then retry
-the original workspace. That action may open another window; it does not replace the original
-workspace. [Automatic lease continuation](docs/specs/remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16)
-is specified as follow-up work, not claimed as fixed by this candidate.
+Editor access has an independent, finite 24-hour local lease. The still-running owner attempts
+silent renewal five minutes before expiry after verifying the same running workstation and user.
+Successful renewal keeps the key/generation and existing windows unchanged; it does not launch
+another editor window or start EC2. Transient failures have at most two retries after 30/60 seconds,
+and a failed extension leaves the existing deadline unchanged with an actionable menu result.
+**Renew Editor Access** retries without opening VS Code. If the lease has already expired, use
+**Open VS Code** to establish fresh access, then retry the original workspace.
+
+Stop, app exit or changed target cancels rolling renewal. This does not yet implement unattended
+app-upgrade/relaunch recovery, or prove preservation of every live agent across a disconnect.
+The [lease and upgrade contracts](docs/specs/remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16)
+track the remaining native/overnight acceptance separately.
 
 ## About
 

@@ -401,10 +401,11 @@ performed. The release gate remains with the human owner.
 
 ## 15. Automatic Editor-Lease Continuation (2026-10-16)
 
-**Status: required follow-up, explicitly requested by the owner on 2026-10-16; not implemented
-or accepted as passed.** Credential renewal does not implement editor-lease continuation.
-The current release candidate still requires explicit Open VS Code after a local lease expires.
-This known limitation must appear in its release notes rather than being described as fixed.
+**Status: rolling same-owner renewal explicitly accepted on 2026-10-16; implementation and
+verification in progress on a follow-up branch.** Released v0.6.0 does not implement continuation.
+The new slice must be judged against section 15.4 and executed evidence, not described as already
+installed or as proof of unattended upgrade recovery. Explicit Open is still needed after a
+lease has already expired; rolling renewal must complete before that deadline.
 
 ### 15.1 Observed Failure and Recovery
 
@@ -466,6 +467,82 @@ SSO-session expiry. The incident establishes manual recovery only.
 
 No acceptance criterion above is marked met by the October 16 manual recovery. Windows must run
 its own native ownership/process/file tests before claiming the same continuation behavior.
+
+### 15.4 Accepted Rolling-Renewal Slice (2026-10-16)
+
+The owner selected rolling same-owner renewal while organization signing enrollment is pending.
+For this slice, each lease remains finite at 24 hours, with renewal due five minutes before its
+deadline. Use one in-flight renewal and a 60-second overall attempt budget; transient failure
+retries are bounded to two further attempts after 30 and 60 seconds, never past the current
+deadline. Sign-in-required, access-denied, identity/ownership changes and file conflicts are
+actionable terminal renewal results, not automatic retry loops.
+
+Renewal must silently obtain fresh authorization, resolve the same running instance/user and
+atomically persist the new deadline only if the owned lease/context is still current. Keep its
+key and generation stable while the same app owns access, so existing channels can observe the
+new deadline rather than being closed at the original timestamp. There is no separate hard
+overall duration for this explicitly approved rolling mode; the key remains limited to that
+owner/generation, and every extension requires revalidation. Stop, quit, owner loss or changed
+target cancels renewal and does not transfer that grant to a new process.
+
+This slice must not start EC2, open another editor window, create a new SSM channel merely to
+extend the lease, restore stopped access, or claim automatic app-upgrade/relaunch recovery.
+Expose lease renewal/error state separately from AWS authorization and a Renew Editor Access
+retry action that does not launch VS Code. A known failed deadline remains visible.
+
+Acceptance for this slice is deterministic LEASE-01 through LEASE-06 and LEASE-08 behavior at
+the coordinator/proxy seams. LEASE-07's real 24-hour native working-day observation and complete
+UPGRADE-01 through UPGRADE-06 remain separate unverified gates; synthetic tests cannot close them.
+
+### 15.5 Local Implementation and Review Evidence
+
+The follow-up is committed for review in [PR #28](https://github.com/vhco-pro/ssm-connect/pull/28),
+not installed into the running v0.6.0 app. Signing prerequisites are independently documented in
+[SIGN-01 through SIGN-12](./macos-trusted-distribution.spec.md); organization enrollment is pending.
+
+The coordinator schedules renewal and persists a later deadline without changing an in-use key
+or generation. Proxy supervision checks the current same-owner lease deadline instead of its
+captured original expiry. The coordinator retains its own granted snapshot: a disk replacement
+before or during renewal is a conflict, not an ownership transfer. No new editor window, EC2
+start or extra channel is performed by the renewal itself.
+
+Independent review identified three gaps in the first candidate: an early timer wake could
+lose scheduling, a backwards clock correction could shorten the deadline, and a pre-attempt
+file replacement could be adopted as the granted generation/key. All three were corrected and
+confirmed addressed in a bounded follow-up review. New regressions exercise the exact cases.
+
+The final post-fix local Release suite passed **263 tests across 35 suites** with live probes
+disabled. This includes an actually timed 60-second attempt budget, ten cancellation/context
+cases, three pre-attempt file replacement cases and two independently authorized mock EIC/SSM
+channels after rolling past the original expiry. An owned child process also remained alive
+under the renewed predicate and stopped on revocation; no existing user process was used.
+
+This is executed coordinator/proxy evidence, not a native 24-hour session or proof that every
+editor/agent process survives all disconnections. App build, hosted checks and eventual native
+overnight acceptance are recorded independently.
+
+The following bounded verdict block is recorded verbatim from the reviewer:
+
+| Criterion / verification scope | Verdict | Evidence |
+|---|---|---|
+| LEASE-01 — deterministic continuation | **met** | Automatic pre-deadline renewal, early-wake re-arming and held-owned-child continuity passed without another editor launch. |
+| LEASE-02 — coordinator deduplication and stable key | **met** | Concurrent triggers produce one renewal; repeated renewals preserve the owned generation and key. |
+| LEASE-03 — deterministic fresh-channel authorization | **met** | Two post-original-expiry proxy authorizations, separated by 65 synthetic seconds, each perform fresh authorization → EIC push → SSM for the same instance/user/key. |
+| LEASE-04 — bounded failure and recovery | **met** | Sign-in/error handling, explicit retry and bounded 30/60-second backoffs passed. A measured 60-second cancellation-budget test passed in the previously observed full run. |
+| LEASE-05 — cancellation and ownership | **met** | Ten context/cancellation cases passed, including the production-registered quit-cleanup entry point. Pre-attempt generation/key/expiry replacements are rejected before authorization. |
+| LEASE-06 — persistence and conflict failures | **met** | Failed persistence preserves the existing lease; conflicting replacements remain untouched and produce actionable errors. |
+| LEASE-08 — accepted rolling limits | **met** | Repeated finite 24-hour renewals preserve generation/key; backward-clock renewal cannot shorten the existing deadline. |
+| Native EIC/SSM transport and concurrent native SSH key loading | **not verified** | Native transport probe remained skipped; deterministic seam coverage does not establish native execution. |
+| LEASE-07 — native overnight / 24-hour working session | **not verified** | No native long-session observation established by this review. |
+| UPGRADE-01…06 — app upgrade/relaunch continuity | **not verified** | Separate gates; not established by rolling-lease tests. |
+| Reviewer-observed post-fix targeted run | **met** | 29 tests / 2 suites passed; the previously measured 60-second case was intentionally excluded. |
+| Final post-fix full run — independent reviewer observation | **not verified** | Parent reports 263 tests / 35 suites passed, including 64.251-second elapsed budget-test execution; reviewer did not inspect this final run. |
+| Final isolated app build | **not verified** | Parent reports build still running; no final result observed by reviewer. |
+
+After that reviewer snapshot, the author observed the final isolated ARM64 Release app build
+complete successfully. The app and both embedded helpers passed strict signature verification.
+This author-observed build evidence does not change the reviewer's recorded observation scope.
+No candidate was installed or launched; the active user app/editor/lease remain unchanged.
 
 ## 16. Upgrade and Relaunch Workspace Continuity (2026-10-16)
 

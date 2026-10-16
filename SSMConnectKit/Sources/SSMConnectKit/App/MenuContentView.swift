@@ -112,6 +112,15 @@ public struct MenuContentView: View {
                     Text("Editor lease expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if let message = remoteDevelopment.leaseMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                if remoteDevelopment.isActive {
+                    Button(remoteDevelopment.isRenewingLease ? "Renewing Editor Access" : "Renew Editor Access") {
+                        remoteDevelopment.renewAccess()
+                    }
+                    .disabled(remoteDevelopment.isOpening || remoteDevelopment.isRenewingLease)
+                }
                 if let error = remoteDevelopment.errorMessage { Text(error).font(.caption).foregroundStyle(.secondary) }
                 if remoteDevelopment.isActive {
                     Button("Stop Remote Access") {

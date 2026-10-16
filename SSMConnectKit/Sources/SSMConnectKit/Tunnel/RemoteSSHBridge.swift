@@ -15,7 +15,7 @@ enum RemoteSSHError: LocalizedError {
     }
 }
 
-struct RemoteSSHLease: Codable, Sendable {
+struct RemoteSSHLease: Codable, Equatable, Sendable {
     let profile: ConnectionProfile
     let instanceID: String
     let user: String
@@ -34,6 +34,21 @@ struct RemoteSSHLease: Codable, Sendable {
               self.profile.instanceTagKey == profile.instanceTagKey, self.profile.instanceTagValue == profile.instanceTagValue,
               self.instanceID == instanceID, self.user == user else { throw RemoteSSHError.targetChanged }
         return expiresAt > now
+    }
+
+    func continues(_ original: RemoteSSHLease, ownerActive: Bool, now: Date = Date()) -> Bool {
+        guard ownerActive, generation == original.generation,
+              ownerPID == original.ownerPID, ownerBundleID == original.ownerBundleID,
+              ownerLaunchDate == original.ownerLaunchDate, keyPath == original.keyPath,
+              pluginPath == original.pluginPath else { return false }
+        return (try? canReuse(profile: original.profile, instanceID: original.instanceID,
+                              user: original.user, now: now)) == true
+    }
+
+    func extending(until expiry: Date) -> RemoteSSHLease {
+        RemoteSSHLease(profile: profile, instanceID: instanceID, user: user, keyPath: keyPath,
+            pluginPath: pluginPath, ownerPID: ownerPID, ownerLaunchDate: ownerLaunchDate,
+            ownerBundleID: ownerBundleID, generation: generation, expiresAt: expiry)
     }
 
     var ownerIsActive: Bool {
@@ -106,24 +121,32 @@ enum RemoteSSHConfiguration {
 
 public enum RemoteSSHProxyRuntime {
     private static func current(_ lease: RemoteSSHLease, path: String) -> Bool {
-        guard lease.ownerIsActive, let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let current = try? JSONDecoder().decode(RemoteSSHLease.self, from: data) else { return false }
-        return current.generation == lease.generation
+        return current.continues(lease, ownerActive: current.ownerIsActive)
     }
+
+    static func authorizeChannel(_ lease: RemoteSSHLease, auth: AuthProviding = AWSAuthProvider(),
+                                 ec2: EC2Providing = EC2Service(),
+                                 instanceConnect: InstanceConnectProviding = InstanceConnectService(),
+                                 ssm: SSMProviding = SSMService()) async throws -> SSMSessionResponse {
+        let credentials = try await auth.refreshIfNeeded(profile: lease.profile)
+        let instance = try await ec2.resolveInstance(tagKey: lease.profile.instanceTagKey,
+            tagValue: lease.profile.instanceTagValue, region: lease.profile.resourceRegion, credentials: credentials)
+        guard instance.id == lease.instanceID, instance.state == .running else { throw RemoteSSHError.targetChanged }
+        let publicKey = try String(contentsOfFile: lease.keyPath + ".pub", encoding: .utf8)
+        try await instanceConnect.sendPublicKey(instanceId: lease.instanceID, user: lease.user,
+            publicKey: publicKey, region: lease.profile.resourceRegion, credentials: credentials)
+        return try await ssm.startSSHSession(instanceId: lease.instanceID,
+            region: lease.profile.resourceRegion, credentials: credentials)
+    }
+
     public static func run(configurationPath: String) async throws -> Int32 {
         let data = try Data(contentsOf: URL(fileURLWithPath: configurationPath))
         guard data.count < 128 * 1024 else { throw RemoteSSHError.invalidLease }
         let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: data)
         try lease.validate(path: configurationPath, ownerActive: lease.ownerIsActive)
-        let credentials = try await AWSAuthProvider().refreshIfNeeded(profile: lease.profile)
-        let instance = try await EC2Service().resolveInstance(tagKey: lease.profile.instanceTagKey,
-            tagValue: lease.profile.instanceTagValue, region: lease.profile.resourceRegion, credentials: credentials)
-        guard instance.id == lease.instanceID, instance.state == .running else { throw RemoteSSHError.targetChanged }
-        let publicKey = try String(contentsOfFile: lease.keyPath + ".pub", encoding: .utf8)
-        try await InstanceConnectService().sendPublicKey(instanceId: lease.instanceID, user: lease.user,
-            publicKey: publicKey, region: lease.profile.resourceRegion, credentials: credentials)
-        let session = try await SSMService().startSSHSession(instanceId: lease.instanceID,
-            region: lease.profile.resourceRegion, credentials: credentials)
+        let session = try await authorizeChannel(lease)
         guard current(lease, path: configurationPath) else { throw RemoteSSHError.invalidLease }
         let request: [String: Any] = ["Target": lease.instanceID, "DocumentName": SSMService.sshDocument,
                                       "Parameters": ["portNumber": ["22"]]]

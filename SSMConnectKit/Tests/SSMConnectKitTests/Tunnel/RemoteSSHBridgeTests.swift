@@ -162,11 +162,12 @@ import Testing
         profile.remoteDevelopment = .init(enabled: true)
         profile.webForwards = .init(enabled: true, sshUser: "example")
         let recorder = WebEventRecorder()
+        var now = Date()
         let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
             configURL: root.appendingPathComponent("user/config"), auth: MockAuthProvider(),
             ec2: MockEC2Service(), ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
             helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
-            ownerIdentity: { (12345, Date(), "test-owner") })
+            ownerIdentity: { (12345, Date(), "test-owner") }, now: { now })
         defer { machine.stop() }
         try machine.installSetup(consent: true)
         machine.open()
@@ -174,18 +175,14 @@ import Testing
         try #require(machine.errorMessage == nil && machine.editorLaunched)
         let leaseURL = root.appendingPathComponent("owned/\(profile.id.uuidString)/lease.json")
         let first = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
-        let expired = RemoteSSHLease(profile: first.profile, instanceID: first.instanceID, user: first.user,
-            keyPath: first.keyPath, pluginPath: first.pluginPath, ownerPID: first.ownerPID,
-            ownerLaunchDate: first.ownerLaunchDate, ownerBundleID: first.ownerBundleID,
-            generation: first.generation, expiresAt: Date().addingTimeInterval(-1))
-        try BrowserPrivateFiles.write(try JSONEncoder().encode(expired), to: leaseURL)
+        now = first.expiresAt.addingTimeInterval(1)
         machine.open()
         await machine.awaitOpening()
         try #require(machine.errorMessage == nil && machine.editorLaunched)
         let renewed = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
         #expect(renewed.generation != first.generation)
         #expect(renewed.keyPath != first.keyPath)
-        #expect(renewed.expiresAt > Date())
+        #expect(renewed.expiresAt > now)
         #expect(renewed.instanceID == first.instanceID && renewed.user == first.user)
         #expect(recorder.values == ["key", "key"])
     }
