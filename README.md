@@ -152,6 +152,15 @@ is refused, not treated as a replacement. Sign-in remains an explicit SSO action
 Stop, app exit or changed target cancels rolling renewal and pending preparation. The development
 recovery path is not yet published or native-accepted, and does not certify remote home/services
 or preservation of every live agent across a disconnect.
+
+Native web-forward recovery on this branch also waits up to 30 minutes for expected missing,
+stopped/pending or SSM-not-online targets, with 15-second readiness backoff. A different instance
+requires **Review Forwarding Replacement** before a fresh SSH key/session is authorized; another
+candidate requires another review. **Turn Off Web Forwards** cancels. Ordinary explicit Turn On
+retains its existing cold-start behavior, but automatic recovery never starts EC2.
+Unclassified transport failures keep their separate three-attempt limit; ambiguity and denied
+authorization are not treated as bootstrapping. Editor and native forwarding review their own
+bindings independently because their existing host-trust policies differ.
 The [lease and upgrade contracts](docs/specs/remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16)
 track the remaining native/overnight acceptance separately.
 

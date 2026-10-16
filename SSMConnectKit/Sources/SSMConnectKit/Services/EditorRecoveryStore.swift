@@ -12,6 +12,18 @@ extension ConnectionProfile {
     }
 }
 
+enum WorkstationRecoveryReadiness {
+    static func isPending(_ error: Error) -> Bool {
+        if let error = error as? EC2Error, case .noMatchingInstance = error { return true }
+        if let error = error as? SSMError, case .notOnlineInTime = error { return true }
+        if let error = error as? RemoteSSHError, case .workstationNotReady = error { return true }
+        if let error = error as? StageTimeoutError {
+            return error.stage == "Editor SSM readiness" || error.stage == "Web forwards SSM readiness"
+        }
+        return false
+    }
+}
+
 struct EditorRecoveryIntent: Codable, Equatable, Sendable {
     let profile: ConnectionProfile
     let instanceID: String
@@ -103,6 +115,9 @@ struct EditorRecoveryRequest: Codable, Sendable {
               attributes[.ownerAccountID] as? UInt32 == getuid(),
               ((attributes[.posixPermissions] as? Int ?? 0) & 0o077) == 0 else {
             throw RemoteSSHError.configurationConflict
+        }
+        guard (attributes[.size] as? NSNumber)?.intValue ?? Int.max < 4096 else {
+            throw RemoteSSHError.invalidRecoveryState
         }
         let data = try Data(contentsOf: url)
         guard data.count < 4096 else { throw RemoteSSHError.invalidRecoveryState }

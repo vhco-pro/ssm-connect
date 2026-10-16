@@ -177,6 +177,18 @@ public struct MenuContentView: View {
                 if let error = webForwards.errorMessage {
                     Text(error).font(.caption).foregroundStyle(.secondary)
                 }
+                if let message = webForwards.recoveryMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                if let replacement = webForwards.pendingReplacement {
+                    Button("Review Forwarding Replacement…") {
+                        if confirm("Reconnect native web forwards to a replacement?",
+                            "Profile: \(replacement.profile.name)\nAccount: \(replacement.profile.accountId), region: \(replacement.profile.resourceRegion)\nPrevious: \(replacement.previousInstanceID)\nNew: \(replacement.instanceID)\nUser: \(replacement.user)\n\nConfirm only an expected replacement. Native browser/PAC settings stay unchanged. Saved home/services readiness is not certified; native forwarding retains its existing SSM-bound host-key policy, separate from editor host-key checking.") {
+                            webForwards.approveReplacement(replacement.id)
+                        }
+                    }
+                    Button("Cancel Forwarding Recovery") { webForwards.stop() }
+                }
                 Button(webForwards.state == .on || webForwards.state == .starting ? "Turn Off Web Forwards" : "Turn On Web Forwards") {
                     if webForwards.state == .on || webForwards.state == .starting { webForwards.stop() }
                     else { webForwards.connect() }

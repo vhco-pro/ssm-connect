@@ -241,8 +241,16 @@ import Observation
             recoveryMonitor = nil
         }
         leaseExpiries.removeValue(forKey: profileID)
-        grantedLeases.removeValue(forKey: profileID)
-        if let path = leases.removeValue(forKey: profileID) { try? FileManager.default.removeItem(at: path) }
+        let granted = grantedLeases.removeValue(forKey: profileID)
+        if let path = leases.removeValue(forKey: profileID), FileManager.default.fileExists(atPath: path.path) {
+            do {
+                guard let granted,
+                      try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: path)) == granted else {
+                    throw RemoteSSHError.configurationConflict
+                }
+                try FileManager.default.removeItem(at: path)
+            } catch { errorMessage = error.localizedDescription }
+        }
         let key = keys.removeValue(forKey: profileID)
         Task { try? await Task.sleep(for: .seconds(1)); key?.remove() }
     }
@@ -307,7 +315,9 @@ import Observation
                     throw RemoteSSHError.configurationConflict
                 }
                 let existing = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: previousURL))
-                if leaseOwnerIsActive(existing) { throw RemoteSSHError.configurationConflict }
+                guard existing.profile.id == profile.id, !leaseOwnerIsActive(existing) else {
+                    throw RemoteSSHError.configurationConflict
+                }
             }
             let key = try await keyGenerator.generate()
             defer {
@@ -379,16 +389,8 @@ import Observation
                 }
                 return instance
             } catch {
-                let absent: Bool
-                if let ec2 = error as? EC2Error, case .noMatchingInstance = ec2 { absent = true }
-                else { absent = false }
-                let notReady: Bool
-                if let remote = error as? RemoteSSHError, case .workstationNotReady = remote { notReady = true }
-                else { notReady = false }
-                let ssmNotReady: Bool
-                if let ssm = error as? SSMError, case .notOnlineInTime = ssm { ssmNotReady = true }
-                else { ssmNotReady = false }
-                guard recovering, absent || notReady || ssmNotReady || error is StageTimeoutError || error is URLError else { throw error }
+                guard recovering, WorkstationRecoveryReadiness.isPending(error)
+                    || error is StageTimeoutError || error is URLError else { throw error }
                 recoveryMessage = "Waiting for the selected workstation and SSM (up to 30 minutes). No stopped workstation will be started; Cancel Recovery stops this wait."
                 try await recoverySleep(.seconds(15))
             }
@@ -402,6 +404,11 @@ import Observation
             guard let request = try EditorRecoveryRequest.read(from: EditorRecoveryRequest.url(for: url)),
                   request.id != lastRecoveryRequest else { return }
             lastRecoveryRequest = request.id
+            guard request.profileID == granted.profile.id else { throw RemoteSSHError.configurationConflict }
+            if request.generation != granted.generation {
+                recoveryMessage = "An earlier recovery notice was ignored; current access is unchanged. Retry the original workspace if needed."
+                return
+            }
             guard request.matches(granted), try readOwnedLease(allowExpired: true) == granted else {
                 throw RemoteSSHError.configurationConflict
             }

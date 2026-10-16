@@ -366,7 +366,8 @@ struct EditorWorkspaceRecoveryTests {
         fixture.machine.processRecoveryRequests()
         await fixture.machine.awaitOpening()
         #expect(fixture.authorizationCalls == count)
-        #expect(fixture.machine.errorMessage == RemoteSSHError.configurationConflict.localizedDescription)
+        #expect(fixture.machine.errorMessage == nil)
+        #expect(fixture.machine.recoveryMessage?.contains("earlier recovery notice was ignored") == true)
     }
 
     @Test("UPGRADE-05: Restore Editor Setup clears every remembered resume intent")
@@ -393,5 +394,58 @@ struct EditorWorkspaceRecoveryTests {
         await fixture.machine.awaitOpening()
         #expect(fixture.machine.isActive && fixture.machine.errorMessage == nil)
         #expect(fixture.sleeps == [.seconds(15)] && fixture.ec2.starts == 0)
+    }
+
+    @Test("REBUILD-06: A different resolved user never inherits the remembered workspace grant")
+    func userMismatchCannotBecomeNewAccess() async throws {
+        let fixture = try WorkspaceRecoveryFixture()
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        let original = try fixture.lease()
+        fixture.restart()
+        try EditorRecoveryStore(store: fixture.store).remember(EditorRecoveryIntent(
+            profile: fixture.profile, instanceID: original.instanceID, user: "another-user"))
+        fixture.machine.onLaunch(explicit: true)
+        await fixture.machine.awaitOpening()
+        #expect(fixture.machine.errorMessage == RemoteSSHError.targetChanged.localizedDescription)
+        #expect(!fixture.machine.isActive && fixture.recorder.values == ["key"])
+    }
+
+    @Test("REBUILD-08: Invalid or non-private helper messages cannot authorize recovery",
+          arguments: ["malformed", "public", "oversized"])
+    func invalidHelperMessageCannotTriggerAWS(kind: String) async throws {
+        let fixture = try WorkspaceRecoveryFixture()
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        let lease = try fixture.lease()
+        let url = EditorRecoveryRequest.url(for: fixture.leaseURL)
+        try EditorRecoveryRequest(lease: lease, reason: .expired).write(for: fixture.leaseURL)
+        if kind == "public" {
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        } else {
+            try BrowserPrivateFiles.write(Data(repeating: 0x61, count: kind == "oversized" ? 4096 : 10), to: url)
+        }
+        let count = fixture.authorizationCalls
+        fixture.machine.processRecoveryRequests()
+        await fixture.machine.awaitOpening()
+        #expect(fixture.authorizationCalls == count && fixture.machine.errorMessage != nil)
+        #expect(try fixture.lease() == lease)
+    }
+
+    @Test("UPGRADE-05: Stop cannot delete an independently replaced owner's lease")
+    func stopLeavesUnknownGrantUntouched() async throws {
+        let fixture = try WorkspaceRecoveryFixture()
+        defer { fixture.cleanup() }
+        try await fixture.open()
+        let original = try fixture.lease()
+        let other = RemoteSSHLease(profile: original.profile, instanceID: original.instanceID,
+            user: original.user, keyPath: original.keyPath, pluginPath: original.pluginPath,
+            ownerPID: original.ownerPID + 100, ownerLaunchDate: original.ownerLaunchDate,
+            ownerBundleID: original.ownerBundleID, generation: UUID(), expiresAt: original.expiresAt)
+        try BrowserPrivateFiles.write(try JSONEncoder().encode(other), to: fixture.leaseURL)
+        fixture.machine.stop()
+        #expect(!fixture.machine.isActive)
+        #expect(try fixture.lease() == other)
+        #expect(fixture.machine.errorMessage == RemoteSSHError.configurationConflict.localizedDescription)
     }
 }

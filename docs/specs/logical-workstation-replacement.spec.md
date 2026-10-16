@@ -1,8 +1,8 @@
 # SPECIFICATION: Same Workspace and Native Forwarding After Workstation Replacement
 
-- **Status:** use case raised by the owner on 2026-10-16; editor client implementation in PR #31
-  has deterministic tests. Native forwarding, server readiness and real replacement acceptance
-  are not complete; no production change is approved or accepted as passed.
+- **Status:** use case raised by the owner on 2026-10-16; editor and native-forwarding client
+  implementation is in PR #31 with deterministic tests. Server readiness and real replacement
+  acceptance are not complete; no production change is approved or accepted as passed.
 - **Baselines:** released macOS v0.6.0 and the same-owner rolling-lease fix merged in PR #28.
   Neither provides a complete physical-instance replacement/rebind workflow.
 - **Outcome:** after an authorized OS/root-image replacement, select the same VS Code Recent
@@ -181,9 +181,28 @@ must fail that SSH attempt; it cannot rebind a channel or authorize a different 
 Once access is prepared, retry the original workspace so native SSH rereads coherent configuration.
 No Code window is launched by recovery, and no remote data/process migration is asserted.
 
-Executed package evidence: **280 tests in 36 suites passed**, including deterministic explicit
+Executed package evidence: **288 tests in 36 suites passed**, including deterministic explicit
 relaunch, confirmation/reconfirmation, cancellation, terminal errors, SSM readiness, stale helper
 requests, another live owner, Stop/Quit/Restore intent and the measured 60-second lease budget.
 This is client-seam evidence only. All complete REBUILD criteria in section 5 remain **not
-verified** until their required native/server observations exist. Native forwarding still uses
-its earlier three-attempt policy at this checkpoint; it is not represented as complete.
+verified** until their required native/server observations exist.
+
+Native forwarding now keeps its applied browser/PAC/forward configuration while waiting for
+expected readiness after a drop. The same 30-minute outer budget includes backoff and connection
+stages, and each readiness miss uses 15-second backoff. A different physical instance stops for
+Review Forwarding Replacement before EIC or a new SSH session; approving B never authorizes C.
+Automatic recovery cannot start EC2, while ordinary explicit Turn On retains cold-start behavior.
+Ambiguity, changed users and authorization errors are terminal; unrelated transport errors retain
+the earlier three-attempt limit. This is a client readiness policy, not proof of mounted home,
+UID/GID, DNS, dashboard or websocket readiness on a real replacement.
+
+Each transport reviews its own binding: native forwarding retains the documented SSM-bound
+host-key policy, not the editor's instance-specific accept-new policy. An editor approval is not
+silently reused as browser readiness or broader host-trust approval.
+
+An isolated no-window AppKit probe, compiled with the production launch handler, observed both
+initial explicit open and reopen as explicit launches. It used a separate temporary bundle with
+no credentials, profile access or network work. This verifies native event delivery only; it does
+not verify login-item behavior, an installed-app upgrade or original editor/agent preservation.
+The ARM64 macOS Release app and embedded proxy build passed, with ad-hoc bundle verification.
+No candidate app was installed or run against production preferences or an existing workspace.

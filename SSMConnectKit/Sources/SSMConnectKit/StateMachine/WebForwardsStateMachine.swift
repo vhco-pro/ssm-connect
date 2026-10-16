@@ -13,6 +13,8 @@ public final class WebForwardsStateMachine {
     private(set) var pendingProfile: ConnectionProfile?
     private(set) var browserErrorMessage: String?
     private(set) var isOpeningBrowser = false
+    private(set) var pendingReplacement: EditorReplacement?
+    private(set) var recoveryMessage: String?
     private var settings: AppSettings
     private let auth: AuthProviding
     private let ec2: EC2Providing
@@ -26,11 +28,14 @@ public final class WebForwardsStateMachine {
     private let reconnectBackoff: Duration
     private let maxReconnectAttempts: Int
     private let timeouts: ConnectionTimeouts
+    private let recoveryBudget: Duration
     private let log: ConnectionLog
     private var task: Task<Void, Never>?
     private var handle: TunnelHandle?
     private var key: SSHKeyMaterial?
     private var browserTask: Task<Void, Never>?
+    private var boundTarget: (instanceID: String, user: String)?
+    private var approvedInstanceID: String?
 
     public convenience init(profile: ConnectionProfile, settings: AppSettings, log: ConnectionLog,
                             authorization: AuthorizationSession? = nil) {
@@ -49,7 +54,7 @@ public final class WebForwardsStateMachine {
          },
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          reconnectBackoff: Duration = .seconds(5), maxReconnectAttempts: Int = 3,
-         timeouts: ConnectionTimeouts = .default) {
+         timeouts: ConnectionTimeouts = .default, recoveryBudget: Duration = .seconds(30 * 60)) {
         self.profile = profile
         self.settings = settings
         self.log = log ?? ConnectionLog()
@@ -65,6 +70,7 @@ public final class WebForwardsStateMachine {
         self.reconnectBackoff = reconnectBackoff
         self.maxReconnectAttempts = maxReconnectAttempts
         self.timeouts = timeouts
+        self.recoveryBudget = recoveryBudget
         AppQuitHandler.shared.register { [weak self] in self?.terminateForQuit() }
     }
 
@@ -87,6 +93,11 @@ public final class WebForwardsStateMachine {
             }
         }
         if self.profile != profile { pacURL = nil }
+        if !self.profile.hasSameWorkstation(as: profile) {
+            boundTarget = nil
+            approvedInstanceID = nil
+            pendingReplacement = nil
+        }
         self.profile = profile
         pendingProfile = nil
     }
@@ -122,6 +133,7 @@ public final class WebForwardsStateMachine {
         guard let pendingProfile, !isOpeningBrowser else { return }
         stop()
         await awaitStopped()
+        if !profile.hasSameWorkstation(as: pendingProfile) { boundTarget = nil }
         profile = pendingProfile
         self.pendingProfile = nil
         pacURL = nil
@@ -129,11 +141,19 @@ public final class WebForwardsStateMachine {
     }
 
     func connect() {
+        guard task == nil else { return }
+        approvedInstanceID = nil
+        begin(recovering: false)
+    }
+
+    private func begin(recovering: Bool) {
         guard task == nil, profile.webForwards?.enabled == true else { return }
         errorMessage = nil
+        recoveryMessage = nil
+        pendingReplacement = nil
         state = .starting
         task = Task {
-            await self.run()
+            await self.run(initialRecovery: recovering)
             self.task = nil
         }
     }
@@ -143,6 +163,19 @@ public final class WebForwardsStateMachine {
         task?.cancel()
         state = .off
         errorMessage = nil
+        pendingReplacement = nil
+        approvedInstanceID = nil
+        recoveryMessage = nil
+    }
+
+    func approveReplacement(_ id: UUID) {
+        guard task == nil, let candidate = pendingReplacement, candidate.id == id,
+              candidate.profile.hasSameWorkstation(as: profile) else {
+            errorMessage = RemoteSSHError.targetChanged.localizedDescription
+            return
+        }
+        approvedInstanceID = candidate.instanceID
+        begin(recovering: true)
     }
 
     func awaitStopped() async { await task?.value }
@@ -164,23 +197,40 @@ public final class WebForwardsStateMachine {
         key = nil
     }
 
-    private func run() async {
+    private func run(initialRecovery: Bool) async {
         var reconnecting = false
+        var recovering = initialRecovery
+        var readinessWait = false
+        var deadline: ContinuousClock.Instant? = recovering ? ContinuousClock.now.advanced(by: recoveryBudget) : nil
         var attempt = 0
         while !Task.isCancelled {
             do {
                 if reconnecting {
-                    guard settings.autoReconnect, attempt < maxReconnectAttempts else {
+                    guard settings.autoReconnect, readinessWait || attempt < maxReconnectAttempts else {
                         throw WebForwardsError.sshNotReady
                     }
                     attempt += 1
                     state = .starting
-                    try await sleep(reconnectBackoff)
                 }
-                try await establish()
+                let delay: Duration? = reconnecting ? (readinessWait ? .seconds(15) : reconnectBackoff) : nil
+                let recoveryAttempt = recovering
+                if let deadline {
+                    let remaining = ContinuousClock.now.duration(to: deadline)
+                    guard remaining > .zero else { throw StageTimeoutError(stage: "Native forwarding recovery") }
+                    try await withStageTimeout("Native forwarding recovery", remaining) {
+                        if let delay { try await self.sleep(delay) }
+                        try await self.establish(recovering: recoveryAttempt)
+                    }
+                } else {
+                    if let delay { try await sleep(delay) }
+                    try await establish(recovering: recoveryAttempt)
+                }
                 try Task.checkCancellation()
                 state = .on
                 attempt = 0
+                readinessWait = false
+                recoveryMessage = nil
+                approvedInstanceID = nil
                 log.log(.tunnel, "Web forwards connected.")
                 guard let handle else { throw WebForwardsError.sshNotReady }
                 var drops = handle.onDisconnect.makeAsyncIterator()
@@ -190,11 +240,26 @@ public final class WebForwardsStateMachine {
                 guard case .processExited = reason else { state = .off; return }
                 if !settings.autoReconnect { throw WebForwardsError.sshNotReady }
                 reconnecting = true
+                recovering = true
+                deadline = ContinuousClock.now.advanced(by: recoveryBudget)
                 log.log(.tunnel, "Web forwards dropped; reconnecting with a fresh SSH key.")
             } catch {
                 await cleanup()
                 if Task.isCancelled || error is CancellationError { state = .off; return }
-                if !reconnecting || attempt >= maxReconnectAttempts || !settings.autoReconnect {
+                let budgetExpired = deadline.map { ContinuousClock.now >= $0 } ?? false
+                if recovering, !budgetExpired, settings.autoReconnect, WorkstationRecoveryReadiness.isPending(error) {
+                    reconnecting = true
+                    readinessWait = true
+                    attempt = 0
+                    state = .starting
+                    recoveryMessage = "Waiting for the workstation and SSM (up to 30 minutes). Turn Off Web Forwards cancels; stopped instances are not started."
+                    continue
+                }
+                let terminal = error is EC2Error || error is RemoteSSHError || error is AuthError
+                    || AWSAuthProvider.isRejectedAuthorization(error)
+                    || (auth as? AuthorizationSession)?.status == .signInRequired
+                if !reconnecting || attempt >= maxReconnectAttempts || !settings.autoReconnect || terminal || budgetExpired {
+                    recoveryMessage = nil
                     errorMessage = error.localizedDescription
                     state = .error
                     log.log(.tunnel, "Web forwards could not connect.")
@@ -206,7 +271,7 @@ public final class WebForwardsStateMachine {
         state = .off
     }
 
-    private func establish() async throws {
+    private func establish(recovering: Bool) async throws {
         guard profile.isConfigured, let configuration = profile.webForwards,
               configuration.enabled else {
             throw WebForwardsError.invalidConfiguration("Configure the workstation and enable web forwards in Settings.")
@@ -216,7 +281,7 @@ public final class WebForwardsStateMachine {
         }
         let profile = self.profile
         let credentials = try await withStageTimeout("Web forwards sign-in", timeouts.authenticate) { [auth] in
-            try await auth.authenticate(profile: profile)
+            try await (recovering ? auth.refreshIfNeeded(profile: profile) : auth.authenticate(profile: profile))
         }
         var instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
             try await withStageTimeout("Finding workstation", timeouts.resolve) { [ec2] in
@@ -224,8 +289,14 @@ public final class WebForwardsStateMachine {
                                              region: profile.resourceRegion, credentials: credentials)
             }
         }
+        if let boundTarget, instance.id != boundTarget.instanceID, approvedInstanceID != instance.id {
+            pendingReplacement = EditorReplacement(profile: profile, previousInstanceID: boundTarget.instanceID,
+                                                   instanceID: instance.id, user: boundTarget.user)
+            throw RemoteSSHError.replacementApprovalRequired
+        }
         guard !instance.state.isTerminal else { throw EC2Error.instanceTerminated(instanceId: instance.id) }
         if instance.state != .running {
+            guard !recovering else { throw RemoteSSHError.workstationNotReady }
             let instanceId = instance.id
             instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
                 try await withStageTimeout("Starting workstation", timeouts.start) { [ec2, timeouts] in
@@ -235,20 +306,24 @@ public final class WebForwardsStateMachine {
                 }
             }
         }
+        let instanceId = instance.id
         try await auth.authorized(profile: profile, credentials: credentials) { credentials in
-            try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion,
-                credentials: credentials, timeout: timeouts.ssm, interval: timeouts.ssmPollInterval)
+            try await withStageTimeout("Web forwards SSM readiness", min(timeouts.ssm, .seconds(30))) { [ssm, timeouts] in
+                try await ssm.waitForSSMOnline(instanceId: instanceId, region: profile.resourceRegion,
+                    credentials: credentials, timeout: min(timeouts.ssm, .seconds(30)), interval: timeouts.ssmPollInterval)
+            }
         }
         let configuredUser = configuration.sshUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let user = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
             configuredUser.isEmpty ? try await resolveUser(credentials, profile.resourceRegion) : configuredUser
         }
+        if let boundTarget, user != boundTarget.user { throw RemoteSSHError.targetChanged }
+        recoveryMessage = recovering ? "Preparing native forwarding; SSM readiness does not certify the remote home or services." : nil
         pacURL = try writePAC(configuration, profile.id)
         try Task.checkCancellation()
         key = try await keyGenerator.generate()
         try Task.checkCancellation()
         guard let key else { throw WebForwardsError.keyGenerationFailed }
-        let instanceId = instance.id
         try await auth.authorized(profile: profile, credentials: credentials) { credentials in
             try await withStageTimeout("Authorizing SSH key", .seconds(20)) { [instanceConnect] in
                 try await instanceConnect.sendPublicKey(instanceId: instanceId, user: user, publicKey: key.publicKey,
@@ -264,6 +339,7 @@ public final class WebForwardsStateMachine {
         try Task.checkCancellation()
         handle = try await tunnel.start(session: session, region: profile.resourceRegion, instanceId: instanceId,
             user: user, keyPath: key.privateKeyPath, configuration: configuration)
+        boundTarget = (instanceId, user)
     }
 
     private func cleanup() async {
