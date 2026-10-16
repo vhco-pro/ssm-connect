@@ -91,6 +91,11 @@ struct WebForwardsConfiguration: Equatable, Codable, Sendable {
         var remoteHost: String
         var remotePort: Int
         var openPath: String? = nil
+        var portableOptions: [String: ProfileValue] = [:]
+
+        enum CodingKeys: String, CodingKey {
+            case name, localPort, remoteHost, remotePort, openPath, portableOptions
+        }
     }
 
     init(enabled: Bool = false, sshUser: String? = nil, socksPort: Int? = 1080,
@@ -133,6 +138,18 @@ struct WebForwardsConfiguration: Equatable, Codable, Sendable {
         try values.encodeIfPresent(browser, forKey: .browser)
         try values.encodeIfPresent(browserMode, forKey: .browserMode)
         try values.encodeIfPresent(browserProfilePath, forKey: .browserProfilePath)
+    }
+}
+
+extension WebForwardsConfiguration.LocalForward {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        localPort = try values.decode(Int.self, forKey: .localPort)
+        remoteHost = try values.decode(String.self, forKey: .remoteHost)
+        remotePort = try values.decode(Int.self, forKey: .remotePort)
+        openPath = try values.decodeIfPresent(String.self, forKey: .openPath)
+        portableOptions = try values.decodeIfPresent([String: ProfileValue].self, forKey: .portableOptions) ?? [:]
     }
 }
 

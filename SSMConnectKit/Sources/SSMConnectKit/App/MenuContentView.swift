@@ -38,6 +38,22 @@ public struct MenuContentView: View {
                     .foregroundStyle(.secondary)
             }
 
+            ForEach(machine.authorizationSessions.indices, id: \.self) { index in
+                let authorization = machine.authorizationSessions[index]
+                if let detail = authorization.detailLine {
+                    Text("\(authorization.profile.name): \(detail)").font(.caption).foregroundStyle(.secondary)
+                    if authorization.status == .signInRequired {
+                        Button("Sign In with SSO") { authorization.signIn() }
+                    } else if case .unavailable = authorization.status {
+                        Button("Retry Authorization") { authorization.retry() }
+                    }
+                }
+            }
+            if let pending = machine.pendingProfile {
+                Text("Saved profile changes pending: \(pending.name). Reconnect to apply.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             // Live connection details (instance, tunnel, elapsed) when connected (F-12).
             ForEach(machine.connectionDetailLines, id: \.self) { line in
                 Text(line)
@@ -92,6 +108,10 @@ public struct MenuContentView: View {
                 }
                 .disabled(remoteDevelopment.isOpening)
                 if remoteDevelopment.editorLaunched { Text("VS Code launched") }
+                if let expiry = remoteDevelopment.leaseExpiry {
+                    Text("Editor lease expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let error = remoteDevelopment.errorMessage { Text(error).font(.caption).foregroundStyle(.secondary) }
                 if remoteDevelopment.isActive {
                     Button("Stop Remote Access") {
@@ -139,11 +159,6 @@ public struct MenuContentView: View {
                     if let error = webForwards.browserErrorMessage {
                         Text(error).font(.caption).foregroundStyle(.secondary)
                     }
-                    if webForwards.pendingProfile != nil {
-                        Text("Saved changes pending")
-                        Button("Apply Changes") { applyBrowserChanges(webForwards) }
-                            .disabled(webForwards.isOpeningBrowser)
-                    }
                     Menu("Advanced") {
                         Text("Manual setup for other browser windows")
                         Button("Copy PAC URL") {
@@ -177,6 +192,12 @@ public struct MenuContentView: View {
                         }
                     }
                 }
+            }
+
+            if let webForwards, webForwards.pendingProfile != nil {
+                Text("Saved web-forward changes pending")
+                Button("Apply Changes") { applyBrowserChanges(webForwards) }
+                    .disabled(webForwards.isOpeningBrowser)
             }
 
             Divider()
@@ -226,7 +247,9 @@ public struct MenuContentView: View {
                 guard result != .alertThirdButtonReturn else { return }
                 var profile = web.profile
                 profile.webForwards?.browserMode = result == .alertFirstButtonReturn ? .separate : .existing
-                store.updateProfile(profile)
+                guard store.updateProfile(profile) else {
+                    throw PortableProfileError.invalid(store.operationError ?? "The profile could not be saved.")
+                }
                 web.apply(profile: profile, settings: store.settings)
             }
             try browserBootstrap.preflight(profile: web.profile)

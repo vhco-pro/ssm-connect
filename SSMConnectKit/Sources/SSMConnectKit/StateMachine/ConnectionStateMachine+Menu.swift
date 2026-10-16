@@ -25,8 +25,8 @@ extension ConnectionStateMachine {
         if state == .error { return errorMessage }
         if state == .connected {
             if let warningMessage { return warningMessage }
-            if let expiry = credentialsExpiry {
-                return "Connected · session expires \(Self.timeFormatter.string(from: expiry))"
+            if let expiry = authorizationSession?.credentialsExpiry ?? credentialsExpiry {
+                return "Connected · AWS credentials expire \(Self.timeFormatter.string(from: expiry))"
             }
             return "Connected"
         }

@@ -32,8 +32,9 @@ public final class WebForwardsStateMachine {
     private var key: SSHKeyMaterial?
     private var browserTask: Task<Void, Never>?
 
-    public convenience init(profile: ConnectionProfile, settings: AppSettings, log: ConnectionLog) {
-        self.init(profile: profile, settings: settings, log: log, auth: AWSAuthProvider())
+    public convenience init(profile: ConnectionProfile, settings: AppSettings, log: ConnectionLog,
+                            authorization: AuthorizationSession? = nil) {
+        self.init(profile: profile, settings: settings, log: log, auth: authorization ?? AWSAuthProvider())
     }
 
     init(profile: ConnectionProfile, settings: AppSettings = .default, log: ConnectionLog? = nil,
@@ -69,14 +70,21 @@ public final class WebForwardsStateMachine {
 
     var isActive: Bool { handle?.isActive == true }
 
-    func apply(profile: ConnectionProfile, settings: AppSettings) {
+    public func apply(profile: ConnectionProfile, settings: AppSettings) {
         self.settings = settings
         if task != nil {
             var transportProfile = profile
             transportProfile.webForwards?.browser = self.profile.webForwards?.browser
             transportProfile.webForwards?.browserMode = self.profile.webForwards?.browserMode
             transportProfile.webForwards?.browserProfilePath = self.profile.webForwards?.browserProfilePath
-            if transportProfile != self.profile { pendingProfile = profile; return }
+            if transportProfile != self.profile {
+                pendingProfile = profile
+                if state == .starting, auth is AuthorizationSession {
+                    browserTask?.cancel()
+                    task?.cancel()
+                }
+                return
+            }
         }
         if self.profile != profile { pacURL = nil }
         self.profile = profile
@@ -210,37 +218,48 @@ public final class WebForwardsStateMachine {
         let credentials = try await withStageTimeout("Web forwards sign-in", timeouts.authenticate) { [auth] in
             try await auth.authenticate(profile: profile)
         }
-        var instance = try await withStageTimeout("Finding workstation", timeouts.resolve) { [ec2] in
-            try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
-                                         region: profile.resourceRegion, credentials: credentials)
+        var instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            try await withStageTimeout("Finding workstation", timeouts.resolve) { [ec2] in
+                try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
+                                             region: profile.resourceRegion, credentials: credentials)
+            }
         }
         guard !instance.state.isTerminal else { throw EC2Error.instanceTerminated(instanceId: instance.id) }
         if instance.state != .running {
             let instanceId = instance.id
-            instance = try await withStageTimeout("Starting workstation", timeouts.start) { [ec2, timeouts] in
-                try await ec2.startInstance(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
-                return try await ec2.pollUntilRunning(instanceId: instanceId, region: profile.resourceRegion,
-                    credentials: credentials, timeout: timeouts.start, interval: timeouts.startPollInterval)
+            instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+                try await withStageTimeout("Starting workstation", timeouts.start) { [ec2, timeouts] in
+                    try await ec2.startInstance(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
+                    return try await ec2.pollUntilRunning(instanceId: instanceId, region: profile.resourceRegion,
+                        credentials: credentials, timeout: timeouts.start, interval: timeouts.startPollInterval)
+                }
             }
         }
-        try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion,
-            credentials: credentials, timeout: timeouts.ssm, interval: timeouts.ssmPollInterval)
+        try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion,
+                credentials: credentials, timeout: timeouts.ssm, interval: timeouts.ssmPollInterval)
+        }
         let configuredUser = configuration.sshUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let user = configuredUser.isEmpty
-            ? try await resolveUser(credentials, profile.resourceRegion) : configuredUser
+        let user = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            configuredUser.isEmpty ? try await resolveUser(credentials, profile.resourceRegion) : configuredUser
+        }
         pacURL = try writePAC(configuration, profile.id)
         try Task.checkCancellation()
         key = try await keyGenerator.generate()
         try Task.checkCancellation()
         guard let key else { throw WebForwardsError.keyGenerationFailed }
         let instanceId = instance.id
-        try await withStageTimeout("Authorizing SSH key", .seconds(20)) { [instanceConnect] in
-            try await instanceConnect.sendPublicKey(instanceId: instanceId, user: user, publicKey: key.publicKey,
-                region: profile.resourceRegion, credentials: credentials)
+        try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            try await withStageTimeout("Authorizing SSH key", .seconds(20)) { [instanceConnect] in
+                try await instanceConnect.sendPublicKey(instanceId: instanceId, user: user, publicKey: key.publicKey,
+                    region: profile.resourceRegion, credentials: credentials)
+            }
         }
         try Task.checkCancellation()
-        let session = try await withStageTimeout("Opening SSH session", .seconds(20)) { [ssm] in
-            try await ssm.startSSHSession(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
+        let session = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            try await withStageTimeout("Opening SSH session", .seconds(20)) { [ssm] in
+                try await ssm.startSSHSession(instanceId: instanceId, region: profile.resourceRegion, credentials: credentials)
+            }
         }
         try Task.checkCancellation()
         handle = try await tunnel.start(session: session, region: profile.resourceRegion, instanceId: instanceId,

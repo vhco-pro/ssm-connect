@@ -1,0 +1,14 @@
+[
+  {"name": "null action cannot silently launch DCV", "mutations": [{"path": ["connectAction"], "value": null}]},
+  {"name": "null required capability array", "mutations": [{"path": ["requiredCapabilities"], "value": null}]},
+  {"name": "non-schema UUID encoding", "mutations": [{"path": ["id"], "value": "44444444444444448444444444444444"}]},
+  {"name": "null web enabled", "mutations": [{"path": ["webForwards", "enabled"], "value": null}]},
+  {"name": "null forward array", "mutations": [{"path": ["webForwards", "localForwards"], "value": null}]},
+  {"name": "null suffix array", "mutations": [{"path": ["webForwards", "proxySuffixes"], "value": null}]},
+  {"name": "invalid SOCKS port", "mutations": [{"path": ["webForwards", "socksPort"], "value": 0}]},
+  {"name": "invalid inactive SOCKS port", "mutations": [{"path": ["webForwards", "enabled"], "value": false}, {"path": ["webForwards", "socksPort"], "value": 0}]},
+  {"name": "invalid inactive forward port", "mutations": [{"path": ["webForwards", "enabled"], "value": false}, {"path": ["webForwards", "localForwards", "0", "localPort"], "value": 0}]},
+  {"name": "empty forward name", "mutations": [{"path": ["webForwards", "localForwards", "0", "name"], "value": ""}]},
+  {"name": "null editor enabled", "mutations": [{"path": ["remoteDevelopment", "enabled"], "value": null}]},
+  {"name": "numeric remote folder", "mutations": [{"path": ["remoteDevelopment", "folder"], "value": 33}]}
+]

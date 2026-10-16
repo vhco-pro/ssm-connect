@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "id": "44444444-4444-4444-8444-444444444444",
+  "name": "Example Headless Workstation",
+  "ssoStartUrl": "https://d-0000000000.awsapps.com/start",
+  "ssoRegion": "eu-west-1",
+  "accountId": "000000000000",
+  "roleName": "ExampleWorkstationRole",
+  "resourceRegion": "eu-central-1",
+  "instanceTagKey": "Name",
+  "instanceTagValue": "example-workstation",
+  "localPort": 8443,
+  "remotePort": 8443,
+  "connectAction": "tunnelOnly",
+  "requiredCapabilities": ["tunnelOnly", "webForwards", "browserBootstrap", "remoteDevelopment"],
+  "webForwards": {
+    "enabled": true,
+    "sshUser": "example",
+    "socksPort": 1080,
+    "proxySuffixes": [".example.invalid"],
+    "localForwards": [
+      {"name": "Application", "localPort": 8080, "remoteHost": "localhost", "remotePort": 3000, "openPath": "/"}
+    ],
+    "browser": "zen",
+    "browserMode": "existing"
+  },
+  "remoteDevelopment": {"enabled": true, "folder": "/home/example/code"},
+  "futureOptional": {"label": "preserve"}
+}

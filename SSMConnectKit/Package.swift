@@ -14,21 +14,23 @@ let package = Package(
         .executable(name: "ssm-connect-proxy", targets: ["SSMConnectProxy"]),
     ],
     dependencies: [
-        // aws-sdk-swift — the only external dependency (spec §12.1).
         .package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.7.13"),
+        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
     ],
     targets: [
         .executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectKit"]),
         .target(
             name: "SSMConnectKit",
             dependencies: [
+                .product(name: "Yams", package: "Yams"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
                 .product(name: "AWSSSO", package: "aws-sdk-swift"),
                 .product(name: "AWSEC2", package: "aws-sdk-swift"),
                 .product(name: "AWSEC2InstanceConnect", package: "aws-sdk-swift"),
                 .product(name: "AWSSSM", package: "aws-sdk-swift"),
                 .product(name: "AWSSecretsManager", package: "aws-sdk-swift"),
-            ]
+            ],
+            resources: [.copy("Resources/ThirdPartyNotices.txt")]
         ),
         .testTarget(
             name: "SSMConnectKitTests",

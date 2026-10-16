@@ -12,6 +12,22 @@ protocol AuthProviding: Sendable {
     /// Silent path only: reuse a valid cached token or refresh it. Never opens a browser;
     /// throws `AuthError.signInRequired` if interactive sign-in is needed (F-05, F-17).
     func refreshIfNeeded(profile: ConnectionProfile) async throws -> AWSCredentials
+
+    func signIn(profile: ConnectionProfile) async throws -> AWSCredentials
+    func authorizationMetadata(profile: ConnectionProfile) async throws -> AuthorizationMetadata?
+}
+
+struct AuthorizationMetadata: Equatable, Sendable {
+    let accessTokenExpiry: Date
+    let canRefresh: Bool
+}
+
+extension AuthProviding {
+    func signIn(profile: ConnectionProfile) async throws -> AWSCredentials {
+        try await authenticate(profile: profile)
+    }
+
+    func authorizationMetadata(profile: ConnectionProfile) async throws -> AuthorizationMetadata? { nil }
 }
 
 /// Errors surfaced by the authentication layer.

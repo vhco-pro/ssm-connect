@@ -21,10 +21,12 @@ import Observation
     private var task: Task<Void, Never>?
     private var keys: [UUID: SSHKeyMaterial] = [:]
     private var leases: [UUID: URL] = [:]
+    private var leaseExpiries: [UUID: Date] = [:]
 
-    public convenience init(profile: ConnectionProfile) {
+    public convenience init(profile: ConnectionProfile, authorization: AuthorizationSession? = nil) {
         self.init(profile: profile, root: BrowserPrivateFiles.root.deletingLastPathComponent()
-            .appendingPathComponent("RemoteAccess"), configURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh/config"))
+            .appendingPathComponent("RemoteAccess"), configURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh/config"),
+            auth: authorization ?? AWSAuthProvider())
     }
 
     init(profile: ConnectionProfile, root: URL, configURL: URL, auth: AuthProviding = AWSAuthProvider(),
@@ -54,10 +56,11 @@ import Observation
     }
 
     var isActive: Bool { leases[profile.id] != nil }
+    var leaseExpiry: Date? { leaseExpiries[profile.id] }
     var setupInstalled: Bool { setup.isInstalled }
     var setupConfigPath: String { setup.configURL.path }
 
-    func apply(profile: ConnectionProfile) {
+    public func apply(profile: ConnectionProfile) {
         guard self.profile != profile else { return }
         task?.cancel()
         self.profile = profile
@@ -90,6 +93,7 @@ import Observation
     func stop() { task?.cancel(); stop(profileID: profile.id) }
 
     private func stop(profileID: UUID) {
+        leaseExpiries.removeValue(forKey: profileID)
         if let path = leases.removeValue(forKey: profileID) { try? FileManager.default.removeItem(at: path) }
         let key = keys.removeValue(forKey: profileID)
         Task { try? await Task.sleep(for: .seconds(1)); key?.remove() }
@@ -110,23 +114,32 @@ import Observation
         let arguments = try RemoteSSHConfiguration.arguments(alias: RemoteSSHConfiguration.alias(profile.id), folder: profile.remoteDevelopment?.folder)
         let credentials = try await auth.authenticate(profile: profile)
                 try Task.checkCancellation()
-        var instance = try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
-                                                    region: profile.resourceRegion, credentials: credentials)
+        var instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
+                                         region: profile.resourceRegion, credentials: credentials)
+        }
                 try Task.checkCancellation()
         guard !instance.state.isTerminal else { throw EC2Error.instanceTerminated(instanceId: instance.id) }
         if instance.state != .running {
-            try await ec2.startInstance(instanceId: instance.id, region: profile.resourceRegion, credentials: credentials)
-            instance = try await ec2.pollUntilRunning(instanceId: instance.id, region: profile.resourceRegion,
-                credentials: credentials, timeout: .seconds(600), interval: .seconds(5))
+            let instanceID = instance.id
+            instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+                try await ec2.startInstance(instanceId: instanceID, region: profile.resourceRegion, credentials: credentials)
+                return try await ec2.pollUntilRunning(instanceId: instanceID, region: profile.resourceRegion,
+                    credentials: credentials, timeout: .seconds(600), interval: .seconds(5))
+            }
         }
         try Task.checkCancellation()
-        try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion, credentials: credentials,
-                                     timeout: .seconds(120), interval: .seconds(5))
+        try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion, credentials: credentials,
+                                         timeout: .seconds(120), interval: .seconds(5))
+        }
         try Task.checkCancellation()
         let configuredUser = profile.webForwards?.sshUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let user = configuredUser.isEmpty
-            ? try await STSIdentityResolver(presigner: STSPresigner(region: profile.resourceRegion)).resolve(credentials: credentials).username
-            : configuredUser
+        let user = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+            configuredUser.isEmpty
+                ? try await STSIdentityResolver(presigner: STSPresigner(region: profile.resourceRegion)).resolve(credentials: credentials).username
+                : configuredUser
+        }
         try Task.checkCancellation()
         if let path = leases[profile.id] {
             let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: path))
@@ -150,6 +163,7 @@ import Observation
             try setup.writeHost(contents, profileID: profile.id)
             keys[profile.id] = key
             leases[profile.id] = leaseURL
+            leaseExpiries[profile.id] = lease.expiresAt
         }
         try Task.checkCancellation()
         _ = try await RemoteEditorPreflight.run(editor, arguments: arguments)
