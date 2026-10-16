@@ -1,7 +1,8 @@
 # SPECIFICATION: Same Workspace and Native Forwarding After Workstation Replacement
 
-- **Status:** use case raised by the owner on 2026-10-16; source assessment and proposed contract,
-  not implemented, production-approved or accepted as passed.
+- **Status:** use case raised by the owner on 2026-10-16; editor client implementation in PR #31
+  has deterministic tests. Native forwarding, server readiness and real replacement acceptance
+  are not complete; no production change is approved or accepted as passed.
 - **Baselines:** released macOS v0.6.0 and the same-owner rolling-lease fix merged in PR #28.
   Neither provides a complete physical-instance replacement/rebind workflow.
 - **Outcome:** after an authorized OS/root-image replacement, select the same VS Code Recent
@@ -164,3 +165,25 @@ the deleted root or its old processes.
 This source/spec assessment performed no infrastructure edits, plan/apply, replacement, reboot,
 remote service/firewall changes or production validation. The source attachment is investigative
 evidence, not authorization to execute its rollout.
+
+## 7. Accepted Client Policy and Implementation Evidence (2026-10-17)
+
+The owner selected **confirm-new-instance**, rather than automatic adoption, and delegated a
+sensible finite wait budget. Use **30 minutes**, a visible cancellable wait with 15-second
+readiness backoff. Recovery must not start EC2. Missing targets, pending/stopped targets and
+SSM-not-online may wait; ambiguity, denial, invalid configuration and changed user are not
+bootstrapping successes. Approval is tied to the displayed candidate and the current profile;
+re-resolving a third instance requires a new review.
+
+The editor owner now prepares a fresh generation/key and instance-specific host trust under the
+original authority. A proxy may leave only a private, generation/owner-bound status request and
+must fail that SSH attempt; it cannot rebind a channel or authorize a different instance itself.
+Once access is prepared, retry the original workspace so native SSH rereads coherent configuration.
+No Code window is launched by recovery, and no remote data/process migration is asserted.
+
+Executed package evidence: **280 tests in 36 suites passed**, including deterministic explicit
+relaunch, confirmation/reconfirmation, cancellation, terminal errors, SSM readiness, stale helper
+requests, another live owner, Stop/Quit/Restore intent and the measured 60-second lease budget.
+This is client-seam evidence only. All complete REBUILD criteria in section 5 remain **not
+verified** until their required native/server observations exist. Native forwarding still uses
+its earlier three-attempt policy at this checkpoint; it is not represented as complete.

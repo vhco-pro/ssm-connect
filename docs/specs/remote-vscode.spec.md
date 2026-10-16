@@ -609,6 +609,18 @@ closed but may retain intent for the next explicit launch; it does not authorize
 app restart or grant. A replacement target still follows the separate reviewed confirmation/
 trust/readiness policy, not automatic adoption of a changed lease.
 
+### Client Implementation Checkpoint (2026-10-17)
+
+PR #31 implements remembered, noncredential recovery intent with same-profile validation, silent
+authorization, finite readiness waiting and no-window preparation. Stop clears intent, Quit
+retains it while revoking live access, and Restore clears all editor intents. An enabled legacy
+profile without remembered activity does not automatically opt in; use Open once after migration.
+Explicit-open/login-event classification and state-machine behavior have executed unit coverage;
+native Apple-event delivery, the original workspace/buffers/agents and upgrade handoff have not
+been observed with this build. The complete UPGRADE criteria remain **not verified**, not passed
+from transport preparation. See the accepted 30-minute/replacement policy and current evidence in
+[the replacement contract](./logical-workstation-replacement.spec.md#7-accepted-client-policy-and-implementation-evidence-2026-10-17).
+
 ## 17. Physical Workstation Replacement Is a Separate Use Case
 
 Keeping the Mac-side authority stable does not yet make a replaced EC2 instance reconnectable
