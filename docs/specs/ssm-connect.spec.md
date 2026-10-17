@@ -756,3 +756,21 @@ resumption fixture. Both new refresh modes failed before the correction. These a
 regression results; they do not prove the precise cause of the earlier live AWS exception.
 The final combined client suite subsequently passed **295 tests in 36 suites**, including the
 real 35-second initial-readiness regressions and measured 60-second lease-attempt budget.
+
+### 13.6 Final Portable Inventory and Execution Limits (2026-10-17)
+
+The later macOS run passed **296 tests in 36 suites**, including real separate-process
+publication-lock contention. Native channel/Stop results and the remaining release boundaries
+are recorded in [the editor verification](./remote-vscode.spec.md#19-final-process-channel-and-stop-checks-2026-10-17).
+
+The preserved Windows follow-up was revalidated with .NET SDK 10.0.401, VSTest and xUnit v3:
+122 domain/profile tests, 91 workflow/authorization tests and 11 AWS-adapter tests passed,
+224 total with no skips. These portable projects target `net10.0`; no Windows UI, ACL,
+installer or real IdP behavior was inferred from their execution on macOS. No Windows source
+or preexisting edit was changed, merged into the macOS branch or published during this inventory.
+
+No valid macOS code-signing identity was available in the local keychain. Organization membership
+was not independently checked, and no certificate, private key or signing secret was provisioned.
+Trusted distribution therefore retains its separate credential-dependent gate. Passing client
+tests is not authorization to bypass it, lift the infrastructure hold or override the owner's
+explicit local-only publication decision.

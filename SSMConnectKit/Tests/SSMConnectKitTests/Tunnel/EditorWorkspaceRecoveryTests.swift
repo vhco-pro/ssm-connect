@@ -496,6 +496,83 @@ struct EditorWorkspaceRecoveryTests {
         #expect(winner.isActive)
     }
 
+    @Test("UPGRADE-05 and REBUILD-08: A separate process holding the publication lock prevents any new grant")
+    func separateProcessPublicationLockIsExclusive() async throws {
+        let fixture = try WorkspaceRecoveryFixture()
+        defer { fixture.cleanup() }
+        let executable = fixture.root.appendingPathComponent("publication-lock-holder")
+        let diagnostics = fixture.root.appendingPathComponent("compiler-output")
+        try BrowserPrivateFiles.write(Data(), to: diagnostics)
+        let output = try FileHandle(forWritingTo: diagnostics)
+        defer { try? output.close() }
+        let compiler = Process()
+        compiler.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        compiler.arguments = ["clang", "-x", "c", "-", "-o", executable.path]
+        let source = Pipe()
+        compiler.standardInput = source
+        compiler.standardOutput = output
+        compiler.standardError = output
+        let program = """
+        #include <fcntl.h>
+        #include <unistd.h>
+        int main(int argc, char **argv) {
+            if (argc != 3) return 1;
+            int fd = open(argv[1], O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+            if (fd < 0) return 2;
+            struct flock lock = {0};
+            lock.l_type = F_WRLCK;
+            lock.l_whence = SEEK_SET;
+            if (fcntl(fd, F_SETLK, &lock) != 0) return 3;
+            int ready = open(argv[2], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+            if (ready < 0 || write(ready, "1", 1) != 1) return 4;
+            close(ready);
+            char release;
+            if (read(STDIN_FILENO, &release, 1) < 0) return 5;
+            close(fd);
+            return 0;
+        }
+        """
+        try compiler.run()
+        defer { if compiler.isRunning { compiler.terminate() } }
+        try source.fileHandleForWriting.write(contentsOf: Data(program.utf8))
+        try source.fileHandleForWriting.close()
+        let compileDeadline = ContinuousClock.now.advanced(by: .seconds(20))
+        while compiler.isRunning, ContinuousClock.now < compileDeadline { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(!compiler.isRunning, "The owned publication-lock fixture did not compile within its budget.")
+        let compilerMessage = try String(contentsOf: diagnostics, encoding: .utf8)
+        try #require(compiler.terminationStatus == 0, "Could not compile the owned lock fixture: \(compilerMessage)")
+
+        let holder = Process()
+        let release = Pipe()
+        let ready = fixture.root.appendingPathComponent("publication-lock-ready")
+        holder.executableURL = executable
+        holder.arguments = [fixture.root.appendingPathComponent("access/.editor-publication.lock").path, ready.path]
+        holder.standardInput = release
+        holder.standardOutput = FileHandle.nullDevice
+        holder.standardError = FileHandle.nullDevice
+        try holder.run()
+        defer {
+            try? release.fileHandleForWriting.close()
+            if holder.isRunning { holder.terminate() }
+        }
+        try await wait { FileManager.default.fileExists(atPath: ready.path) || !holder.isRunning }
+        try #require(holder.isRunning && FileManager.default.fileExists(atPath: ready.path))
+        let host = fixture.root.appendingPathComponent("access/hosts/config")
+        let originalHost = try Data(contentsOf: host)
+        fixture.machine.open()
+        await fixture.machine.awaitOpening()
+        #expect(fixture.machine.errorMessage == RemoteSSHError.configurationConflict.localizedDescription)
+        #expect(!fixture.machine.isActive && holder.isRunning)
+        #expect(!FileManager.default.fileExists(atPath: fixture.leaseURL.path))
+        #expect(try Data(contentsOf: host) == originalHost)
+
+        try release.fileHandleForWriting.close()
+        try await wait { !holder.isRunning }
+        #expect(holder.terminationStatus == 0)
+        try await fixture.open()
+        #expect(fixture.launches == 1)
+    }
+
     @Test("UPGRADE-06: Ordinary editor cold starts retain their 120-second SSM readiness window")
     func explicitEditorColdStartWaitsPastRecoverySlice() async throws {
         let fixture = try WorkspaceRecoveryFixture()

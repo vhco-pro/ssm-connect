@@ -181,7 +181,8 @@ must fail that SSH attempt; it cannot rebind a channel or authorize a different 
 Once access is prepared, retry the original workspace so native SSH rereads coherent configuration.
 No Code window is launched by recovery, and no remote data/process migration is asserted.
 
-Executed package evidence: **292 tests in 36 suites passed**, including deterministic explicit
+Executed package evidence at the reviewed checkpoint: **292 tests in 36 suites passed**, including
+deterministic explicit
 relaunch, confirmation/reconfirmation, cancellation, terminal errors, SSM readiness, stale helper
 requests, another live owner, Stop/Quit/Restore intent and the measured 60-second lease budget.
 This is client-seam evidence only. All complete REBUILD criteria in section 5 remain **not
@@ -340,3 +341,10 @@ Later [isolated native owner-recovery evidence](./remote-vscode.spec.md#18-execu
 observed fresh-owner access and same-window native reconnection after an explicit retry, followed
 by native edit/save and exact unsaved-buffer preservation in the isolated same-instance fixture.
 It does not upgrade these baseline complete-contract verdicts or establish a physical replacement.
+
+The [final process/channel checks](./remote-vscode.spec.md#19-final-process-channel-and-stop-checks-2026-10-17)
+subsequently passed 296 package tests, real separate-process publication-lock contention,
+concurrent native SSH, fresh authentication after 65 seconds and native Stop/relaunch refusal.
+The earlier review's unexecuted interprocess-contention limitation is therefore closed for that
+specific subcheck. Parallel original Recent windows, physical replacement and complete-contract
+verdicts are not promoted by this narrower evidence.

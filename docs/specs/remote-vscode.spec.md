@@ -682,3 +682,50 @@ not establish the complete UPGRADE criteria: original project/conversation/live-
 installed-upgrade migration, login-item launch behavior, parallel native key-loading and other
 native workflows remain separate. REBUILD criteria and the infrastructure operational hold are
 unchanged. The candidate remains local; these tests do not authorize publication or installation.
+
+## 19. Final Process, Channel and Stop Checks (2026-10-17)
+
+The final local package run passed **296 tests in 36 suites** in 61.215 seconds, including
+the measured 60-second lease-attempt budget and actual 35-second cold-start readiness tests.
+The additional publication regression compiles a small test-only holder with the existing
+Xcode C compiler. That separate process acquires the actual persistent `fcntl` lock. The
+controller must refuse a new grant without changing host configuration or publishing a lease;
+after the holder exits normally, the same controller may open successfully. Both that kernel
+contention case and the suspended-publisher race passed.
+
+The owner-approved isolated native fixture also executed these checks:
+
+| Subcheck | Executed result |
+| --- | --- |
+| Three concurrent native OpenSSH authentications | Each independent process returned its exact unique marker through the candidate helper. |
+| Fresh channel after the initial EIC authorization window | After a measured wait of at least 65 seconds with a held channel open, a new authentication returned its exact marker. No permanent key was installed. |
+| Existing channel and key-generation stability | The held channel echoed the expected response after the wait; the lease bytes, key path, generation and owner were unchanged before Stop. |
+| Native Stop revokes current access | The fixture's actual Stop control removed its lease and terminated the held native channel within the bounded check. |
+| Native Stop refuses future access | A new SSH command exited unsuccessfully with no stdout; its success marker never executed. |
+| Native Stop clears recovery intent | The fixture preference document contained no remembered editor intent after Stop. |
+| Explicit launch does not undo Stop | After Quit and explicit relaunch, the fixture reported inactive access, no editor launch and no recreated lease or Code process. |
+
+These were separate-process native SSH channels against one isolated authority, not two original
+Recent workspaces or a physical workstation replacement. They close the named channel/Stop
+subchecks, not every clause of LEASE, UPGRADE or REBUILD acceptance.
+
+Only the test Code process and test owner were quit. A fixture-only disconnected-window dialog
+was dismissed before normal Quit; no unsaved project buffer was discarded. The exact owned
+marker and its empty remote directories were removed. Test preferences, registration and the
+temporary short-path link were cleaned up. Production SSH configuration fingerprints and the
+installed app, original Code process and preview draft were preserved.
+
+### Remaining Release Boundaries
+
+- Original live agent/conversation continuity and an installed-app upgrade are not certified
+  by disposable-fixture evidence. The earlier original window was closed by its owner.
+- Actual login-item delivery and parallel original-Recent workflows remain separate native
+  acceptance; pure launch-event tests are not a login-item run.
+- A real physical replacement, data/home/UID/GID/services and rollback require the separately
+  approved infrastructure environment. Its operational hold remains in force.
+- Selective integrated-browser routing remains gated on the supported API described in its
+  own specification; the all-remote preview was not substituted.
+- Developer ID signing/notarization requires valid provisioned identities and credentials.
+- Windows portable tests do not establish native Windows UI, ACL, installer or SSO acceptance.
+- The owner's explicit local-only hold remains. No push, merge, release or installed-app upgrade
+  is authorized by these executed checks.
