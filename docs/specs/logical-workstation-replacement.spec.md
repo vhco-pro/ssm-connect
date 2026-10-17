@@ -335,3 +335,7 @@ Result: all three findings closed with high confidence. No new tightly-coupled c
 
 Whole UPGRADE-01…06 and REBUILD-01…11 remain not verified. This closure concerns the three source findings, not native/server acceptance.
 ```
+
+Later [isolated native owner-recovery evidence](./remote-vscode.spec.md#18-executed-isolated-native-owner-recovery-cycle-2026-10-17)
+observed fresh-owner access and same-window native reconnection after an explicit retry.
+It does not upgrade these baseline complete-contract verdicts or establish a physical replacement.

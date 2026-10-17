@@ -126,6 +126,11 @@ permission. One explicit login resumes pending operations in the same selected c
 the profile or stopping the operation cancels that recovery. Established transports remain
 separate from authorization for new operations. Token/role expiry is not an SSO session deadline,
 and successful login is not proof that a disconnected editor reconnected.
+On installed v0.6.0, desktop **Reconnect** does not renew the separate editor lease. After an
+expired editor lease, use **Open VS Code** in its owning app to prepare fresh access, then retry
+the original editor window without closing it. That older action also opens an extra window.
+Rolling renewal in v0.6.1 and the no-window recovery on this development branch are not present
+in an app that is still running v0.6.0.
 Saving a connected profile stages the changes; the established desktop target and its
 authorization remain intact until explicit Reconnect or Disconnect. Automatic wake recovery
 does not silently adopt the new target.

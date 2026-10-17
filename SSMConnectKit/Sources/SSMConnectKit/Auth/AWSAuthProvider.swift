@@ -111,7 +111,8 @@ final class AWSAuthProvider: AuthProviding {
             ))
         } catch {
             if error is CancellationError { throw error }
-            guard Self.isRejectedAuthorization(error) else { throw error }
+            guard Self.isRejectedAuthorization(error) || error is AWSSSOOIDC.InvalidRequestException
+                || (error as? ServiceError)?.typeName == "InvalidRequestException" else { throw error }
             return nil
         }
         guard let newAccessToken = output.accessToken, !newAccessToken.isEmpty else {

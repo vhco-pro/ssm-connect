@@ -631,3 +631,41 @@ instance; existing AC-R6/AC-R9 are not a passed transparent-rebuild contract.
 logical-profile rebinding, saved-user/home state and native forwarding after a real replacement.
 An interruption is allowed; preserving destroyed-VM processes is not required. No changed-instance
 guard, editor host-key check or production operational hold is removed by that specification.
+
+## 18. Executed Isolated Native Owner-Recovery Cycle (2026-10-17)
+
+An owner-approved native fixture exercised the candidate controller, proxy and AppDelegate,
+using a separate bundle identity, synthetic local profile, SSH config/authority, Code user-data
+directory and an owned remote scratch folder. The candidate library sources matched the working
+tree; only the session-local fixture factory and app composition were added. The EC2 seam refused
+all start/stop/poll operations and accepted only an already-running discovered instance. This is
+not an installed-production-app upgrade test or a replacement-instance test.
+
+The first fixture setup exposed a fixture encoding error and an overlong macOS Code IPC socket
+path. They were corrected only in the test harness; neither is reported as a production defect.
+The owner explicitly approved workspace trust in the isolated editor.
+
+Observed native results:
+
+- Explicit initial launch prepared the fixture authority, and native Remote-SSH authenticated
+  through its candidate proxy and reused the existing remote server.
+- Normal Quit of only the fixture app removed its lease and disconnected its owned transport.
+- Explicit relaunch prepared access with a different app PID, key and generation while retaining
+  the exact fixture authority, instance and user. Its persisted result reported
+  `editorLaunched = false`; the same isolated Code process and single window remained.
+- The initial reconnect attempt during the owner outage failed closed. After access was prepared,
+  the fixture window's native Reload Window action retried the connection. Remote-SSH then
+  authenticated again and reused the same running remote server. No replacement Code window was
+  opened by recovery. This is reconnectable access, not silent automatic editor reconnection.
+- Independent SSH channels through the fixture authority read the same owned saved marker before
+  and after relaunch. Native accessibility did not establish rendered marker content or actual
+  file editing/saving, so those UI acceptance checks are not counted as passed.
+- The fixture Code process and app were retired using normal Quit. Only the named test marker
+  and its empty remote directories were removed. Production SSH configuration fingerprints were
+  unchanged; the installed v0.6.0 app, original Code process and preview draft stayed running.
+
+This establishes native isolated transport/owner handoff subchecks for UPGRADE-01, UPGRADE-03
+and UPGRADE-05. It does not establish the complete UPGRADE criteria: original project buffers,
+conversation/live-agent continuity, installed-upgrade migration, login-item launch behavior,
+parallel native key-loading and full native UI recovery remain separate. REBUILD criteria and
+the infrastructure operational hold are unchanged.
