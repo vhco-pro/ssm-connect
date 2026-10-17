@@ -658,14 +658,27 @@ Observed native results:
   authenticated again and reused the same running remote server. No replacement Code window was
   opened by recovery. This is reconnectable access, not silent automatic editor reconnection.
 - Independent SSH channels through the fixture authority read the same owned saved marker before
-  and after relaunch. Native accessibility did not establish rendered marker content or actual
-  file editing/saving, so those UI acceptance checks are not counted as passed.
+  and after relaunch.
+- A subsequent isolated cycle observed the actual marker editor through native accessibility,
+  edited it and used the native File > Save action. An independent remote read verified the exact
+  expected 67-byte file. The earlier accessibility probe stopped above the editor's depth in the
+  UI tree; its missing observation was not an app defect.
+- The subsequent cycle then created a genuinely unsaved native edit. Its marker was observed in
+  the editor but absent from the independently checked remote file. Only the fixture owner was
+  quit/relaunched; the same single Code process/window reauthenticated after native Reload Window
+  and reused the same running server. The before/after unsaved editor buffers compared exactly,
+  and remote bytes remained unchanged until the explicit native Save after reconnection.
+- That final Save wrote the exact expected 103-byte file, including the formerly unsaved marker.
+  The UI accessibility representation adds a trailing paragraph separator, so raw file output
+  was checked against explicit expected bytes rather than assuming AX text is a byte-level file
+  representation. No test result was inferred merely from a successful menu/CLI invocation.
 - The fixture Code process and app were retired using normal Quit. Only the named test marker
   and its empty remote directories were removed. Production SSH configuration fingerprints were
   unchanged; the installed v0.6.0 app, original Code process and preview draft stayed running.
 
 This establishes native isolated transport/owner handoff subchecks for UPGRADE-01, UPGRADE-03
-and UPGRADE-05. It does not establish the complete UPGRADE criteria: original project buffers,
-conversation/live-agent continuity, installed-upgrade migration, login-item launch behavior,
-parallel native key-loading and full native UI recovery remain separate. REBUILD criteria and
-the infrastructure operational hold are unchanged.
+and UPGRADE-05, plus the isolated native editing/unsaved-buffer subcheck of UPGRADE-02. It does
+not establish the complete UPGRADE criteria: original project/conversation/live-agent continuity,
+installed-upgrade migration, login-item launch behavior, parallel native key-loading and other
+native workflows remain separate. REBUILD criteria and the infrastructure operational hold are
+unchanged. The candidate remains local; these tests do not authorize publication or installation.

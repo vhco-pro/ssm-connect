@@ -337,5 +337,6 @@ Whole UPGRADE-01…06 and REBUILD-01…11 remain not verified. This closure conc
 ```
 
 Later [isolated native owner-recovery evidence](./remote-vscode.spec.md#18-executed-isolated-native-owner-recovery-cycle-2026-10-17)
-observed fresh-owner access and same-window native reconnection after an explicit retry.
+observed fresh-owner access and same-window native reconnection after an explicit retry, followed
+by native edit/save and exact unsaved-buffer preservation in the isolated same-instance fixture.
 It does not upgrade these baseline complete-contract verdicts or establish a physical replacement.
