@@ -107,6 +107,37 @@ public struct MenuContentView: View {
                     } catch { showBrowserError(error) }
                 }
                 .disabled(remoteDevelopment.isOpening)
+                Button(remoteDevelopment.isRecovering ? "Recovering Existing Workspace" : "Reconnect Existing Workspace") {
+                    remoteDevelopment.reconnectExistingWorkspace()
+                }
+                .disabled(remoteDevelopment.isOpening || !remoteDevelopment.setupInstalled)
+                if remoteDevelopment.isRecovering {
+                    Button("Cancel Recovery") { remoteDevelopment.cancelRecovery() }
+                }
+                if let replacement = remoteDevelopment.pendingReplacement {
+                    Text("Replacement: \(replacement.previousInstanceID) → \(replacement.instanceID)")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Review Replacement Workstation…") {
+                        if confirm("Reconnect the same workspace to a replacement?",
+                            "Profile: \(replacement.profile.name)\nAccount: \(replacement.profile.accountId), region: \(replacement.profile.resourceRegion)\nPrevious: \(replacement.previousInstanceID)\nNew: \(replacement.instanceID)\nUser: \(replacement.user)\n\nConfirm only an expected replacement. Fresh access will be prepared for the same SSH authority without opening another editor window. Saved home/services readiness is an infrastructure prerequisite, not proven by this prompt.") {
+                            remoteDevelopment.approveReplacement(replacement.id)
+                        }
+                    }
+                    Button("Cancel Replacement Recovery") { remoteDevelopment.cancelRecovery() }
+                }
+                if let message = remoteDevelopment.recoveryMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                Menu("VS Code Browser Routing") {
+                    Text("Selective native domain routing: unsupported by the verified public API")
+                    Text("VS Code's all-remote preview is a separate opt-in; Remote - SSH alone does not route this browser.")
+                    Button("Open VS Code Remote Browser Documentation") {
+                        if let url = URL(string: "https://code.visualstudio.com/docs/debugtest/integrated-browser#_remote-connections-preview") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    Text("No editor proxy or DNS settings were changed.")
+                }
                 if remoteDevelopment.editorLaunched { Text("VS Code launched") }
                 if let expiry = remoteDevelopment.leaseExpiry {
                     Text("Editor lease expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
@@ -145,6 +176,18 @@ public struct MenuContentView: View {
                 Text("Web Forwards: \(webForwards.state.rawValue)")
                 if let error = webForwards.errorMessage {
                     Text(error).font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = webForwards.recoveryMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                if let replacement = webForwards.pendingReplacement {
+                    Button("Review Forwarding Replacement…") {
+                        if confirm("Reconnect native web forwards to a replacement?",
+                            "Profile: \(replacement.profile.name)\nAccount: \(replacement.profile.accountId), region: \(replacement.profile.resourceRegion)\nPrevious: \(replacement.previousInstanceID)\nNew: \(replacement.instanceID)\nUser: \(replacement.user)\n\nConfirm only an expected replacement. Native browser/PAC settings stay unchanged. Saved home/services readiness is not certified; native forwarding retains its existing SSM-bound host-key policy, separate from editor host-key checking.") {
+                            webForwards.approveReplacement(replacement.id)
+                        }
+                    }
+                    Button("Cancel Forwarding Recovery") { webForwards.stop() }
                 }
                 Button(webForwards.state == .on || webForwards.state == .starting ? "Turn Off Web Forwards" : "Turn On Web Forwards") {
                     if webForwards.state == .on || webForwards.state == .starting { webForwards.stop() }

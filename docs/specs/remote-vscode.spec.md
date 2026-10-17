@@ -597,3 +597,37 @@ or extension-host process survived, or that an unattended future upgrade will re
 
 The observed v0.6.0 handover establishes same-workspace reconnectability, not automatic recovery
 or complete agent continuity. UPGRADE-01 through UPGRADE-06 remain unverified as a complete feature.
+
+### Accepted Explicit-Launch Resume Policy
+
+The owner selected `restore-on-explicit-launch` on 2026-10-16. Reopening SSM Connect after
+Quit/upgrade may restore previously active editor access for the same selected logical profile,
+authority and validated target/user. Do not open a VS Code window or start a stopped workstation.
+If SSO requires interaction, expose that action and retain same-context pending recovery.
+Stop Remote Access clears the restore intent. Quit revokes live owned access while the app is
+closed but may retain intent for the next explicit launch; it does not authorize a background
+app restart or grant. A replacement target still follows the separate reviewed confirmation/
+trust/readiness policy, not automatic adoption of a changed lease.
+
+### Client Implementation Checkpoint (2026-10-17)
+
+PR #31 implements remembered, noncredential recovery intent with same-profile validation, silent
+authorization, finite readiness waiting and no-window preparation. Stop clears intent, Quit
+retains it while revoking live access, and Restore clears all editor intents. An enabled legacy
+profile without remembered activity does not automatically opt in; use Open once after migration.
+Explicit-open/login-event classification and state-machine behavior have executed unit coverage;
+native Apple-event delivery, the original workspace/buffers/agents and upgrade handoff have not
+been observed with this build. The complete UPGRADE criteria remain **not verified**, not passed
+from transport preparation. See the accepted 30-minute/replacement policy and current evidence in
+[the replacement contract](./logical-workstation-replacement.spec.md#7-accepted-client-policy-and-implementation-evidence-2026-10-17).
+
+## 17. Physical Workstation Replacement Is a Separate Use Case
+
+Keeping the Mac-side authority stable does not yet make a replaced EC2 instance reconnectable
+from the original Recent workspace. The proxy and same-owner renewal deliberately reject a changed
+instance; existing AC-R6/AC-R9 are not a passed transparent-rebuild contract.
+
+[REBUILD-01 through REBUILD-11](./logical-workstation-replacement.spec.md) specify coordinated
+logical-profile rebinding, saved-user/home state and native forwarding after a real replacement.
+An interruption is allowed; preserving destroyed-VM processes is not required. No changed-instance
+guard, editor host-key check or production operational hold is removed by that specification.

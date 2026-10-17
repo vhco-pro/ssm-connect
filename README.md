@@ -136,11 +136,31 @@ silent renewal five minutes before expiry after verifying the same running works
 Successful renewal keeps the key/generation and existing windows unchanged; it does not launch
 another editor window or start EC2. Transient failures have at most two retries after 30/60 seconds,
 and a failed extension leaves the existing deadline unchanged with an actionable menu result.
-**Renew Editor Access** retries without opening VS Code. If the lease has already expired, use
-**Open VS Code** to establish fresh access, then retry the original workspace.
+**Renew Editor Access** retries without opening VS Code.
 
-Stop, app exit or changed target cancels rolling renewal. This does not yet implement unattended
-app-upgrade/relaunch recovery, or prove preservation of every live agent across a disconnect.
+The development branch also provides **Reconnect Existing Workspace** for previously enabled
+access, including expired leases. It prepares fresh access without opening another editor window;
+retry the original window after the menu reports access prepared. An explicit app relaunch can
+restore remembered access, but a login/background launch or an enabled flag alone cannot.
+Legacy releases need one explicit **Open VS Code** to establish this recovery intent.
+**Stop Remote Access** clears it; Quit revokes live access but retains it for a later explicit launch.
+Recovery waits up to 30 minutes for the workstation/SSM without starting a stopped instance;
+**Cancel Recovery** stops the wait. Changed physical instances require **Review Replacement
+Workstation** before fresh binding under the same SSH authority. Changed account/role/selector/user
+is refused, not treated as a replacement. Sign-in remains an explicit SSO action.
+
+Stop, app exit or changed target cancels rolling renewal and pending preparation. The development
+recovery path is not yet published or native-accepted, and does not certify remote home/services
+or preservation of every live agent across a disconnect.
+
+Native web-forward recovery on this branch also waits up to 30 minutes for expected missing,
+stopped/pending or SSM-not-online targets, with 15-second readiness backoff. A different instance
+requires **Review Forwarding Replacement** before a fresh SSH key/session is authorized; another
+candidate requires another review. **Turn Off Web Forwards** cancels. Ordinary explicit Turn On
+retains its existing cold-start behavior, but automatic recovery never starts EC2.
+Unclassified transport failures keep their separate three-attempt limit; ambiguity and denied
+authorization are not treated as bootstrapping. Editor and native forwarding review their own
+bindings independently because their existing host-trust policies differ.
 The [lease and upgrade contracts](docs/specs/remote-vscode.spec.md#15-automatic-editor-lease-continuation-2026-10-16)
 track the remaining native/overnight acceptance separately.
 
@@ -210,6 +230,12 @@ editor/Remote-SSH extension is a prerequisite error, not a silent install. Nativ
 raw SSH commands across the authorization-expiry boundary and current server installation were
 verified on the management VM. Folder open/save, IntelliSense, project test/debug and user
 responsiveness remain acceptance checks in the opened native editor.
+
+VS Code's integrated browser does not inherit the native browser's PAC configuration.
+Its documented all-remote proxy preview can resolve remote URLs, but is a separate opt-in.
+Selective private-domain routing with public identity-provider traffic kept local remains blocked
+on a supported Browser-session routing API; SSM Connect does not change editor proxy/DNS settings
+or silently substitute direct routing.
 
 ### Platform
 

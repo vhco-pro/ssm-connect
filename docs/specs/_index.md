@@ -2,6 +2,8 @@
 
 | Spec | Date | Description |
 |------|------|-------------|
+| [remote-browser-private-dns](./remote-browser-private-dns.spec.md) | 2026-10-17 | Optional private-domain browsing in the actual VS Code Browser network session; exact-build selective API/fail-closed feasibility gate remains open. |
+| [logical-workstation-replacement](./logical-workstation-replacement.spec.md) | 2026-10-17 | Same Recent workspace and saved-user/native-forward continuity after physical replacement; combined with browser routing, with production execution still held. |
 | [macos-trusted-distribution](./macos-trusted-distribution.spec.md) | 2026-10-16 | Organization Developer ID signing, notarization/stapling, restricted CI credentials and final-artifact release gates; pending enrollment and implementation. |
 | [ssm-connect](./ssm-connect.spec.md) | 2026-10-16 | Released macOS baseline with local auth freshness/recovery follow-up; real expiry, native-UI and Windows acceptance remain open. |
 | [web-forwards](./web-forwards.spec.md) | 2026-10-15 | Shipped SOCKS/PAC and local forwards over SSH-in-SSM, independent from DCV; retained live-test limits are stated. |

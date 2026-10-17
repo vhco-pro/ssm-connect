@@ -3,6 +3,7 @@ import Foundation
 /// In-memory `SSMProviding` test double for higher-level (state-machine) tests (D8).
 final class MockSSMService: SSMProviding, @unchecked Sendable {
     var waitError: Error?
+    var onWaitForSSMOnline: (@Sendable (Duration) async throws -> Void)?
     var startSessionResult: Result<SSMSessionResponse, Error> = .success(.stub())
 
     private(set) var waitCount = 0
@@ -28,6 +29,7 @@ final class MockSSMService: SSMProviding, @unchecked Sendable {
         interval: Duration
     ) async throws {
         waitCount += 1
+        try await onWaitForSSMOnline?(timeout)
         if let waitError { throw waitError }
     }
 
