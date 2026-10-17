@@ -181,7 +181,7 @@ must fail that SSH attempt; it cannot rebind a channel or authorize a different 
 Once access is prepared, retry the original workspace so native SSH rereads coherent configuration.
 No Code window is launched by recovery, and no remote data/process migration is asserted.
 
-Executed package evidence: **288 tests in 36 suites passed**, including deterministic explicit
+Executed package evidence: **292 tests in 36 suites passed**, including deterministic explicit
 relaunch, confirmation/reconfirmation, cancellation, terminal errors, SSM readiness, stale helper
 requests, another live owner, Stop/Quit/Restore intent and the measured 60-second lease budget.
 This is client-seam evidence only. All complete REBUILD criteria in section 5 remain **not
@@ -206,3 +206,132 @@ no credentials, profile access or network work. This verifies native event deliv
 not verify login-item behavior, an installed-app upgrade or original editor/agent preservation.
 The ARM64 macOS Release app and embedded proxy build passed, with ad-hoc bundle verification.
 No candidate app was installed or run against production preferences or an existing workspace.
+
+### Reviewed Corrections
+
+Publication now takes a persistent, private root-wide file lock, then rechecks the exact
+pre-key-generation lease snapshot before writing the host configuration or granting ownership.
+The critical section is synchronous on MainActor; the file lock also serializes cooperating
+app processes and aggregation of configuration for different profiles. A changed or live claim
+is refused. The lock file is not unlinked between publications.
+
+Ordinary explicit editor cold starts retain their 120-second SSM budget; explicit native
+forwarding retains its configured budget, 180 seconds by default. Only recovery uses 30-second
+SSM slices. SDK permission-denial codes are classified separately from expired-token recovery
+and terminate native reconnect without transport retries.
+
+All three independent findings were reproduced before correction. The two ordinary-start
+regressions failed at approximately 30.004 seconds before the fix and passed real 35-second
+waits after it. The full corrected suite passed in 61.057 seconds. A focused independent
+follow-up passed two test functions, including three SDK-denial stage cases, and closed all
+three findings with high confidence. Separate-process lock contention was source-inspected,
+not executed; the ownership regression exercises the suspended-publisher interleaving within
+one process. The native Release build and ad-hoc seal verification also passed.
+
+## 8. Independent Review Record
+
+The following verdicts are preserved verbatim for reviewed baseline
+`823e239fa762296fda75820d9adf7a311d0ea407`. Their line references describe that baseline.
+Corrections above close the three source findings, not the complete native/server criteria.
+The accepted repository specifications were used directly; no Vega onboarding or feature
+artifact was introduced. Source review used a shared read-only checkout, not a structurally
+isolated worktree. Focused independent execution observed 61 test functions in four suites.
+
+```text
+CRITERION: UPGRADE-01 — Upgrade/relaunch with an existing remote workspace open
+VERDICT: not verified
+EVIDENCE: EditorWorkspaceRecoveryTests.swift:91-111 passes for stable fixture identity and fresh no-window preparation; no original-window installed-upgrade execution.
+
+CRITERION: UPGRADE-02 — Existing agent/conversation and unsaved editor state
+VERDICT: not verified
+EVIDENCE: No observed native before/after buffers, conversation or agent checks. Parent event probe cannot establish these; live agent execution remains separately unknown.
+
+CRITERION: UPGRADE-03 — New app PID/key/generation and expired initial EIC authorization
+VERDICT: not verified
+EVIDENCE: Fresh fixture owner/key/generation is covered at EditorWorkspaceRecoveryTests.swift:91-111; realSSHCommandChannelsRefreshAuthorization was skipped and no original-window channel handoff was observed.
+
+CRITERION: UPGRADE-04 — Repeated upgrade/recovery, including preview-to-installed migration
+VERDICT: not verified
+EVIDENCE: Fixture restart/recovery and silent-auth behavior pass at EditorWorkspaceRecoveryTests.swift:140-172,322-335; repeated installed upgrades and checked preview migration were not observed.
+
+CRITERION: UPGRADE-05 — Stop/revocation/intentional Quit or changed target races recovery
+VERDICT: not verified
+EVIDENCE: Cancellation/intent/stale-request fixtures pass at EditorWorkspaceRecoveryTests.swift:113-137,216-237,306-320,373-381,435-451; ownership-publication race in finding 1 remains uncovered, and native races were not exercised.
+
+CRITERION: UPGRADE-06 — Missing authorization, damaged integration or macOS launch refusal
+VERDICT: not verified
+EVIDENCE: Corrupt-intent and silent sign-in refusal fixtures pass at EditorWorkspaceRecoveryTests.swift:275-283,322-335; original-window recovery through damaged integration/launch refusal was not observed.
+
+CRITERION: REBUILD-01 — Replace host A with B under the same logical profile
+VERDICT: not verified
+EVIDENCE: EditorWorkspaceRecoveryTests.swift:140-172 passes for synthetic A-to-B authority retention; no physical replacement/root change or exclusive data-attachment execution.
+
+CRITERION: REBUILD-02 — Select the original VS Code Recent entry
+VERDICT: not verified
+EVIDENCE: No observed original Recent entry against a replacement with real project open/save, terminal, language, debug or stream-local socket workflows.
+
+CRITERION: REBUILD-03 — Persistent user/configuration/server state
+VERDICT: not verified
+EVIDENCE: No replacement execution demonstrating persisted files/tools/server/extensions/conversation data or UID/GID/home ownership. No live-process migration is claimed.
+
+CRITERION: REBUILD-04 — Native domains and local forwards after a long bootstrap
+VERDICT: not verified
+EVIDENCE: WebForwardsStateMachineTests.swift:256-279 passes four synthetic missing-target waits and configuration retention; actual private DNS/HTTP/websocket/named forwards and outage fail-closure were not exercised.
+
+CRITERION: REBUILD-05 — Missing/wrong/unmountable data or UID collision
+VERDICT: not verified
+EVIDENCE: No server negative-readiness/data-preservation execution; client SSM readiness does not establish verified mounts, collision refusal or absence of an empty root-backed home.
+
+CRITERION: REBUILD-06 — Changed target/user, ambiguous matches, owner or host trust
+VERDICT: not verified
+EVIDENCE: Synthetic confirmation/reconfirmation/user/ambiguity checks pass at EditorWorkspaceRecoveryTests.swift:140-195,256-273,399-412 and WebForwardsStateMachineTests.swift:281-313,341-356; findings 1 and 3 remain uncovered and native host-trust handoff was not observed.
+
+CRITERION: REBUILD-07 — Parallel Recent windows and EIC's initial window expires
+VERDICT: not verified
+EVIDENCE: The native SSH authorization probe was skipped. No parallel original-Recent authentication/key-loading/host-binding execution across replacement was observed.
+
+CRITERION: REBUILD-08 — App restart, lease expiry or SSO recovery overlaps replacement
+VERDICT: not verified
+EVIDENCE: Restart, stale-generation and SSO fixture cases pass at EditorWorkspaceRecoveryTests.swift:91-111,285-304,322-371; no combined native overlap execution, and finding 1 exposes an uncovered owner interleaving.
+
+CRITERION: REBUILD-09 — Stop/cancel or interrupted bootstrap
+VERDICT: not verified
+EVIDENCE: Client wait/cancel/deadline fixtures pass at EditorWorkspaceRecoveryTests.swift:197-254 and WebForwardsStateMachineTests.swift:315-339; interrupted server bootstrap and healthy unrelated native transports were not jointly exercised.
+
+CRITERION: REBUILD-10 — Persisted user dashboard/service
+VERDICT: not verified
+EVIDENCE: No actual service restoration, intended-user data/access, cross-user rejection or dependency-ordering execution on a replacement.
+
+CRITERION: REBUILD-11 — Approved rollback to recorded previous image/bootstrap
+VERDICT: not verified
+EVIDENCE: No approved second replacement using a recorded exact prior image/bootstrap with preserved data identity, attachment and ownership.
+
+CRITERION: Explicit-launch fixture restores the same profile/instance/user with a fresh owner/key/generation and no extra editor launch.
+VERDICT: met
+EVIDENCE: explicitLaunchRestoresOnlyTheSameWorkspace, EditorWorkspaceRecoveryTests.swift:91-111; observed focused run.
+
+CRITERION: Stop, disabled/legacy/background launch and changed-role fixture cases do not initiate restoration authorization.
+VERDICT: met
+EVIDENCE: cancelledAndUnapprovedRecoveryNeverStartsAWS and loginAndUnknownAppleEventsDoNotBecomeLaunchConsent, EditorWorkspaceRecoveryTests.swift:113-137; observed focused run.
+
+CRITERION: Synthetic replacement B requires approval; changing to C requires another review; remembered-user mismatch is refused.
+VERDICT: met
+EVIDENCE: EditorWorkspaceRecoveryTests.swift:140-195,399-412 and forwardingReplacementMustBeReviewed at WebForwardsStateMachineTests.swift:281-313; observed focused run.
+
+CRITERION: Tested stopped/absent/SSM-pending recovery paths use bounded cancellable waiting without starting EC2.
+VERDICT: met
+EVIDENCE: EditorWorkspaceRecoveryTests.swift:197-254,383-397 and WebForwardsStateMachineTests.swift:256-279,315-339; observed focused run. This excludes ordinary cold-start budget preservation in finding 2.
+
+CRITERION: Tested stale-generation and malformed/non-private helper requests do not initiate new authorization.
+VERDICT: met
+EVIDENCE: oldGenerationCannotTriggerRecovery and invalidHelperMessageCannotTriggerAWS, EditorWorkspaceRecoveryTests.swift:354-371,414-433; observed focused run. This does not establish atomic owner acquisition.
+```
+
+Complete-contract tally at review: zero met, zero not met, seventeen not verified.
+Five narrower client subchecks were met. Follow-up disposition, verbatim:
+
+```text
+Result: all three findings closed with high confidence. No new tightly-coupled correctness flaw found.
+
+Whole UPGRADE-01…06 and REBUILD-01…11 remain not verified. This closure concerns the three source findings, not native/server acceptance.
+```

@@ -31,12 +31,14 @@ struct FakeSSHKeyGenerator: SSHKeyGenerating {
 final class FakeInstanceConnect: InstanceConnectProviding, @unchecked Sendable {
     let recorder: WebEventRecorder
     var fail = false
+    var error: Error?
     private(set) var publicKeys: [String] = []
     private(set) var user: String?
     init(_ recorder: WebEventRecorder) { self.recorder = recorder }
     func sendPublicKey(instanceId: String, user: String, publicKey: String,
                        region: String, credentials: AWSCredentials) async throws {
         recorder.append("push")
+        if let error { throw error }
         if fail { throw WebForwardsError.keyPushFailed }
         publicKeys.append(publicKey)
         self.user = user
@@ -372,5 +374,57 @@ struct WebForwardsStateMachineTests {
             web.stop()
             await web.awaitStopped()
         }
+    }
+
+    @Test("REBUILD-06: SDK permission denial terminates forwarding recovery without transport retries",
+          arguments: ["ec2", "ssm", "eic"])
+    func forwardingSDKDenialDoesNotRetry(stage: String) async throws {
+        let recorder = WebEventRecorder()
+        let ec2 = LeaseEC2()
+        let ssm = MockSSMService()
+        let tunnel = FakeSSHTunnel(recorder)
+        let connector = FakeInstanceConnect(recorder)
+        let web = recoveryMachine(ec2: ec2, tunnel: tunnel, connector: connector, ssm: ssm)
+        defer { web.stop() }
+        web.connect()
+        try await wait { web.state == .on }
+        let denied = unmodeledAWSServiceError(typeName: stage == "ec2" ? "UnauthorizedOperation" : "AccessDeniedException",
+                                            message: "synthetic permission denial", statusCode: .forbidden)
+        if stage == "ec2" { ec2.onResolve = { throw denied } }
+        if stage == "ssm" { ssm.waitError = denied }
+        if stage == "eic" { connector.error = denied }
+        tunnel.handles[0].simulateDrop()
+        await web.awaitStopped()
+        #expect(web.state == .error && web.errorMessage != nil)
+        #expect(ec2.resolves == 2)
+        #expect(tunnel.handles.count == 1 && connector.publicKeys.count == 1)
+    }
+
+    @Test("REBUILD-09: Ordinary forwarding cold starts retain their configured SSM readiness window")
+    func explicitForwardingColdStartWaitsPastRecoverySlice() async throws {
+        let recorder = WebEventRecorder()
+        let ec2 = MockEC2Service()
+        let ssm = MockSSMService()
+        let tunnel = FakeSSHTunnel(recorder)
+        ssm.onWaitForSSMOnline = { timeout in
+            #expect(timeout == ConnectionTimeouts.default.ssm)
+            try await Task.sleep(for: .seconds(35))
+        }
+        var profile = ConnectionProfile.example
+        profile.webForwards = .init(enabled: true, sshUser: "alice")
+        let web = WebForwardsStateMachine(profile: profile, auth: MockAuthProvider(), ec2: ec2,
+            ssm: ssm, instanceConnect: FakeInstanceConnect(recorder),
+            keyGenerator: FakeSSHKeyGenerator(recorder: recorder), tunnel: tunnel,
+            writePAC: { _, _ in URL(fileURLWithPath: "/tmp/synthetic-recovery.pac") })
+        defer { web.stop() }
+        let started = ContinuousClock.now
+        web.connect()
+        let deadline = started.advanced(by: .seconds(50))
+        while web.state == .starting, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(web.state == .on && web.errorMessage == nil)
+        #expect(ContinuousClock.now - started >= .seconds(35))
+        #expect(ec2.startCount == 1)
+        web.stop()
+        await web.awaitStopped()
     }
 }

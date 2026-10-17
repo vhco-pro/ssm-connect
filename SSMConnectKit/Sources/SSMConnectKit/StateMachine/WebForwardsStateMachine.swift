@@ -257,6 +257,7 @@ public final class WebForwardsStateMachine {
                 }
                 let terminal = error is EC2Error || error is RemoteSSHError || error is AuthError
                     || AWSAuthProvider.isRejectedAuthorization(error)
+                    || AWSAuthProvider.isPermissionDenied(error)
                     || (auth as? AuthorizationSession)?.status == .signInRequired
                 if !reconnecting || attempt >= maxReconnectAttempts || !settings.autoReconnect || terminal || budgetExpired {
                     recoveryMessage = nil
@@ -307,10 +308,11 @@ public final class WebForwardsStateMachine {
             }
         }
         let instanceId = instance.id
+        let ssmBudget = recovering ? min(timeouts.ssm, .seconds(30)) : timeouts.ssm
         try await auth.authorized(profile: profile, credentials: credentials) { credentials in
-            try await withStageTimeout("Web forwards SSM readiness", min(timeouts.ssm, .seconds(30))) { [ssm, timeouts] in
+            try await withStageTimeout("Web forwards SSM readiness", ssmBudget) { [ssm, timeouts] in
                 try await ssm.waitForSSMOnline(instanceId: instanceId, region: profile.resourceRegion,
-                    credentials: credentials, timeout: min(timeouts.ssm, .seconds(30)), interval: timeouts.ssmPollInterval)
+                    credentials: credentials, timeout: ssmBudget, interval: timeouts.ssmPollInterval)
             }
         }
         let configuredUser = configuration.sshUser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

@@ -281,4 +281,9 @@ final class AWSAuthProvider: AuthProviding {
                 "UnauthorizedAccess", "UnauthorizedAccessException", "InvalidGrantException",
                 "InvalidClientException", "UnauthorizedClientException"].contains(name)
     }
+
+    static func isPermissionDenied(_ error: Error) -> Bool {
+        guard let name = (error as? ServiceError)?.typeName else { return false }
+        return ["AccessDenied", "AccessDeniedException", "UnauthorizedOperation", "ForbiddenException"].contains(name)
+    }
 }

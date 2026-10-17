@@ -306,19 +306,7 @@ import Observation
         }
         if leases[profile.id] == nil {
             let previousURL = root.appendingPathComponent(profile.id.uuidString).appendingPathComponent("lease.json")
-            if FileManager.default.fileExists(atPath: previousURL.path) {
-                let attributes = try FileManager.default.attributesOfItem(atPath: previousURL.path)
-                guard attributes[.type] as? FileAttributeType == .typeRegular,
-                      attributes[.ownerAccountID] as? UInt32 == getuid(),
-                      ((attributes[.posixPermissions] as? Int ?? 0) & 0o077) == 0,
-                      (attributes[.size] as? NSNumber)?.intValue ?? Int.max < 128 * 1024 else {
-                    throw RemoteSSHError.configurationConflict
-                }
-                let existing = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: previousURL))
-                guard existing.profile.id == profile.id, !leaseOwnerIsActive(existing) else {
-                    throw RemoteSSHError.configurationConflict
-                }
-            }
+            let previousData = try unownedLeaseData(at: previousURL, profileID: profile.id)
             let key = try await keyGenerator.generate()
             defer {
                 if keys[profile.id]?.privateKeyPath != key.privateKeyPath { key.remove() }
@@ -333,12 +321,17 @@ import Observation
                 ownerLaunchDate: owner.launchDate, ownerBundleID: owner.bundleID, generation: UUID(), expiresAt: now().addingTimeInterval(24 * 60 * 60))
             let contents = try RemoteSSHConfiguration.contents(lease: lease, leasePath: leaseURL.path,
                 helperPath: helperPath(), knownHostsPath: root.appendingPathComponent("known-hosts").path)
-            try setup.writeHost(contents, profileID: profile.id)
-            try writeLease(try JSONEncoder().encode(lease), leaseURL)
-            keys[profile.id] = key
-            leases[profile.id] = leaseURL
-            grantedLeases[profile.id] = lease
-            leaseExpiries[profile.id] = lease.expiresAt
+            try withPublicationLock {
+                guard try unownedLeaseData(at: leaseURL, profileID: profile.id) == previousData else {
+                    throw RemoteSSHError.configurationConflict
+                }
+                try setup.writeHost(contents, profileID: profile.id)
+                try writeLease(try JSONEncoder().encode(lease), leaseURL)
+                keys[profile.id] = key
+                leases[profile.id] = leaseURL
+                grantedLeases[profile.id] = lease
+                leaseExpiries[profile.id] = lease.expiresAt
+            }
         }
         try Task.checkCancellation()
         do { try recoveryStore.remember(EditorRecoveryIntent(profile: profile, instanceID: instance.id, user: user)) }
@@ -352,6 +345,45 @@ import Observation
             try await launchEditor(editor, arguments)
             editorLaunched = true
         }
+    }
+
+    private func unownedLeaseData(at url: URL, profileID: UUID) throws -> Data? {
+        let attributes: [FileAttributeKey: Any]
+        do { attributes = try FileManager.default.attributesOfItem(atPath: url.path) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return nil }
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              attributes[.ownerAccountID] as? UInt32 == getuid(),
+              ((attributes[.posixPermissions] as? Int ?? 0) & 0o077) == 0,
+              (attributes[.size] as? NSNumber)?.intValue ?? Int.max < 128 * 1024 else {
+            throw RemoteSSHError.configurationConflict
+        }
+        let data = try Data(contentsOf: url)
+        guard data.count < 128 * 1024 else { throw RemoteSSHError.configurationConflict }
+        let existing = try JSONDecoder().decode(RemoteSSHLease.self, from: data)
+        guard existing.profile.id == profileID, !leaseOwnerIsActive(existing) else {
+            throw RemoteSSHError.configurationConflict
+        }
+        return data
+    }
+
+    private func withPublicationLock(_ publish: () throws -> Void) throws {
+        try BrowserPrivateFiles.directory(root)
+        let descriptor = Darwin.open(root.appendingPathComponent(".editor-publication.lock").path,
+                              O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { throw RemoteSSHError.configurationConflict }
+        defer { close(descriptor) }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0, metadata.st_uid == getuid(),
+              metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              metadata.st_mode & 0o077 == 0 else { throw RemoteSSHError.configurationConflict }
+        var lock = flock(l_start: 0, l_len: 0, l_pid: 0, l_type: Int16(F_WRLCK), l_whence: Int16(SEEK_SET))
+        guard fcntl(descriptor, F_SETLK, &lock) == 0 else { throw RemoteSSHError.configurationConflict }
+        defer {
+            lock.l_type = Int16(F_UNLCK)
+            _ = fcntl(descriptor, F_SETLK, &lock)
+        }
+        // MainActor serializes local publishers; this persistent lock also excludes other app processes.
+        try publish()
     }
 
     private func readyInstance(profile: ConnectionProfile, credentials: AWSCredentials, intent: EditorRecoveryIntent?,
@@ -381,10 +413,11 @@ import Observation
                     }
                 }
                 let instanceID = instance.id
+                let ssmBudget: Duration = recovering ? .seconds(30) : .seconds(120)
                 try await auth.authorized(profile: profile, credentials: credentials) { credentials in
-                    try await withStageTimeout("Editor SSM readiness", .seconds(30)) { [ssm] in
+                    try await withStageTimeout("Editor SSM readiness", ssmBudget) { [ssm] in
                         try await ssm.waitForSSMOnline(instanceId: instanceID, region: profile.resourceRegion,
-                            credentials: credentials, timeout: .seconds(30), interval: .seconds(5))
+                            credentials: credentials, timeout: ssmBudget, interval: .seconds(5))
                     }
                 }
                 return instance

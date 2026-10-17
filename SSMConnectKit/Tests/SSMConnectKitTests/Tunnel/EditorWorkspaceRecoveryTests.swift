@@ -3,6 +3,25 @@ import Foundation
 import Testing
 @testable import SSMConnectKit
 
+private actor KeyGenerationGate {
+    private(set) var entered = false
+    private var released = false
+    func release() { released = true }
+    func wait() async throws {
+        entered = true
+        while !released { try await Task.sleep(for: .milliseconds(10)) }
+    }
+}
+
+private struct GatedRecoveryKeyGenerator: SSHKeyGenerating {
+    let base: LeaseKeyGenerator
+    let gate: KeyGenerationGate
+    func generate() async throws -> SSHKeyMaterial {
+        try await gate.wait()
+        return try await base.generate()
+    }
+}
+
 @MainActor
 private final class WorkspaceRecoveryFixture {
     let root: URL
@@ -38,10 +57,10 @@ private final class WorkspaceRecoveryFixture {
     var leaseURL: URL { root.appendingPathComponent("access/\(profile.id.uuidString)/lease.json") }
     func lease() throws -> RemoteSSHLease { try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL)) }
 
-    func makeMachine() -> RemoteDevelopmentStateMachine {
+    func makeMachine(keyGenerator: (any SSHKeyGenerating)? = nil) -> RemoteDevelopmentStateMachine {
         RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("access"),
             configURL: root.appendingPathComponent("user/config"), auth: auth, ec2: ec2, ssm: ssm,
-            keyGenerator: LeaseKeyGenerator(root: root.appendingPathComponent("keys"), recorder: recorder),
+            keyGenerator: keyGenerator ?? LeaseKeyGenerator(root: root.appendingPathComponent("keys"), recorder: recorder),
             helperPath: { "/usr/bin/true" }, pluginPath: { "/usr/bin/true" },
             editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
             ownerIdentity: { [weak self] in self?.owner }, now: { [clock] in clock.date },
@@ -447,5 +466,50 @@ struct EditorWorkspaceRecoveryTests {
         #expect(!fixture.machine.isActive)
         #expect(try fixture.lease() == other)
         #expect(fixture.machine.errorMessage == RemoteSSHError.configurationConflict.localizedDescription)
+    }
+
+    @Test("UPGRADE-05 and REBUILD-08: A delayed publisher cannot overwrite a competing owner's new grant")
+    func latePublisherCannotOverwriteAnotherOwner() async throws {
+        let fixture = try WorkspaceRecoveryFixture()
+        let gate = KeyGenerationGate()
+        fixture.machine = fixture.makeMachine(keyGenerator: GatedRecoveryKeyGenerator(
+            base: LeaseKeyGenerator(root: fixture.root.appendingPathComponent("delayed-keys"), recorder: fixture.recorder),
+            gate: gate))
+        let winner = fixture.makeMachine()
+        defer { fixture.machine.terminateForQuit(); winner.terminateForQuit(); fixture.cleanup() }
+        fixture.machine.open()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !(await gate.entered), ContinuousClock.now < deadline { await Task.yield() }
+        try #require(await gate.entered)
+        winner.open()
+        await winner.awaitOpening()
+        try #require(winner.isActive && winner.errorMessage == nil)
+        let winningLease = try fixture.lease()
+        let hostURL = fixture.root.appendingPathComponent("access/hosts/config")
+        let winningConfig = try Data(contentsOf: hostURL)
+        await gate.release()
+        await fixture.machine.awaitOpening()
+        #expect(!fixture.machine.isActive)
+        #expect(fixture.machine.errorMessage == RemoteSSHError.configurationConflict.localizedDescription)
+        #expect(try fixture.lease() == winningLease)
+        #expect(try Data(contentsOf: hostURL) == winningConfig)
+        #expect(winner.isActive)
+    }
+
+    @Test("UPGRADE-06: Ordinary editor cold starts retain their 120-second SSM readiness window")
+    func explicitEditorColdStartWaitsPastRecoverySlice() async throws {
+        let fixture = try WorkspaceRecoveryFixture()
+        defer { fixture.cleanup() }
+        fixture.ec2.instance = .stub(state: .stopped)
+        fixture.ssm.onWaitForSSMOnline = { timeout in
+            #expect(timeout == .seconds(120))
+            try await Task.sleep(for: .seconds(35))
+        }
+        let started = ContinuousClock.now
+        fixture.machine.open()
+        await fixture.machine.awaitOpening()
+        #expect(fixture.machine.errorMessage == nil && fixture.machine.isActive)
+        #expect(ContinuousClock.now - started >= .seconds(35))
+        #expect(fixture.ec2.starts == 1)
     }
 }
