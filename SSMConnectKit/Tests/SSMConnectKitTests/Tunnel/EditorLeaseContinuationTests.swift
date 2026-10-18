@@ -3,7 +3,7 @@ import Testing
 @testable import SSMConnectKit
 
 @MainActor
-private final class LeaseClock {
+final class LeaseClock {
     var date = Date()
     func advance(_ seconds: TimeInterval) { date.addTimeInterval(seconds) }
 }
@@ -35,7 +35,7 @@ private actor LeaseSleeper {
 }
 
 @MainActor
-private final class LeaseEC2: EC2Providing {
+final class LeaseEC2: EC2Providing {
     var instance = EC2Instance.stub(state: .running)
     var onResolve: (() async throws -> Void)?
     private(set) var resolves = 0
@@ -52,7 +52,7 @@ private final class LeaseEC2: EC2Providing {
                           timeout: Duration, interval: Duration) async throws -> EC2Instance { instance }
 }
 
-private struct LeaseKeyGenerator: SSHKeyGenerating {
+struct LeaseKeyGenerator: SSHKeyGenerating {
     let root: URL
     let recorder: WebEventRecorder
     func generate() async throws -> SSHKeyMaterial {

@@ -163,11 +163,13 @@ import Testing
         profile.webForwards = .init(enabled: true, sshUser: "example")
         let recorder = WebEventRecorder()
         var now = Date()
+        let ownerLaunchDate = now
         let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
             configURL: root.appendingPathComponent("user/config"), auth: MockAuthProvider(),
             ec2: MockEC2Service(), ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
-            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
-            ownerIdentity: { (12345, Date(), "test-owner") }, now: { now })
+            helperPath: { "/usr/bin/true" }, pluginPath: { "/usr/bin/true" },
+            editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
+            ownerIdentity: { (12345, ownerLaunchDate, "test-owner") }, now: { now })
         defer { machine.stop() }
         try machine.installSetup(consent: true)
         machine.open()

@@ -4,6 +4,7 @@ import Foundation
 
 enum RemoteSSHError: LocalizedError {
     case invalidLease, unavailable, targetChanged, invalidFolder, configurationConflict
+    case invalidRecoveryState, replacementApprovalRequired, workstationNotReady
     var errorDescription: String? {
         switch self {
         case .invalidLease: "Remote access is off or its owned session expired. Open VS Code from SSM Connect again."
@@ -11,6 +12,9 @@ enum RemoteSSHError: LocalizedError {
         case .targetChanged: "The workstation identity changed. Reopen remote access from SSM Connect; no direct SSH fallback was attempted."
         case .invalidFolder: "Use an absolute remote folder path, or leave it blank to choose a folder in VS Code."
         case .configurationConflict: "The SSH setup changed independently. Nothing was overwritten; review the existing configuration."
+        case .invalidRecoveryState: "Saved editor recovery state is invalid. Existing access was not replaced; review the profile and recovery settings."
+        case .replacementApprovalRequired: "A different workstation instance requires confirmation in SSM Connect before this workspace can reconnect."
+        case .workstationNotReady: "The workstation is not ready. Recovery can wait without starting or replacing it."
         }
     }
 }
@@ -28,10 +32,7 @@ struct RemoteSSHLease: Codable, Equatable, Sendable {
     let expiresAt: Date
 
     func canReuse(profile: ConnectionProfile, instanceID: String, user: String, now: Date = Date()) throws -> Bool {
-        guard self.profile.id == profile.id, self.profile.accountId == profile.accountId,
-              self.profile.resourceRegion == profile.resourceRegion, self.profile.ssoStartUrl == profile.ssoStartUrl,
-              self.profile.ssoRegion == profile.ssoRegion, self.profile.roleName == profile.roleName,
-              self.profile.instanceTagKey == profile.instanceTagKey, self.profile.instanceTagValue == profile.instanceTagValue,
+        guard self.profile.hasSameWorkstation(as: profile),
               self.instanceID == instanceID, self.user == user else { throw RemoteSSHError.targetChanged }
         return expiresAt > now
     }
@@ -52,7 +53,11 @@ struct RemoteSSHLease: Codable, Equatable, Sendable {
     }
 
     var ownerIsActive: Bool {
-        guard expiresAt > Date(), let application = NSRunningApplication(processIdentifier: ownerPID),
+        expiresAt > Date() && ownerProcessIsActive
+    }
+
+    var ownerProcessIsActive: Bool {
+        guard let application = NSRunningApplication(processIdentifier: ownerPID),
               !application.isTerminated, application.bundleIdentifier == ownerBundleID,
               application.launchDate == ownerLaunchDate else { return false }
         return true
@@ -145,8 +150,24 @@ public enum RemoteSSHProxyRuntime {
         let data = try Data(contentsOf: URL(fileURLWithPath: configurationPath))
         guard data.count < 128 * 1024 else { throw RemoteSSHError.invalidLease }
         let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: data)
-        try lease.validate(path: configurationPath, ownerActive: lease.ownerIsActive)
-        let session = try await authorizeChannel(lease)
+        try lease.validate(path: configurationPath, ownerActive: lease.ownerProcessIsActive)
+        let leaseURL = URL(fileURLWithPath: configurationPath)
+        guard lease.expiresAt > Date() else {
+            try EditorRecoveryRequest(lease: lease, reason: .expired).write(for: leaseURL)
+            throw RemoteSSHError.invalidLease
+        }
+        let session: SSMSessionResponse
+        do { session = try await authorizeChannel(lease) }
+        catch {
+            if let remote = error as? RemoteSSHError, case .targetChanged = remote {
+                try EditorRecoveryRequest(lease: lease, reason: .targetChanged).write(for: leaseURL)
+            } else if let ec2 = error as? EC2Error, case .noMatchingInstance = ec2 {
+                try EditorRecoveryRequest(lease: lease, reason: .targetChanged).write(for: leaseURL)
+            } else if AWSAuthProvider.isRejectedAuthorization(error) {
+                try EditorRecoveryRequest(lease: lease, reason: .authorization).write(for: leaseURL)
+            }
+            throw error
+        }
         guard current(lease, path: configurationPath) else { throw RemoteSSHError.invalidLease }
         let request: [String: Any] = ["Target": lease.instanceID, "DocumentName": SSMService.sshDocument,
                                       "Parameters": ["portNumber": ["22"]]]
@@ -192,6 +213,6 @@ public enum RemoteSSHProxyRuntime {
     }
 
     public static var failureMessage: String {
-        "SSM Connect could not authorize this SSH channel. Reopen remote access from the app and check AWS sign-in.\n"
+        "SSM Connect could not authorize this SSH channel. Check its menu for sign-in or replacement review, then use Reconnect Existing Workspace and retry the original window.\n"
     }
 }

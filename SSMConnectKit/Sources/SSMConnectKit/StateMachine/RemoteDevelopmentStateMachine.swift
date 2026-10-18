@@ -10,6 +10,9 @@ import Observation
     private(set) var editorLaunched = false
     private(set) var leaseMessage: String?
     private(set) var isRenewingLease = false
+    private(set) var recoveryMessage: String?
+    private(set) var pendingReplacement: EditorReplacement?
+    private(set) var isRecovering = false
     private let auth: AuthProviding
     private let ec2: EC2Providing
     private let ssm: SSMProviding
@@ -21,14 +24,22 @@ import Observation
     private let editorPath: () -> String?
     private let editorPreflight: (String) async throws -> Void
     private let ownerIdentity: () -> (pid: Int32, launchDate: Date, bundleID: String)?
+    private let leaseOwnerIsActive: (RemoteSSHLease) -> Bool
     private let now: () -> Date
     private let renewalSleep: @Sendable (Duration) async throws -> Void
     private let writeLease: (Data, URL) throws -> Void
     private let launchEditor: (String, [String]) async throws -> Void
+    private let recoveryStore: EditorRecoveryStore
+    private let recoverySleep: @Sendable (Duration) async throws -> Void
+    private let recoveryBudget: Duration
     private var task: Task<Void, Never>?
     private var continuationTask: Task<Void, Never>?
     private var renewalTask: Task<Void, Never>?
     private var renewalGeneration = 0
+    private var preparationGeneration = 0
+    private var recoveryMonitor: Task<Void, Never>?
+    private var lastRecoveryRequest: UUID?
+    private var recoverySuspended = false
     private var keys: [UUID: SSHKeyMaterial] = [:]
     private var leases: [UUID: URL] = [:]
     private var grantedLeases: [UUID: RemoteSSHLease] = [:]
@@ -37,7 +48,7 @@ import Observation
     public convenience init(profile: ConnectionProfile, authorization: AuthorizationSession? = nil) {
         self.init(profile: profile, root: BrowserPrivateFiles.root.deletingLastPathComponent()
             .appendingPathComponent("RemoteAccess"), configURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh/config"),
-            auth: authorization ?? AWSAuthProvider())
+            auth: authorization ?? AWSAuthProvider(), resumeStore: UserDefaults.standard)
     }
 
     init(profile: ConnectionProfile, root: URL, configURL: URL, auth: AuthProviding = AWSAuthProvider(),
@@ -58,7 +69,10 @@ import Observation
          writeLease: @escaping (Data, URL) throws -> Void = { try BrowserPrivateFiles.write($0, to: $1) },
          launchEditor: @escaping (String, [String]) async throws -> Void = {
              _ = try await RemoteEditorPreflight.run($0, arguments: $1)
-         }) {
+         }, resumeStore: (any KeyValueStoring)? = nil,
+         recoverySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         recoveryBudget: Duration = .seconds(30 * 60),
+         leaseOwnerIsActive: @escaping (RemoteSSHLease) -> Bool = { $0.ownerProcessIsActive }) {
         self.profile = profile
         self.root = root
         self.setup = RemoteSSHSetup(root: root, configURL: configURL)
@@ -71,11 +85,16 @@ import Observation
         self.editorPath = editorPath
         self.editorPreflight = editorPreflight
         self.ownerIdentity = ownerIdentity
+        self.leaseOwnerIsActive = leaseOwnerIsActive
         self.now = now
         self.renewalSleep = renewalSleep
         self.writeLease = writeLease
         self.launchEditor = launchEditor
+        self.recoveryStore = EditorRecoveryStore(store: resumeStore ?? InMemoryKeyValueStore())
+        self.recoverySleep = recoverySleep
+        self.recoveryBudget = recoveryBudget
         AppQuitHandler.shared.register { [weak self] in self?.terminateForQuit() }
+        AppLaunchHandler.shared.register { [weak self] explicit in self?.onLaunch(explicit: explicit) }
     }
 
     var isActive: Bool { leases[profile.id] != nil }
@@ -85,8 +104,18 @@ import Observation
 
     public func apply(profile: ConnectionProfile) {
         guard self.profile != profile else { return }
+        let sameWorkstation = self.profile.hasSameWorkstation(as: profile)
         task?.cancel()
+        preparationGeneration += 1
+        task = nil
+        isOpening = false
+        isRecovering = false
         cancelContinuation()
+        recoveryMonitor?.cancel()
+        recoveryMonitor = nil
+        pendingReplacement = nil
+        recoveryMessage = nil
+        recoverySuspended = !sameWorkstation
         self.profile = profile
         errorMessage = nil
         editorLaunched = false
@@ -97,6 +126,7 @@ import Observation
                 guard try lease.canReuse(profile: profile, instanceID: lease.instanceID, user: lease.user, now: now()),
                       configuredUser(lease.profile) == configuredUser(profile) else { throw RemoteSSHError.targetChanged }
                 scheduleContinuation()
+                startRecoveryMonitor()
             } catch {
                 leaseMessage = "Editor access was not renewed: \(error.localizedDescription)"
             }
@@ -107,32 +137,99 @@ import Observation
 
     func restoreSetup() throws {
         guard setup.isInstalled else { throw RemoteSSHError.configurationConflict }
+        recoveryStore.forgetAll()
         stopAll()
         try setup.restore()
     }
 
-    func open() {
+    public func onLaunch(explicit: Bool) {
+        guard explicit, !isActive, task == nil, profile.remoteDevelopment?.enabled == true else { return }
+        do {
+            guard let intent = try recoveryStore.intent(for: profile.id) else { return }
+            guard intent.profile.hasSameWorkstation(as: profile) else { throw RemoteSSHError.targetChanged }
+            beginPreparation(recovering: true)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func open() { beginPreparation(recovering: false) }
+
+    func reconnectExistingWorkspace() {
+        do {
+            guard try recoveryStore.intent(for: profile.id) != nil else { throw RemoteSSHError.invalidRecoveryState }
+            beginPreparation(recovering: true)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func approveReplacement(_ id: UUID) {
+        guard let candidate = pendingReplacement, candidate.id == id,
+              candidate.profile.hasSameWorkstation(as: profile) else {
+            errorMessage = RemoteSSHError.targetChanged.localizedDescription
+            return
+        }
+        beginPreparation(recovering: true, approvedInstanceID: candidate.instanceID)
+    }
+
+    func cancelRecovery() {
+        recoverySuspended = true
+        preparationGeneration += 1
+        task?.cancel()
+        task = nil
+        pendingReplacement = nil
+        isOpening = false
+        isRecovering = false
+        recoveryMessage = "Editor recovery cancelled. Use Reconnect Existing Workspace to retry."
+    }
+
+    private func beginPreparation(recovering: Bool, approvedInstanceID: String? = nil) {
         guard task == nil else { return }
+        recoverySuspended = false
         cancelContinuation()
         leaseMessage = nil
+        pendingReplacement = nil
+        recoveryMessage = recovering ? "Restoring access for the original workspace; no editor window will be opened." : nil
         isOpening = true
+        isRecovering = recovering
         errorMessage = nil
         editorLaunched = false
         let selected = profile
+        preparationGeneration += 1
+        let generation = preparationGeneration
         task = Task {
             defer {
-                self.isOpening = false
-                self.task = nil
-                if !Task.isCancelled, self.profile == selected { self.scheduleContinuation() }
+                if self.preparationGeneration == generation {
+                    self.isOpening = false
+                    self.isRecovering = false
+                    self.task = nil
+                    if !Task.isCancelled, self.profile == selected {
+                        self.scheduleContinuation()
+                        self.startRecoveryMonitor()
+                    }
+                }
             }
-            do { try await self.prepareAndLaunch() }
-            catch { if !Task.isCancelled { self.errorMessage = error.localizedDescription } }
+            do {
+                if recovering {
+                    try await withStageTimeout("Existing workspace recovery", self.recoveryBudget) {
+                        try await self.prepareAndLaunch(recovering: true, approvedInstanceID: approvedInstanceID)
+                    }
+                } else {
+                    try await self.prepareAndLaunch(recovering: false)
+                }
+            } catch {
+                if !Task.isCancelled, self.preparationGeneration == generation {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
     func awaitOpening() async { await task?.value }
 
-    func stop() { task?.cancel(); stop(profileID: profile.id) }
+    func stop() {
+        cancelRecovery()
+        do { try recoveryStore.forget(profile.id) }
+        catch { errorMessage = error.localizedDescription }
+        stop(profileID: profile.id)
+    }
 
     func terminateForQuit() { stopAll() }
 
@@ -140,49 +237,55 @@ import Observation
         if profileID == profile.id {
             cancelContinuation()
             leaseMessage = nil
+            recoveryMonitor?.cancel()
+            recoveryMonitor = nil
         }
         leaseExpiries.removeValue(forKey: profileID)
-        grantedLeases.removeValue(forKey: profileID)
-        if let path = leases.removeValue(forKey: profileID) { try? FileManager.default.removeItem(at: path) }
+        let granted = grantedLeases.removeValue(forKey: profileID)
+        if let path = leases.removeValue(forKey: profileID), FileManager.default.fileExists(atPath: path.path) {
+            do {
+                guard let granted,
+                      try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: path)) == granted else {
+                    throw RemoteSSHError.configurationConflict
+                }
+                try FileManager.default.removeItem(at: path)
+            } catch { errorMessage = error.localizedDescription }
+        }
         let key = keys.removeValue(forKey: profileID)
         Task { try? await Task.sleep(for: .seconds(1)); key?.remove() }
     }
 
     private func stopAll() {
         task?.cancel()
+        preparationGeneration += 1
+        task = nil
+        isOpening = false
+        isRecovering = false
+        recoverySuspended = true
+        recoveryMonitor?.cancel()
+        recoveryMonitor = nil
+        pendingReplacement = nil
         cancelContinuation()
         for id in Array(leases.keys) { stop(profileID: id) }
     }
 
-    private func prepareAndLaunch() async throws {
+    private func prepareAndLaunch(recovering: Bool, approvedInstanceID: String? = nil) async throws {
         let profile = profile
         guard profile.isConfigured, profile.remoteDevelopment?.enabled == true, setup.isInstalled,
               let editor = editorPath(), FileManager.default.isExecutableFile(atPath: editor),
               FileManager.default.isExecutableFile(atPath: helperPath()) else { throw RemoteSSHError.unavailable }
-                try await editorPreflight(editor)
-                try Task.checkCancellation()
-        let arguments = try RemoteSSHConfiguration.arguments(alias: RemoteSSHConfiguration.alias(profile.id), folder: profile.remoteDevelopment?.folder)
-        let credentials = try await auth.authenticate(profile: profile)
-                try Task.checkCancellation()
-        var instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
-            try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
-                                         region: profile.resourceRegion, credentials: credentials)
-        }
-                try Task.checkCancellation()
-        guard !instance.state.isTerminal else { throw EC2Error.instanceTerminated(instanceId: instance.id) }
-        if instance.state != .running {
-            let instanceID = instance.id
-            instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
-                try await ec2.startInstance(instanceId: instanceID, region: profile.resourceRegion, credentials: credentials)
-                return try await ec2.pollUntilRunning(instanceId: instanceID, region: profile.resourceRegion,
-                    credentials: credentials, timeout: .seconds(600), interval: .seconds(5))
-            }
-        }
+        try await editorPreflight(editor)
         try Task.checkCancellation()
-        try await auth.authorized(profile: profile, credentials: credentials) { credentials in
-            try await ssm.waitForSSMOnline(instanceId: instance.id, region: profile.resourceRegion, credentials: credentials,
-                                         timeout: .seconds(120), interval: .seconds(5))
+        let arguments = try RemoteSSHConfiguration.arguments(alias: RemoteSSHConfiguration.alias(profile.id), folder: profile.remoteDevelopment?.folder)
+        let intent = try recoveryStore.intent(for: profile.id)
+        if let intent {
+            guard intent.profile.hasSameWorkstation(as: profile) else { throw RemoteSSHError.targetChanged }
         }
+        if recovering, intent == nil { throw RemoteSSHError.invalidRecoveryState }
+        let credentials = try await (recovering ? auth.refreshIfNeeded(profile: profile) : auth.authenticate(profile: profile))
+        try Task.checkCancellation()
+        let instance = try await readyInstance(profile: profile, credentials: credentials, intent: intent,
+                                             recovering: recovering, approvedInstanceID: approvedInstanceID)
         try Task.checkCancellation()
         let configuredUser = configuredUser(profile)
         let user = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
@@ -191,15 +294,23 @@ import Observation
                 : configuredUser
         }
         try Task.checkCancellation()
-        if let path = leases[profile.id] {
-            let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: path))
-            guard lease == grantedLeases[profile.id] else { throw RemoteSSHError.configurationConflict }
-            if try !lease.canReuse(profile: profile, instanceID: instance.id, user: user, now: now()) {
+        if let intent, intent.user != user { throw RemoteSSHError.targetChanged }
+        if leases[profile.id] != nil {
+            let lease = try readOwnedLease(allowExpired: true)
+            if lease.instanceID != instance.id {
+                guard approvedInstanceID == instance.id, lease.user == user else { throw RemoteSSHError.targetChanged }
+                stop(profileID: profile.id)
+            } else if try !lease.canReuse(profile: profile, instanceID: instance.id, user: user, now: now()) {
                 stop(profileID: profile.id)
             }
         }
         if leases[profile.id] == nil {
+            let previousURL = root.appendingPathComponent(profile.id.uuidString).appendingPathComponent("lease.json")
+            let previousData = try unownedLeaseData(at: previousURL, profileID: profile.id)
             let key = try await keyGenerator.generate()
+            defer {
+                if keys[profile.id]?.privateKeyPath != key.privateKeyPath { key.remove() }
+            }
             try Task.checkCancellation()
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: key.privateKeyPath + ".pub")
             let directory = root.appendingPathComponent(profile.id.uuidString, isDirectory: true)
@@ -208,18 +319,147 @@ import Observation
             let lease = RemoteSSHLease(profile: profile, instanceID: instance.id, user: user, keyPath: key.privateKeyPath,
                 pluginPath: pluginPath() ?? "", ownerPID: owner.pid,
                 ownerLaunchDate: owner.launchDate, ownerBundleID: owner.bundleID, generation: UUID(), expiresAt: now().addingTimeInterval(24 * 60 * 60))
-            try writeLease(try JSONEncoder().encode(lease), leaseURL)
             let contents = try RemoteSSHConfiguration.contents(lease: lease, leasePath: leaseURL.path,
                 helperPath: helperPath(), knownHostsPath: root.appendingPathComponent("known-hosts").path)
-            try setup.writeHost(contents, profileID: profile.id)
-            keys[profile.id] = key
-            leases[profile.id] = leaseURL
-            grantedLeases[profile.id] = lease
-            leaseExpiries[profile.id] = lease.expiresAt
+            try withPublicationLock {
+                guard try unownedLeaseData(at: leaseURL, profileID: profile.id) == previousData else {
+                    throw RemoteSSHError.configurationConflict
+                }
+                try setup.writeHost(contents, profileID: profile.id)
+                try writeLease(try JSONEncoder().encode(lease), leaseURL)
+                keys[profile.id] = key
+                leases[profile.id] = leaseURL
+                grantedLeases[profile.id] = lease
+                leaseExpiries[profile.id] = lease.expiresAt
+            }
         }
         try Task.checkCancellation()
-        try await launchEditor(editor, arguments)
-        editorLaunched = true
+        do { try recoveryStore.remember(EditorRecoveryIntent(profile: profile, instanceID: instance.id, user: user)) }
+        catch {
+            if recovering { stop(profileID: profile.id) }
+            throw error
+        }
+        if recovering {
+            recoveryMessage = "Access prepared for the same workspace. Retry its existing connection; saved server data and live agents are not certified by this transport check."
+        } else {
+            try await launchEditor(editor, arguments)
+            editorLaunched = true
+        }
+    }
+
+    private func unownedLeaseData(at url: URL, profileID: UUID) throws -> Data? {
+        let attributes: [FileAttributeKey: Any]
+        do { attributes = try FileManager.default.attributesOfItem(atPath: url.path) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return nil }
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              attributes[.ownerAccountID] as? UInt32 == getuid(),
+              ((attributes[.posixPermissions] as? Int ?? 0) & 0o077) == 0,
+              (attributes[.size] as? NSNumber)?.intValue ?? Int.max < 128 * 1024 else {
+            throw RemoteSSHError.configurationConflict
+        }
+        let data = try Data(contentsOf: url)
+        guard data.count < 128 * 1024 else { throw RemoteSSHError.configurationConflict }
+        let existing = try JSONDecoder().decode(RemoteSSHLease.self, from: data)
+        guard existing.profile.id == profileID, !leaseOwnerIsActive(existing) else {
+            throw RemoteSSHError.configurationConflict
+        }
+        return data
+    }
+
+    private func withPublicationLock(_ publish: () throws -> Void) throws {
+        try BrowserPrivateFiles.directory(root)
+        let descriptor = Darwin.open(root.appendingPathComponent(".editor-publication.lock").path,
+                              O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { throw RemoteSSHError.configurationConflict }
+        defer { close(descriptor) }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0, metadata.st_uid == getuid(),
+              metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              metadata.st_mode & 0o077 == 0 else { throw RemoteSSHError.configurationConflict }
+        var lock = flock(l_start: 0, l_len: 0, l_pid: 0, l_type: Int16(F_WRLCK), l_whence: Int16(SEEK_SET))
+        guard fcntl(descriptor, F_SETLK, &lock) == 0 else { throw RemoteSSHError.configurationConflict }
+        defer {
+            lock.l_type = Int16(F_UNLCK)
+            _ = fcntl(descriptor, F_SETLK, &lock)
+        }
+        // MainActor serializes local publishers; this persistent lock also excludes other app processes.
+        try publish()
+    }
+
+    private func readyInstance(profile: ConnectionProfile, credentials: AWSCredentials, intent: EditorRecoveryIntent?,
+                               recovering: Bool, approvedInstanceID: String?) async throws -> EC2Instance {
+        while true {
+            try Task.checkCancellation()
+            do {
+                var instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+                    try await ec2.resolveInstance(tagKey: profile.instanceTagKey, tagValue: profile.instanceTagValue,
+                                                 region: profile.resourceRegion, credentials: credentials)
+                }
+                try Task.checkCancellation()
+                if let intent, instance.id != intent.instanceID, approvedInstanceID != instance.id {
+                    pendingReplacement = EditorReplacement(profile: profile, previousInstanceID: intent.instanceID,
+                                                           instanceID: instance.id, user: intent.user)
+                    recoveryMessage = "Review the new physical instance before the original workspace can reconnect."
+                    throw RemoteSSHError.replacementApprovalRequired
+                }
+                guard !instance.state.isTerminal else { throw EC2Error.instanceTerminated(instanceId: instance.id) }
+                if instance.state != .running {
+                    guard !recovering else { throw RemoteSSHError.workstationNotReady }
+                    let id = instance.id
+                    instance = try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+                        try await ec2.startInstance(instanceId: id, region: profile.resourceRegion, credentials: credentials)
+                        return try await ec2.pollUntilRunning(instanceId: id, region: profile.resourceRegion,
+                            credentials: credentials, timeout: .seconds(600), interval: .seconds(5))
+                    }
+                }
+                let instanceID = instance.id
+                let ssmBudget: Duration = recovering ? .seconds(30) : .seconds(120)
+                try await auth.authorized(profile: profile, credentials: credentials) { credentials in
+                    try await withStageTimeout("Editor SSM readiness", ssmBudget) { [ssm] in
+                        try await ssm.waitForSSMOnline(instanceId: instanceID, region: profile.resourceRegion,
+                            credentials: credentials, timeout: ssmBudget, interval: .seconds(5))
+                    }
+                }
+                return instance
+            } catch {
+                guard recovering, WorkstationRecoveryReadiness.isPending(error)
+                    || error is StageTimeoutError || error is URLError else { throw error }
+                recoveryMessage = "Waiting for the selected workstation and SSM (up to 30 minutes). No stopped workstation will be started; Cancel Recovery stops this wait."
+                try await recoverySleep(.seconds(15))
+            }
+        }
+    }
+
+    func processRecoveryRequests() {
+        guard !recoverySuspended, task == nil, !isRenewingLease, pendingReplacement == nil,
+              let url = leases[profile.id], let granted = grantedLeases[profile.id] else { return }
+        do {
+            guard let request = try EditorRecoveryRequest.read(from: EditorRecoveryRequest.url(for: url)),
+                  request.id != lastRecoveryRequest else { return }
+            lastRecoveryRequest = request.id
+            guard request.profileID == granted.profile.id else { throw RemoteSSHError.configurationConflict }
+            if request.generation != granted.generation {
+                recoveryMessage = "An earlier recovery notice was ignored; current access is unchanged. Retry the original workspace if needed."
+                return
+            }
+            guard request.matches(granted), try readOwnedLease(allowExpired: true) == granted else {
+                throw RemoteSSHError.configurationConflict
+            }
+            beginPreparation(recovering: true)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func startRecoveryMonitor() {
+        guard recoveryMonitor == nil, isActive, !recoverySuspended else { return }
+        recoveryMonitor = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch is CancellationError { return }
+                catch { self?.errorMessage = "Editor recovery monitoring stopped. Use Reconnect Existing Workspace."; return }
+                guard let self else { return }
+                self.processRecoveryRequests()
+            }
+        }
     }
 
     func renewAccess() {
@@ -321,7 +561,7 @@ import Observation
         }
     }
 
-    private func readOwnedLease() throws -> RemoteSSHLease {
+    private func readOwnedLease(allowExpired: Bool = false) throws -> RemoteSSHLease {
         guard let url = leases[profile.id], let owner = ownerIdentity(),
               let granted = grantedLeases[profile.id] else { throw RemoteSSHError.invalidLease }
         let data = try Data(contentsOf: url)
@@ -330,7 +570,7 @@ import Observation
         guard lease == granted else { throw RemoteSSHError.configurationConflict }
         guard lease.ownerPID == owner.pid, lease.ownerLaunchDate == owner.launchDate,
               lease.ownerBundleID == owner.bundleID else { throw RemoteSSHError.invalidLease }
-        try lease.validate(path: url.path, ownerActive: lease.expiresAt > now())
+        try lease.validate(path: url.path, ownerActive: allowExpired || lease.expiresAt > now())
         return lease
     }
 

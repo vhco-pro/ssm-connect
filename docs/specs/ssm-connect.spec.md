@@ -724,3 +724,55 @@ authorization suite passed 40 tests across 21 sequential runs after a callback r
 fixed by retiring state/generation/waiters before invoking cancellation. These are portable/mock
 results, not actual Windows/IdP/session-retention acceptance. Windows browser/editor orchestration
 is still absent and explicitly unsupported; no resumed Windows editor workflow is claimed.
+
+### 13.5 Rejected Refresh and Separate Editor-Lease Incident (2026-10-17)
+
+The installed v0.6.0 app reported `InvalidRequestException` during authentication. A fresh
+owner-completed SSO login was subsequently observed in the shared cache, and the app then
+authenticated, resolved the same running target, ensured its multi-user session and connected
+the desktop tunnel. Those logs do not identify which individual AWS authentication request
+originally returned the exception.
+
+The VS Code channel still failed independently: its local editor lease had expired. The
+owner approved using Open VS Code in the same installed app. That supported action created
+a fresh finite lease for the same authority, owner, instance and user; the extra editor window
+authenticated successfully and the owner confirmed it worked. The owner then closed the old
+window before retrying it. This verifies restored access in the new window, not original-window,
+buffer, conversation or live-agent continuity. No app upgrade, EC2 restart, manual lease edit
+or new profile identity was used.
+
+A synthetic regression separately reproduced a missing recovery path: OIDC `CreateToken`
+can reject the cached refresh exchange with `InvalidRequestException`. Only at that refresh
+boundary, treat the modeled or service-coded exception as requiring fresh sign-in. A
+silent-only operation must return Sign In Required without opening a browser; an explicit
+interactive authenticate may enter the normal device-authorization flow. The shared
+coordinator retains same-context pending work and exposes its existing explicit SSO action.
+
+Do not classify every invalid request as rejected authorization. An invalid SSO role request,
+network failure or cancellation remains its original error, without an unnecessary login loop.
+The focused provider/coordinator/cache run passed **37 tests in three suites**, including
+modeled/unmodeled refresh rejection, terminal invalid role requests and a real coordinator
+resumption fixture. Both new refresh modes failed before the correction. These are synthetic
+regression results; they do not prove the precise cause of the earlier live AWS exception.
+The final combined client suite subsequently passed **295 tests in 36 suites**, including the
+real 35-second initial-readiness regressions and measured 60-second lease-attempt budget.
+
+### 13.6 Final Portable Inventory and Execution Limits (2026-10-17)
+
+The later macOS run passed **296 tests in 36 suites**, including real separate-process
+publication-lock contention. Native channel/Stop results and the remaining release boundaries
+are recorded in [the editor verification](./remote-vscode.spec.md#19-final-process-channel-and-stop-checks-2026-10-17).
+
+The preserved Windows follow-up was revalidated with .NET SDK 10.0.401, VSTest and xUnit v3:
+122 domain/profile tests, 91 workflow/authorization tests and 11 AWS-adapter tests passed,
+224 total with no skips. These portable projects target `net10.0`; no Windows UI, ACL,
+installer or real IdP behavior was inferred from their execution on macOS. No Windows source
+or preexisting edit was changed, merged into the macOS branch or published during this inventory.
+
+No valid macOS code-signing identity was available in the local keychain. Organization membership
+was not independently checked, and no certificate, private key or signing secret was provisioned.
+Trusted distribution therefore retains its separate credential-dependent gate. Passing client
+tests is not authorization to bypass it or lift the infrastructure hold. On 2026-10-18 the owner
+separately authorized the verified macOS client release and installed upgrade with the existing
+ad-hoc-signing limitation, superseding the local-only publication hold. Windows and infrastructure
+acceptance are not included in that authorization.

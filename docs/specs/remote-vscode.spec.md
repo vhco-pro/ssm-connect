@@ -597,3 +597,141 @@ or extension-host process survived, or that an unattended future upgrade will re
 
 The observed v0.6.0 handover establishes same-workspace reconnectability, not automatic recovery
 or complete agent continuity. UPGRADE-01 through UPGRADE-06 remain unverified as a complete feature.
+
+### Accepted Explicit-Launch Resume Policy
+
+The owner selected `restore-on-explicit-launch` on 2026-10-16. Reopening SSM Connect after
+Quit/upgrade may restore previously active editor access for the same selected logical profile,
+authority and validated target/user. Do not open a VS Code window or start a stopped workstation.
+If SSO requires interaction, expose that action and retain same-context pending recovery.
+Stop Remote Access clears the restore intent. Quit revokes live owned access while the app is
+closed but may retain intent for the next explicit launch; it does not authorize a background
+app restart or grant. A replacement target still follows the separate reviewed confirmation/
+trust/readiness policy, not automatic adoption of a changed lease.
+
+### Client Implementation Checkpoint (2026-10-17)
+
+PR #31 implements remembered, noncredential recovery intent with same-profile validation, silent
+authorization, finite readiness waiting and no-window preparation. Stop clears intent, Quit
+retains it while revoking live access, and Restore clears all editor intents. An enabled legacy
+profile without remembered activity does not automatically opt in; use Open once after migration.
+Explicit-open/login-event classification and state-machine behavior have executed unit coverage;
+native Apple-event delivery, the original workspace/buffers/agents and upgrade handoff have not
+been observed with this build. The complete UPGRADE criteria remain **not verified**, not passed
+from transport preparation. See the accepted 30-minute/replacement policy and current evidence in
+[the replacement contract](./logical-workstation-replacement.spec.md#7-accepted-client-policy-and-implementation-evidence-2026-10-17).
+
+## 17. Physical Workstation Replacement Is a Separate Use Case
+
+Keeping the Mac-side authority stable does not yet make a replaced EC2 instance reconnectable
+from the original Recent workspace. The proxy and same-owner renewal deliberately reject a changed
+instance; existing AC-R6/AC-R9 are not a passed transparent-rebuild contract.
+
+[REBUILD-01 through REBUILD-11](./logical-workstation-replacement.spec.md) specify coordinated
+logical-profile rebinding, saved-user/home state and native forwarding after a real replacement.
+An interruption is allowed; preserving destroyed-VM processes is not required. No changed-instance
+guard, editor host-key check or production operational hold is removed by that specification.
+
+## 18. Executed Isolated Native Owner-Recovery Cycle (2026-10-17)
+
+An owner-approved native fixture exercised the candidate controller, proxy and AppDelegate,
+using a separate bundle identity, synthetic local profile, SSH config/authority, Code user-data
+directory and an owned remote scratch folder. The candidate library sources matched the working
+tree; only the session-local fixture factory and app composition were added. The EC2 seam refused
+all start/stop/poll operations and accepted only an already-running discovered instance. This is
+not an installed-production-app upgrade test or a replacement-instance test.
+
+The first fixture setup exposed a fixture encoding error and an overlong macOS Code IPC socket
+path. They were corrected only in the test harness; neither is reported as a production defect.
+The owner explicitly approved workspace trust in the isolated editor.
+
+Observed native results:
+
+- Explicit initial launch prepared the fixture authority, and native Remote-SSH authenticated
+  through its candidate proxy and reused the existing remote server.
+- Normal Quit of only the fixture app removed its lease and disconnected its owned transport.
+- Explicit relaunch prepared access with a different app PID, key and generation while retaining
+  the exact fixture authority, instance and user. Its persisted result reported
+  `editorLaunched = false`; the same isolated Code process and single window remained.
+- The initial reconnect attempt during the owner outage failed closed. After access was prepared,
+  the fixture window's native Reload Window action retried the connection. Remote-SSH then
+  authenticated again and reused the same running remote server. No replacement Code window was
+  opened by recovery. This is reconnectable access, not silent automatic editor reconnection.
+- Independent SSH channels through the fixture authority read the same owned saved marker before
+  and after relaunch.
+- A subsequent isolated cycle observed the actual marker editor through native accessibility,
+  edited it and used the native File > Save action. An independent remote read verified the exact
+  expected 67-byte file. The earlier accessibility probe stopped above the editor's depth in the
+  UI tree; its missing observation was not an app defect.
+- The subsequent cycle then created a genuinely unsaved native edit. Its marker was observed in
+  the editor but absent from the independently checked remote file. Only the fixture owner was
+  quit/relaunched; the same single Code process/window reauthenticated after native Reload Window
+  and reused the same running server. The before/after unsaved editor buffers compared exactly,
+  and remote bytes remained unchanged until the explicit native Save after reconnection.
+- That final Save wrote the exact expected 103-byte file, including the formerly unsaved marker.
+  The UI accessibility representation adds a trailing paragraph separator, so raw file output
+  was checked against explicit expected bytes rather than assuming AX text is a byte-level file
+  representation. No test result was inferred merely from a successful menu/CLI invocation.
+- The fixture Code process and app were retired using normal Quit. Only the named test marker
+  and its empty remote directories were removed. Production SSH configuration fingerprints were
+  unchanged; the installed v0.6.0 app, original Code process and preview draft stayed running.
+
+This establishes native isolated transport/owner handoff subchecks for UPGRADE-01, UPGRADE-03
+and UPGRADE-05, plus the isolated native editing/unsaved-buffer subcheck of UPGRADE-02. It does
+not establish the complete UPGRADE criteria: original project/conversation/live-agent continuity,
+installed-upgrade migration, login-item launch behavior, parallel native key-loading and other
+native workflows remain separate. REBUILD criteria and the infrastructure operational hold are
+unchanged. The candidate remains local; these tests do not authorize publication or installation.
+
+## 19. Final Process, Channel and Stop Checks (2026-10-17)
+
+The final local package run passed **296 tests in 36 suites** in 61.215 seconds, including
+the measured 60-second lease-attempt budget and actual 35-second cold-start readiness tests.
+The additional publication regression compiles a small test-only holder with the existing
+Xcode C compiler. That separate process acquires the actual persistent `fcntl` lock. The
+controller must refuse a new grant without changing host configuration or publishing a lease;
+after the holder exits normally, the same controller may open successfully. Both that kernel
+contention case and the suspended-publisher race passed.
+
+The owner-approved isolated native fixture also executed these checks:
+
+| Subcheck | Executed result |
+| --- | --- |
+| Three concurrent native OpenSSH authentications | Each independent process returned its exact unique marker through the candidate helper. |
+| Fresh channel after the initial EIC authorization window | After a measured wait of at least 65 seconds with a held channel open, a new authentication returned its exact marker. No permanent key was installed. |
+| Existing channel and key-generation stability | The held channel echoed the expected response after the wait; the lease bytes, key path, generation and owner were unchanged before Stop. |
+| Native Stop revokes current access | The fixture's actual Stop control removed its lease and terminated the held native channel within the bounded check. |
+| Native Stop refuses future access | A new SSH command exited unsuccessfully with no stdout; its success marker never executed. |
+| Native Stop clears recovery intent | The fixture preference document contained no remembered editor intent after Stop. |
+| Explicit launch does not undo Stop | After Quit and explicit relaunch, the fixture reported inactive access, no editor launch and no recreated lease or Code process. |
+
+These were separate-process native SSH channels against one isolated authority, not two original
+Recent workspaces or a physical workstation replacement. They close the named channel/Stop
+subchecks, not every clause of LEASE, UPGRADE or REBUILD acceptance.
+
+Only the test Code process and test owner were quit. A fixture-only disconnected-window dialog
+was dismissed before normal Quit; no unsaved project buffer was discarded. The exact owned
+marker and its empty remote directories were removed. Test preferences, registration and the
+temporary short-path link were cleaned up. Production SSH configuration fingerprints and the
+installed app, original Code process and preview draft were preserved.
+
+### Remaining Release Boundaries
+
+- Original live agent/conversation continuity and an installed-app upgrade are not certified
+  by disposable-fixture evidence. The earlier original window was closed by its owner.
+- Actual login-item delivery and parallel original-Recent workflows remain separate native
+  acceptance; pure launch-event tests are not a login-item run.
+- A real physical replacement, data/home/UID/GID/services and rollback require the separately
+  approved infrastructure environment. Its operational hold remains in force.
+- Selective integrated-browser routing remains gated on the supported API described in its
+  own specification; the all-remote preview was not substituted.
+- Developer ID signing/notarization requires valid provisioned identities and credentials.
+- Windows portable tests do not establish native Windows UI, ACL, installer or SSO acceptance.
+- On 2026-10-18 the owner explicitly authorized publishing and installing the verified macOS
+  client subset because the still-running v0.6.0 authentication failure was blocking work.
+  This supersedes the local-only hold, not the native/server evidence limits above. Current
+  ad-hoc signing was accepted for this release; trusted distribution remains separate.
+- The authorized sequence is push, exact-head checks, merge, verify release/Homebrew publication
+  and upgrade the installed app while preserving Code windows/buffers. Brief SSH interruption
+  was acknowledged; live-agent continuity is not guaranteed. No infrastructure lifecycle action
+  or Windows release is authorized by that decision.

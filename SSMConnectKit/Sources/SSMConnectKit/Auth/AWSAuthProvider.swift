@@ -111,7 +111,8 @@ final class AWSAuthProvider: AuthProviding {
             ))
         } catch {
             if error is CancellationError { throw error }
-            guard Self.isRejectedAuthorization(error) else { throw error }
+            guard Self.isRejectedAuthorization(error) || error is AWSSSOOIDC.InvalidRequestException
+                || (error as? ServiceError)?.typeName == "InvalidRequestException" else { throw error }
             return nil
         }
         guard let newAccessToken = output.accessToken, !newAccessToken.isEmpty else {
@@ -280,5 +281,10 @@ final class AWSAuthProvider: AuthProviding {
         return ["UnauthorizedException", "ExpiredToken", "ExpiredTokenException",
                 "UnauthorizedAccess", "UnauthorizedAccessException", "InvalidGrantException",
                 "InvalidClientException", "UnauthorizedClientException"].contains(name)
+    }
+
+    static func isPermissionDenied(_ error: Error) -> Bool {
+        guard let name = (error as? ServiceError)?.typeName else { return false }
+        return ["AccessDenied", "AccessDeniedException", "UnauthorizedOperation", "ForbiddenException"].contains(name)
     }
 }

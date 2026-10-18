@@ -163,6 +163,47 @@ struct AWSAuthProviderTests {
         #expect(credentials.sessionToken == "session")
     }
 
+    @Test("AUTH-04: Invalid cached refresh requests require fresh login, not an opaque connection error",
+          arguments: [false, true], [false, true])
+    func invalidRefreshRequestRequiresSignIn(interactive: Bool, unmodeled: Bool) async throws {
+        let cache = MockSSOCache(stored: refreshableExpiredToken())
+        let oidc = MockOIDCClient()
+        oidc.createTokenResults = [
+            .failure(unmodeled
+                ? unmodeledAWSServiceError(typeName: "InvalidRequestException", message: "synthetic rejected refresh", statusCode: .badRequest)
+                : AWSSSOOIDC.InvalidRequestException()),
+            .success(CreateTokenOutput(accessToken: "fresh-access", expiresIn: 3600))
+        ]
+        let sso = MockSSOClient()
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: cache, oidc: oidc, sso: sso, recorder: recorder)
+        if interactive {
+            _ = try await provider.authenticate(profile: profile)
+            #expect(oidc.registerCount == 1 && oidc.deviceAuthCount == 1)
+            #expect(recorder.urls.count == 1 && sso.lastInput?.accessToken == "fresh-access")
+        } else {
+            await #expect(throws: AuthError.signInRequired) { _ = try await provider.refreshIfNeeded(profile: profile) }
+            #expect(oidc.registerCount == 0 && oidc.deviceAuthCount == 0)
+            #expect(recorder.urls.isEmpty && sso.callCount == 0)
+        }
+    }
+
+    @Test("AUTH-07: Invalid role requests are not mistaken for rejected refresh grants",
+          arguments: [false, true])
+    func invalidRoleRequestDoesNotRestartLogin(interactive: Bool) async throws {
+        let oidc = MockOIDCClient()
+        let sso = MockSSOClient()
+        sso.error = AWSSSO.InvalidRequestException(message: "synthetic invalid role request")
+        let recorder = URLRecorder()
+        let provider = makeProvider(cache: MockSSOCache(stored: validToken()), oidc: oidc,
+                                    sso: sso, recorder: recorder)
+        await #expect(throws: AWSSSO.InvalidRequestException.self) {
+            if interactive { _ = try await provider.authenticate(profile: profile) }
+            else { _ = try await provider.refreshIfNeeded(profile: profile) }
+        }
+        #expect(sso.callCount == 1 && recorder.urls.isEmpty && oidc.registerCount == 0)
+    }
+
     @Test("No cached token runs device authorization and opens the browser")
     func deviceAuthorization() async throws {
         let cache = MockSSOCache(stored: nil)
