@@ -772,5 +772,7 @@ or preexisting edit was changed, merged into the macOS branch or published durin
 No valid macOS code-signing identity was available in the local keychain. Organization membership
 was not independently checked, and no certificate, private key or signing secret was provisioned.
 Trusted distribution therefore retains its separate credential-dependent gate. Passing client
-tests is not authorization to bypass it, lift the infrastructure hold or override the owner's
-explicit local-only publication decision.
+tests is not authorization to bypass it or lift the infrastructure hold. On 2026-10-18 the owner
+separately authorized the verified macOS client release and installed upgrade with the existing
+ad-hoc-signing limitation, superseding the local-only publication hold. Windows and infrastructure
+acceptance are not included in that authorization.

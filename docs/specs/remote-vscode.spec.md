@@ -727,5 +727,11 @@ installed app, original Code process and preview draft were preserved.
   own specification; the all-remote preview was not substituted.
 - Developer ID signing/notarization requires valid provisioned identities and credentials.
 - Windows portable tests do not establish native Windows UI, ACL, installer or SSO acceptance.
-- The owner's explicit local-only hold remains. No push, merge, release or installed-app upgrade
-  is authorized by these executed checks.
+- On 2026-10-18 the owner explicitly authorized publishing and installing the verified macOS
+  client subset because the still-running v0.6.0 authentication failure was blocking work.
+  This supersedes the local-only hold, not the native/server evidence limits above. Current
+  ad-hoc signing was accepted for this release; trusted distribution remains separate.
+- The authorized sequence is push, exact-head checks, merge, verify release/Homebrew publication
+  and upgrade the installed app while preserving Code windows/buffers. Brief SSH interruption
+  was acknowledged; live-agent continuity is not guaranteed. No infrastructure lifecycle action
+  or Windows release is authorized by that decision.

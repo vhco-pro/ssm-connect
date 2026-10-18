@@ -2,7 +2,7 @@
 
 - **Status:** use case raised by the owner on 2026-10-16; editor and native-forwarding client
   implementation is in PR #31 with deterministic tests. Server readiness and real replacement
-  acceptance are not complete; no production change is approved or accepted as passed.
+  acceptance are not complete; no infrastructure replacement is approved or accepted as passed.
 - **Baselines:** released macOS v0.6.0 and the same-owner rolling-lease fix merged in PR #28.
   Neither provides a complete physical-instance replacement/rebind workflow.
 - **Outcome:** after an authorized OS/root-image replacement, select the same VS Code Recent
