@@ -143,11 +143,12 @@ caches. A same-instance reboot is not this test.
 
 Section 9 records the subsequent real-replacement results: REBUILD-02 is met for the exercised
 native TCP editor workflow, REBUILD-06 is met, and REBUILD-08 is met for the expired-lease overlap.
-The later dashboard API/WebSocket checks leave REBUILD-04 and REBUILD-10 not met because of an
-observed downstream credential-provider failure. Other remaining criteria are not verified as
-complete requirements. Existing same-instance fixtures alone do not close replacement acceptance.
-Windows and any required GPU/DCV/multi-engineer or socket-mode workflows need their own applicable
-native evidence.
+The later dashboard API/WebSocket checks initially failed because Azure reauthentication was
+required. Owner-approved sign-in subsequently restored both, as recorded in section 10.2.
+Remaining composite criteria are not verified as complete requirements; this resolved credential
+failure is not carried as an open client defect. Existing same-instance fixtures alone do not
+close replacement acceptance. Windows and any required GPU/DCV/multi-engineer or socket-mode
+workflows need their own applicable native evidence.
 
 ## 6. Decisions and Operational Boundary
 
@@ -419,13 +420,13 @@ it does not retroactively change what that reviewer observed.
 | REBUILD-01 | not verified | Real instance change, same profile/authority and original window are verified. Exclusive data-volume attachment throughout the replacement and exact root-image provenance were not observed. |
 | REBUILD-02 | met | Original window reconnected to the replacement; native open/edit/save, remote terminal/test, language navigation and debugger passed for its configured TCP workflow. Socket-mode replacement acceptance is not claimed for this TCP-configured profile. |
 | REBUILD-03 | not verified | Retained pre-replacement fixture, saved markers, current home ownership, user config/server directories and visible history are verified. Complete expected tools/extensions/configuration/conversation fidelity lacks a recorded baseline comparison. Destroyed-VM live processes are not expected to migrate. |
-| REBUILD-04 | not met | Native SOCKS, named forward and dashboard configuration work. Later native WebSocket and downstream API checks failed because of the dashboard credential provider (section 10.2). Actual private HTTPS domains and outage fail-closed behavior remain untested in this replacement incident. |
+| REBUILD-04 | not verified | Native SOCKS, named forward, dashboard API and native WebSocket now pass after authorized Azure reauthentication (section 10.2). Actual private HTTPS domains and outage fail-closed behavior remain untested in this replacement incident. |
 | REBUILD-05 | not verified | Current home is mounted and ownership matches. Missing/wrong-volume and UID-collision refusal require a disposable negative-readiness environment, not destructive manipulation of the working host. |
 | REBUILD-06 | met | Actual changed instance was refused until explicit native confirmation; fresh key/generation, same user/authority, per-instance host trust and no stream redirection were observed. Existing executed regression coverage supplies ambiguity, wrong-user, stale-candidate and conflicting-owner negative cases. |
 | REBUILD-07 | not verified | Fresh native authentications on the replacement succeeded beyond the initial EIC window. Parallel original Recent windows/key loading during a replacement were not jointly exercised. Prior same-instance concurrency evidence remains narrower. |
 | REBUILD-08 | met | The real replacement overlapped an expired editor lease. Owner-bound recovery, explicit candidate confirmation and native retry produced a fresh same-authority grant without an extra workspace or retry loop. App-restart/SSO variants overlapping replacement were not run live in this incident. |
 | REBUILD-09 | not verified | Previous cancellation/Stop tests pass, but interruption/cancellation during this actual bootstrap was not exercised; do not stop the working access solely to promote that result. |
-| REBUILD-10 | not met | Listener, chooser and saved configuration returned, but the read-only development-cluster workflow fails through its credential provider (section 10.2). Full service-data fidelity, cross-user rejection and boot dependency ordering remain unverified. |
+| REBUILD-10 | not verified | Listener, chooser, saved configuration and the read-only development-cluster API/watch work after Azure reauthentication (section 10.2). Full service-data fidelity, cross-user rejection and boot dependency ordering remain unverified. |
 | REBUILD-11 | not verified | No rollback or second replacement using a recorded prior image/bootstrap was performed or authorized. |
 
 ### 9.4 Remaining Work, Without Requiring Another Replacement
@@ -464,7 +465,7 @@ There is therefore no justified application URL change from this observation. Ke
 IPv4 listener and Open-link contract, rather than introducing a global localhost behavior change
 or an unnecessary profile-format option.
 
-### 10.2 Dashboard API/WebSocket: Credential Provider Blocker
+### 10.2 Dashboard API/WebSocket: Azure Reauthentication Resolved
 
 A read-only namespace-watch smoke test used an existing development context, not a production
 cluster or a write operation. Its native browser WebSocket did not open. An ordinary read-only
@@ -486,16 +487,36 @@ Only expiry/type metadata was requested; no access token or private configuratio
 that code as an expired or invalid refresh token due to Conditional Access sign-in-frequency
 checks. This is a concrete downstream Azure authentication blocker, not a missing runtime,
 DNS failure, SSM tunnel failure or evidence that the saved dashboard configuration was lost.
-It needs fresh interactive Azure authentication in the workstation's existing user context.
+It required fresh interactive Azure authentication in the workstation's existing user context.
 The Mac app's separate AWS SSO login cannot repair that Azure token, and an enabled cached
 account is not proof that silent token renewal is still permitted.
 
 This separates transport from application authorization: serving the chooser/configuration and
 forwarding TCP do not prove that Headlamp can obtain its downstream cluster credentials.
-No credential provider, login session, Kubernetes context, account selection, remote service or
-permission was changed. No interactive login flow was started and no credentials were copied
-between machines. The WebSocket and authenticated dashboard portion of REBUILD-04/REBUILD-10
-remains blocked on the Azure reauthentication requirement; no passing result is claimed.
+During diagnosis no credential provider, Kubernetes context, account selection, remote service
+or permission was changed, and no login flow was started. The owner subsequently explicitly
+requested Azure authentication. The workstation CLI used its normal device-code login, restricted
+to the existing tenant and exact subscription. The owner completed Microsoft sign-in/MFA in
+the browser; no password, MFA response or access token was collected, and no credentials were
+copied between machines.
+
+The SSH connection carrying that login exited before the wrapper could report its final
+before/after assertions. That interrupted wrapper was not reported successful. Independent
+post-login checks instead established:
+
+| Check | Result |
+| --- | --- |
+| Existing cached account | Azure CLI reported enabled/default state. The login command was scoped to the prior tenant/subscription; the interrupted wrapper's complete identity comparison was not observed. |
+| Silent token acquisition for the same configured AKS audience | Exit 0 with a valid expiry. Only expiry/type metadata was requested, never the token value. |
+| Actual dashboard downstream API | HTTP 200, valid NamespaceList and one requested item through the existing named forward. |
+| Native-browser namespace-watch WebSocket | HTTP 101 upgrade, open connection and an 894-byte valid ADDED event. No event contents or cluster credentials were retained in the report. |
+| Transport preservation | Original editor SSH access, native SOCKS/local forwarding and the running client/Code/preview processes remained intact. |
+
+The credential incident is therefore resolved and its earlier failing API/WebSocket checks
+now pass. No service restart, application update or permission change was needed. Temporary
+native-browser processes/profile and the copied device-code prompt were cleaned up. Broader
+REBUILD-04/REBUILD-10 criteria retain only their separately listed private-domain/outage,
+data-fidelity, cross-user and startup-ordering gaps; they are not blocked by this old token.
 
 ### 10.3 Actionable Reconnect Guidance: Local Implementation
 
