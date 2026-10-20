@@ -392,6 +392,13 @@ At the owner's request, further checks were executed directly in the original re
 | Dashboard configuration | Headlamp returned 26 configured clusters and its cluster chooser rendered in a browser. No cluster operation, credential change or service restart was performed. Cluster access, data fidelity and cross-user rejection were not inferred from this. |
 | Native SOCKS | A request using SOCKS remote-hostname resolution reached the replacement-local dashboard API with HTTP 200. This is not a test of a particular private HTTPS site or WebSocket. |
 
+The dashboard's frontend advertised `localhost` as its API origin. Opening its page at the
+numeric loopback address initially produced browser CORS errors; using the advertised
+`http://localhost:4466/` origin rendered its chooser and configuration. No CORS protection or
+service configuration was disabled. The working localhost result does not certify the app's
+numeric-loopback Open link for this particular service; that origin mismatch is a separate
+service/link compatibility follow-up, not a failure of SSH forwarding.
+
 The active editor configuration used TCP Remote-SSH, not remote-server-listen-on-socket mode.
 No private-domain browser routing settings, workspace-trust settings, existing code buffers,
 desktop process or remote service configuration were changed.
