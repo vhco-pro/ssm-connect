@@ -154,6 +154,11 @@ Recovery waits up to 30 minutes for the workstation/SSM without starting a stopp
 Workstation** before fresh binding under the same SSH authority. Changed account/role/selector/user
 is refused, not treated as a replacement. Sign-in remains an explicit SSO action.
 
+After an expected VM replacement, choose **Review Replacement Workstation…**, verify the new
+instance/user, choose **Continue**, then retry the existing VS Code window. Desktop **Reconnect**
+is a separate transport action. Preparing editor access does not automatically restart an SSH
+attempt that already read the previous binding, and no new workspace identity is needed.
+
 Stop, app exit or changed target cancels rolling renewal and pending preparation. Isolated native
 relaunch, editing/save and unsaved-buffer checks passed. This does not certify remote home/services
 or preservation of every live agent across a disconnect.

@@ -5,6 +5,29 @@ import Testing
 @testable import SSMConnectKit
 
 @Suite("Remote SSH bridge") struct RemoteSSHBridgeTests {
+    @Test("AC-R6: A replacement refusal names the review, confirmation and existing-window retry actions")
+    func replacementRefusalExplainsNativeRecovery() {
+        let message = RemoteSSHProxyRuntime.failureMessage(for: RemoteSSHError.targetChanged)
+        #expect(message.contains("Review Replacement Workstation"))
+        #expect(message.contains("Continue"))
+        #expect(message.contains("retry the existing VS Code window"))
+        #expect(message.contains("expected replacement"))
+        #expect(message.hasSuffix("\n"))
+    }
+
+    @Test("AC-R9: Lease and sign-in refusals give distinct actionable recovery without exposing credentials")
+    func recoveryDiagnosticsSeparateAuthorizationAndLocalAccess() {
+        let lease = RemoteSSHProxyRuntime.failureMessage(for: RemoteSSHError.invalidLease)
+        #expect(lease.contains("Reconnect Existing Workspace"))
+        let authorization = RemoteSSHProxyRuntime.failureMessage(for: AuthError.signInRequired)
+        #expect(authorization.contains("Sign In with SSO"))
+        #expect(!authorization.contains("Open VS Code"))
+        #expect(lease != authorization)
+        let secret = "fixture-secret-token-must-not-be-printed"
+        let unknown = NSError(domain: "fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: secret])
+        #expect(RemoteSSHProxyRuntime.failureMessage(for: unknown) == RemoteSSHProxyRuntime.failureMessage)
+        #expect(!RemoteSSHProxyRuntime.failureMessage(for: unknown).contains(secret))
+    }
     @Test func nativeEditorArgumentsAndURIs() throws {
         let host = RemoteSSHConfiguration.alias(ConnectionProfile.example.id)
         #expect(try RemoteSSHConfiguration.arguments(alias: host, folder: nil) == ["--new-window", "--remote", "ssh-remote+" + host])

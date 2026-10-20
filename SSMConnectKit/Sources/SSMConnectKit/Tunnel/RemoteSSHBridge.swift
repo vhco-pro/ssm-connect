@@ -215,4 +215,21 @@ public enum RemoteSSHProxyRuntime {
     public static var failureMessage: String {
         "SSM Connect could not authorize this SSH channel. Check its menu for sign-in or replacement review, then use Reconnect Existing Workspace and retry the original window.\n"
     }
+
+    public static func failureMessage(for error: Error) -> String {
+        if AWSAuthProvider.isRejectedAuthorization(error) {
+            return "SSM Connect needs AWS sign-in for this SSH channel. Choose Sign In with SSO in the app, then Reconnect Existing Workspace and retry the existing VS Code window. No new editor window is required.\n"
+        }
+        guard let error = error as? RemoteSSHError else { return failureMessage }
+        switch error {
+        case .targetChanged, .replacementApprovalRequired:
+            return "SSM Connect refused a changed or unavailable workstation. For an expected replacement, choose Review Replacement Workstation in the app, verify the instance and user, then Continue and retry the existing VS Code window. Do not approve an unexpected target; no new editor window is required.\n"
+        case .invalidLease:
+            return "SSM Connect editor access is unavailable or expired. Choose Reconnect Existing Workspace in the app; if replacement review or sign-in is requested, complete that action, then retry the existing VS Code window. No new editor window is required.\n"
+        case .configurationConflict:
+            return "SSM Connect found independently changed or conflicting SSH setup. Review the configuration in the app before retrying; it was not overwritten. Do not clear host-key checks or edit the access lease to bypass this refusal.\n"
+        default:
+            return failureMessage
+        }
+    }
 }

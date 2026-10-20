@@ -143,9 +143,11 @@ caches. A same-instance reboot is not this test.
 
 Section 9 records the subsequent real-replacement results: REBUILD-02 is met for the exercised
 native TCP editor workflow, REBUILD-06 is met, and REBUILD-08 is met for the expired-lease overlap.
-Remaining criteria are not verified as complete requirements. Existing same-instance fixtures
-alone do not close replacement acceptance. Windows and any required GPU/DCV/multi-engineer or
-socket-mode workflows need their own applicable native evidence.
+The later dashboard API/WebSocket checks leave REBUILD-04 and REBUILD-10 not met because of an
+observed downstream credential-provider failure. Other remaining criteria are not verified as
+complete requirements. Existing same-instance fixtures alone do not close replacement acceptance.
+Windows and any required GPU/DCV/multi-engineer or socket-mode workflows need their own applicable
+native evidence.
 
 ## 6. Decisions and Operational Boundary
 
@@ -392,12 +394,10 @@ At the owner's request, further checks were executed directly in the original re
 | Dashboard configuration | Headlamp returned 26 configured clusters and its cluster chooser rendered in a browser. No cluster operation, credential change or service restart was performed. Cluster access, data fidelity and cross-user rejection were not inferred from this. |
 | Native SOCKS | A request using SOCKS remote-hostname resolution reached the replacement-local dashboard API with HTTP 200. This is not a test of a particular private HTTPS site or WebSocket. |
 
-The dashboard's frontend advertised `localhost` as its API origin. Opening its page at the
-numeric loopback address initially produced browser CORS errors; using the advertised
-`http://localhost:4466/` origin rendered its chooser and configuration. No CORS protection or
-service configuration was disabled. The working localhost result does not certify the app's
-numeric-loopback Open link for this particular service; that origin mismatch is a separate
-service/link compatibility follow-up, not a failure of SSH forwarding.
+The shared browser initially produced CORS errors at numeric loopback, while its localhost
+page rendered. Subsequent isolated native Chrome testing in section 10 did not reproduce that
+problem at either origin. The shared-browser observation is not evidence of a production
+launch-link bug, and the app's existing numeric-loopback URL semantics were retained.
 
 The active editor configuration used TCP Remote-SSH, not remote-server-listen-on-socket mode.
 No private-domain browser routing settings, workspace-trust settings, existing code buffers,
@@ -419,13 +419,13 @@ it does not retroactively change what that reviewer observed.
 | REBUILD-01 | not verified | Real instance change, same profile/authority and original window are verified. Exclusive data-volume attachment throughout the replacement and exact root-image provenance were not observed. |
 | REBUILD-02 | met | Original window reconnected to the replacement; native open/edit/save, remote terminal/test, language navigation and debugger passed for its configured TCP workflow. Socket-mode replacement acceptance is not claimed for this TCP-configured profile. |
 | REBUILD-03 | not verified | Retained pre-replacement fixture, saved markers, current home ownership, user config/server directories and visible history are verified. Complete expected tools/extensions/configuration/conversation fidelity lacks a recorded baseline comparison. Destroyed-VM live processes are not expected to migrate. |
-| REBUILD-04 | not verified | Native SOCKS, named forward and dashboard HTTP/API work on the replacement. Actual private HTTPS domains, WebSockets and fail-closed behavior during the replacement outage were not exercised. |
+| REBUILD-04 | not met | Native SOCKS, named forward and dashboard configuration work. Later native WebSocket and downstream API checks failed because of the dashboard credential provider (section 10.2). Actual private HTTPS domains and outage fail-closed behavior remain untested in this replacement incident. |
 | REBUILD-05 | not verified | Current home is mounted and ownership matches. Missing/wrong-volume and UID-collision refusal require a disposable negative-readiness environment, not destructive manipulation of the working host. |
 | REBUILD-06 | met | Actual changed instance was refused until explicit native confirmation; fresh key/generation, same user/authority, per-instance host trust and no stream redirection were observed. Existing executed regression coverage supplies ambiguity, wrong-user, stale-candidate and conflicting-owner negative cases. |
 | REBUILD-07 | not verified | Fresh native authentications on the replacement succeeded beyond the initial EIC window. Parallel original Recent windows/key loading during a replacement were not jointly exercised. Prior same-instance concurrency evidence remains narrower. |
 | REBUILD-08 | met | The real replacement overlapped an expired editor lease. Owner-bound recovery, explicit candidate confirmation and native retry produced a fresh same-authority grant without an extra workspace or retry loop. App-restart/SSO variants overlapping replacement were not run live in this incident. |
 | REBUILD-09 | not verified | Previous cancellation/Stop tests pass, but interruption/cancellation during this actual bootstrap was not exercised; do not stop the working access solely to promote that result. |
-| REBUILD-10 | not verified | The existing dashboard listener, cluster chooser and configured clusters returned. Intended-user service-data fidelity, authenticated cluster access, actual cross-user rejection and boot dependency ordering were not established. |
+| REBUILD-10 | not met | Listener, chooser and saved configuration returned, but the read-only development-cluster workflow fails through its credential provider (section 10.2). Full service-data fidelity, cross-user rejection and boot dependency ordering remain unverified. |
 | REBUILD-11 | not verified | No rollback or second replacement using a recorded prior image/bootstrap was performed or authorized. |
 
 ### 9.4 Remaining Work, Without Requiring Another Replacement
@@ -442,5 +442,73 @@ require separately approved environments or identities. They are not blockers to
 confirmed client-rebind path verified, but they keep the broader cross-boundary spec open.
 
 The incident also exposed a discoverability gap: the useful replacement-review action was
-present in the app while VS Code showed the generic proxy refusal. No new UX change is claimed
-implemented by this acceptance record.
+present in the app while VS Code showed the generic proxy refusal. Section 10 records the
+separate, not-yet-released diagnostic improvement.
+
+## 10. Autonomous Follow-Up Verification (2026-10-20)
+
+### 10.1 Native Browser Origin: No Production Defect Reproduced
+
+A dedicated native Chrome 156.0.8078.36 profile tested both `http://127.0.0.1:4466/` and
+`http://localhost:4466/` through the existing named forward. Both rendered the Home/cluster
+chooser, returned HTTP 200 and 26 configured clusters from `/config`, and recorded zero CORS
+errors, zero failed network requests and zero cross-origin loopback requests.
+
+The normal browser profile, cookies and proxy settings were not read or modified. No TLS/CORS
+protection was disabled. This agrees with the earlier native-browser findings in the
+[web-forward specification](./web-forwards.spec.md#32-spike-results-2026-10-12).
+A separate isolated headless Zen screenshot was blank; that invocation was not counted as
+successful native page rendering. Chrome evidence is not promoted to a full default-Zen run.
+
+There is therefore no justified application URL change from this observation. Keep the existing
+IPv4 listener and Open-link contract, rather than introducing a global localhost behavior change
+or an unnecessary profile-format option.
+
+### 10.2 Dashboard API/WebSocket: Credential Provider Blocker
+
+A read-only namespace-watch smoke test used an existing development context, not a production
+cluster or a write operation. Its native browser WebSocket did not open. An ordinary read-only
+namespace API request through Headlamp returned HTTP 502.
+
+The replacement independently resolved that configured API hostname and established TCP access
+to its HTTPS port. The dashboard listener belonged to the expected user, and the existing
+`headlamp.service` log reported a credential executable returning exit code 1. The executable
+was not reported missing. The observed logs did not establish a particular expired SSO token
+or service permission error, so neither was invented as the cause.
+
+This separates transport from application authorization: serving the chooser/configuration and
+forwarding TCP do not prove that Headlamp can obtain its downstream cluster credentials.
+No credential provider, login session, Kubernetes context, remote service or permission was
+changed. The WebSocket and authenticated dashboard portion of REBUILD-04/REBUILD-10 remains
+blocked on that existing credential-provider failure.
+
+### 10.3 Actionable Reconnect Guidance: Local Implementation
+
+The follow-up helper maps only recognized errors to static, noncredential recovery instructions:
+
+- Changed target: Review Replacement Workstation, verify the expected instance/user, Continue,
+  then retry the existing window; do not approve an unexpected replacement.
+- Unavailable/expired local access: Reconnect Existing Workspace and complete any requested
+  replacement review/sign-in before retrying the original window.
+- Rejected authorization: Sign In with SSO, then same-context reconnect/retry.
+- Configuration conflict: review the independently changed setup; do not overwrite it or
+  disable host-key checking.
+
+Unknown errors keep the existing generic message; arbitrary AWS/process error descriptions
+are not copied into SSH diagnostics. Messages are written only to stderr, preserving raw
+SSH stdout. A pending replacement also produces a warning near the top of the native app menu,
+even if the independent desktop transport is connected.
+
+These are discoverability changes only. They do not silently authorize a replacement, launch
+another editor, force a window reload or alter authentication/trust policy. They remain local
+until separately shipped; installed v0.7.0 still has its original diagnostics.
+
+The focused editor/recovery run passed 39 tests in two suites. The full run passed
+**298 tests in 36 suites**, including measured 35-second initial-readiness and 60-second
+lease-attempt regressions. The new checks distinguish replacement, local-access and sign-in
+instructions and verify that an unknown error's secret-shaped description is not printed.
+The complete native Release app/helper build and ad-hoc signature verification passed. An
+owned expired copy of the grant was then supplied to the built helper: it exited unsuccessfully,
+wrote no stdout, named Reconnect Existing Workspace on stderr and left the live grant bytes
+unchanged. No AWS channel authorization was needed for that expired-copy check. The top-menu
+warning compiled but was not exercised by replacing or restarting the working installed app.

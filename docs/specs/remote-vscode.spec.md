@@ -756,3 +756,7 @@ Current REBUILD-02, REBUILD-06 and the expired-lease scenario of REBUILD-08 are 
 [the live replacement acceptance](./logical-workstation-replacement.spec.md#9-real-replacement-acceptance-2026-10-20).
 Full data/bootstrap, browser/WebSocket, parallel/socket-mode, cross-user and rollback acceptance
 retain their separate boundaries there.
+
+The [local follow-up guidance](./logical-workstation-replacement.spec.md#103-actionable-reconnect-guidance-local-implementation)
+makes recognized helper refusals name their exact native recovery actions and adds a top-menu
+replacement warning. It does not change confirmation policy or installed v0.7.0 automatically.
