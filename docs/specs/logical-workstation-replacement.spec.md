@@ -473,14 +473,29 @@ namespace API request through Headlamp returned HTTP 502.
 The replacement independently resolved that configured API hostname and established TCP access
 to its HTTPS port. The dashboard listener belonged to the expected user, and the existing
 `headlamp.service` log reported a credential executable returning exit code 1. The executable
-was not reported missing. The observed logs did not establish a particular expired SSO token
-or service permission error, so neither was invented as the cause.
+was not reported missing. Those initial logs alone did not establish the specific cause.
+
+Subsequent read-only inspection of only that context's exec configuration identified
+`kubelogin --login azurecli`. Both kubelogin and Azure CLI were available in the dashboard
+service and interactive PATH. The service used the intended home directory, with no custom
+Azure configuration-directory override. Azure CLI could read an enabled default cached account,
+but a noninteractive token request for the existing AKS audience failed with **AADSTS70043**.
+Only expiry/type metadata was requested; no access token or private configuration was printed.
+
+[Microsoft's error reference](https://login.microsoftonline.com/error?code=70043) identifies
+that code as an expired or invalid refresh token due to Conditional Access sign-in-frequency
+checks. This is a concrete downstream Azure authentication blocker, not a missing runtime,
+DNS failure, SSM tunnel failure or evidence that the saved dashboard configuration was lost.
+It needs fresh interactive Azure authentication in the workstation's existing user context.
+The Mac app's separate AWS SSO login cannot repair that Azure token, and an enabled cached
+account is not proof that silent token renewal is still permitted.
 
 This separates transport from application authorization: serving the chooser/configuration and
 forwarding TCP do not prove that Headlamp can obtain its downstream cluster credentials.
-No credential provider, login session, Kubernetes context, remote service or permission was
-changed. The WebSocket and authenticated dashboard portion of REBUILD-04/REBUILD-10 remains
-blocked on that existing credential-provider failure.
+No credential provider, login session, Kubernetes context, account selection, remote service or
+permission was changed. No interactive login flow was started and no credentials were copied
+between machines. The WebSocket and authenticated dashboard portion of REBUILD-04/REBUILD-10
+remains blocked on the Azure reauthentication requirement; no passing result is claimed.
 
 ### 10.3 Actionable Reconnect Guidance: Local Implementation
 

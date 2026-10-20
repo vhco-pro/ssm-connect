@@ -159,6 +159,11 @@ instance/user, choose **Continue**, then retry the existing VS Code window. Desk
 is a separate transport action. Preparing editor access does not automatically restart an SSH
 attempt that already read the previous binding, and no new workspace identity is needed.
 
+Application access behind a working forward has its own authorization. For example, a dashboard
+using the workstation's Azure CLI credentials can require a fresh Azure login even while SSM,
+SSH and its local HTTP page work. Renewing the Mac app's AWS login does not renew that separate
+application identity; a forwarded HTTP 502 is not by itself evidence that the tunnel failed.
+
 Stop, app exit or changed target cancels rolling renewal and pending preparation. Isolated native
 relaunch, editing/save and unsaved-buffer checks passed. This does not certify remote home/services
 or preservation of every live agent across a disconnect.
