@@ -735,3 +735,24 @@ installed app, original Code process and preview draft were preserved.
   and upgrade the installed app while preserving Code windows/buffers. Brief SSH interruption
   was acknowledged; live-agent continuity is not guaranteed. No infrastructure lifecycle action
   or Windows release is authorized by that decision.
+
+## 20. Confirmed Real Workstation Replacement (2026-10-20)
+
+Released v0.7.0 refused the old physical editor binding and exposed its existing Review
+Replacement Workstation action. The owner approved the expected replacement; the normal
+native confirmation prepared a fresh key/generation/lease under the same authority and user.
+The owner's original Code window then reauthenticated after a native retry, without a new window,
+manual configuration change, host-key bypass or workstation restart.
+
+Subsequent agent-executed checks in that same remote window verified native edit/save, an actual
+remote terminal/test, TypeScript definition navigation and debugger pause/continue. A previously
+saved acceptance project and its October 15 markers remained available and passed its test.
+Existing conversation history was visible; migration of destroyed-VM live agent processes is
+not claimed.
+
+This closes the replacement subcase of AC-R6 and contributes direct native evidence to AC-R5/
+AC-R9, without asserting every other scenario in those composite criteria is passed.
+Current REBUILD-02, REBUILD-06 and the expired-lease scenario of REBUILD-08 are recorded in
+[the live replacement acceptance](./logical-workstation-replacement.spec.md#9-real-replacement-acceptance-2026-10-20).
+Full data/bootstrap, browser/WebSocket, parallel/socket-mode, cross-user and rollback acceptance
+retain their separate boundaries there.

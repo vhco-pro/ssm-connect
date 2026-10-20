@@ -1,10 +1,11 @@
 # SPECIFICATION: Same Workspace and Native Forwarding After Workstation Replacement
 
-- **Status:** use case raised by the owner on 2026-10-16; editor and native-forwarding client
-  implementation is in PR #31 with deterministic tests. Server readiness and real replacement
-  acceptance are not complete; no infrastructure replacement is approved or accepted as passed.
-- **Baselines:** released macOS v0.6.0 and the same-owner rolling-lease fix merged in PR #28.
-  Neither provides a complete physical-instance replacement/rebind workflow.
+- **Status:** client implementation shipped in macOS v0.7.0 through PR #31. On 2026-10-20,
+  real replacement confirmation, original-window reconnection and native editor workflows
+  passed. Current criterion dispositions are in section 9; broader infrastructure, routing
+  and isolation acceptance is not complete.
+- **Baselines:** v0.6.0 and the PR #28 rolling-lease fix established the original gaps.
+  Released v0.7.0 adds the reviewed client rebind and recovery workflow.
 - **Outcome:** after an authorized OS/root-image replacement, select the same VS Code Recent
   workspace and reuse native browser/domain-forward settings against the replacement once ready.
 - **Related:** [native editor](./remote-vscode.spec.md), [web forwards](./web-forwards.spec.md),
@@ -31,7 +32,7 @@ destruction of its VM. Reconnecting to a saved conversation or workspace is dist
 an in-memory process across machines. This is not the same case as upgrading only the Mac app
 while the remote server remains alive.
 
-## 2. Source-Verified Existing Coverage
+## 2. Historical Source-Verified Coverage Before v0.7.0
 
 | Surface | Existing behavior | Gap for replacement |
 | --- | --- | --- |
@@ -140,9 +141,11 @@ caches. A same-instance reboot is not this test.
 | REBUILD-10 | Persisted user dashboard/service | Service returns with the intended user's data and functioning identity-gated access; actual cross-user rejection and dependency ordering are verified. |
 | REBUILD-11 | Approved rollback to recorded previous image/bootstrap | Data identity and safe attachment/ownership remain intact through another replacement. The exact prior image is recorded; pointing at a floating latest value is not rollback proof. |
 
-All replacement criteria remain **not verified**. Existing lease-renewal, reboot/canary and editor
-fixture tests do not close them. Windows and any required GPU/DCV/multi-engineer workflows need
-their own native acceptance before they are declared supported.
+Section 9 records the subsequent real-replacement results: REBUILD-02 is met for the exercised
+native TCP editor workflow, REBUILD-06 is met, and REBUILD-08 is met for the expired-lease overlap.
+Remaining criteria are not verified as complete requirements. Existing same-instance fixtures
+alone do not close replacement acceptance. Windows and any required GPU/DCV/multi-engineer or
+socket-mode workflows need their own applicable native evidence.
 
 ## 6. Decisions and Operational Boundary
 
@@ -185,8 +188,8 @@ Executed package evidence at the reviewed checkpoint: **292 tests in 36 suites p
 deterministic explicit
 relaunch, confirmation/reconfirmation, cancellation, terminal errors, SSM readiness, stale helper
 requests, another live owner, Stop/Quit/Restore intent and the measured 60-second lease budget.
-This is client-seam evidence only. All complete REBUILD criteria in section 5 remain **not
-verified** until their required native/server observations exist.
+This checkpoint was client-seam evidence only. Section 9 separately records the later
+owner-approved observations on an actual replacement and the current acceptance disposition.
 
 Native forwarding now keeps its applied browser/PAC/forward configuration while waiting for
 expected readiness after a drop. The same 30-minute outer budget includes backoff and connection
@@ -348,3 +351,89 @@ concurrent native SSH, fresh authentication after 65 seconds and native Stop/rel
 The earlier review's unexecuted interprocess-contention limitation is therefore closed for that
 specific subcheck. Parallel original Recent windows, physical replacement and complete-contract
 verdicts are not promoted by this narrower evidence.
+
+## 9. Real Replacement Acceptance (2026-10-20)
+
+### 9.1 Confirmed Client Rebind: Closed
+
+The owner reported that the workstation had been replaced and that the existing remote window
+could not reconnect. Installed v0.7.0 logs independently showed a new running instance under the
+same logical selector. SSM was online; the desktop agent ensured the same user's session and
+the desktop tunnel connected. These observations did not establish editor access.
+
+The editor was still bound to the former instance, with an expired lease and a matching helper
+recovery notice. The app already displayed Review Replacement Workstation. After the owner
+explicitly approved the displayed old/new candidate, the normal native review/Continue action:
+
+- retained the original local profile UUID and SSH authority;
+- created a fresh key/generation and finite lease for the approved replacement and same user;
+- updated the per-instance HostName/HostKeyAlias coherently while retaining accept-new checking;
+- did not open a Code window, edit the user's SSH Include, bypass trust or restart either host.
+
+The owner retried the existing Code window. Its native Remote-SSH log then authenticated to the
+replacement and resolved the original authority. The owner confirmed that window worked.
+This closes the confirmed-replacement client-rebind scenario; it is not still awaiting a
+hypothetical first replacement run.
+
+### 9.2 Agent-Executed Native Workflows
+
+At the owner's request, further checks were executed directly in the original remote window:
+
+| Check | Observed result |
+| --- | --- |
+| User and home | Login user, UID/GID and home ownership matched. `findmnt` placed the home on a separately mounted ext4 `/home`, not a root-backed fallback. |
+| Retained project data | The previously created October 15 editor fixture still existed, retained its saved recovery/window markers and matching ownership, and its original Node test passed without rewriting the fixture. |
+| Native open/edit/save | A clearly owned new test file was opened in the original remote editor, changed and saved through native File > Save. Independent SSH reads verified the exact expected content. No existing project source was edited. |
+| Native terminal | A newly created remote bash terminal executed the owned Node test; an exact proof file independently verified success. The user's default terminal profile was local, so it was not mistaken for replacement-host execution. Defaults were not changed. |
+| Language navigation | Native TypeScript Go to Definition moved from the owned function call on line 6 to its declaration on line 2, column 17. |
+| Debugger | A native JavaScript Debug Terminal paused the owned program at its debugger statement. The proof file was absent while paused; native Continue produced the exact expected value and the process completed. |
+| Conversation availability | Existing chat history was visible in the reconnected original window. No chat request was sent, no private conversation was exported, and individual previous agent executions were not claimed resumed. |
+| Named local forward | The configured forwarding transport started successfully against the replacement. Its named loopback forward returned HTTP 200 for the existing Headlamp page and valid API JSON. |
+| Dashboard configuration | Headlamp returned 26 configured clusters and its cluster chooser rendered in a browser. No cluster operation, credential change or service restart was performed. Cluster access, data fidelity and cross-user rejection were not inferred from this. |
+| Native SOCKS | A request using SOCKS remote-hostname resolution reached the replacement-local dashboard API with HTTP 200. This is not a test of a particular private HTTPS site or WebSocket. |
+
+The active editor configuration used TCP Remote-SSH, not remote-server-listen-on-socket mode.
+No private-domain browser routing settings, workspace-trust settings, existing code buffers,
+desktop process or remote service configuration were changed.
+
+Temporary test files, proof files and their empty directory were removed after collecting
+evidence. Only the four owned editor tabs and three test-created terminal shells were closed.
+The debugger completed normally. The original Code window, prior terminals, installed app and
+preview draft stayed open. Native web forwards were left on and ready for the owner's use.
+
+### 9.3 Current Criterion Disposition
+
+The October 17 independent-review blocks in section 8 remain immutable historical evidence.
+This table supersedes their all-not-verified replacement summary for the exercised scenarios;
+it does not retroactively change what that reviewer observed.
+
+| Criterion | Current verdict | Evidence and remaining boundary |
+| --- | --- | --- |
+| REBUILD-01 | not verified | Real instance change, same profile/authority and original window are verified. Exclusive data-volume attachment throughout the replacement and exact root-image provenance were not observed. |
+| REBUILD-02 | met | Original window reconnected to the replacement; native open/edit/save, remote terminal/test, language navigation and debugger passed for its configured TCP workflow. Socket-mode replacement acceptance is not claimed for this TCP-configured profile. |
+| REBUILD-03 | not verified | Retained pre-replacement fixture, saved markers, current home ownership, user config/server directories and visible history are verified. Complete expected tools/extensions/configuration/conversation fidelity lacks a recorded baseline comparison. Destroyed-VM live processes are not expected to migrate. |
+| REBUILD-04 | not verified | Native SOCKS, named forward and dashboard HTTP/API work on the replacement. Actual private HTTPS domains, WebSockets and fail-closed behavior during the replacement outage were not exercised. |
+| REBUILD-05 | not verified | Current home is mounted and ownership matches. Missing/wrong-volume and UID-collision refusal require a disposable negative-readiness environment, not destructive manipulation of the working host. |
+| REBUILD-06 | met | Actual changed instance was refused until explicit native confirmation; fresh key/generation, same user/authority, per-instance host trust and no stream redirection were observed. Existing executed regression coverage supplies ambiguity, wrong-user, stale-candidate and conflicting-owner negative cases. |
+| REBUILD-07 | not verified | Fresh native authentications on the replacement succeeded beyond the initial EIC window. Parallel original Recent windows/key loading during a replacement were not jointly exercised. Prior same-instance concurrency evidence remains narrower. |
+| REBUILD-08 | met | The real replacement overlapped an expired editor lease. Owner-bound recovery, explicit candidate confirmation and native retry produced a fresh same-authority grant without an extra workspace or retry loop. App-restart/SSO variants overlapping replacement were not run live in this incident. |
+| REBUILD-09 | not verified | Previous cancellation/Stop tests pass, but interruption/cancellation during this actual bootstrap was not exercised; do not stop the working access solely to promote that result. |
+| REBUILD-10 | not verified | The existing dashboard listener, cluster chooser and configured clusters returned. Intended-user service-data fidelity, authenticated cluster access, actual cross-user rejection and boot dependency ordering were not established. |
+| REBUILD-11 | not verified | No rollback or second replacement using a recorded prior image/bootstrap was performed or authorized. |
+
+### 9.4 Remaining Work, Without Requiring Another Replacement
+
+Private HTTPS/WebSocket endpoints and the dashboard's normal authenticated workflow can be
+checked on this running replacement when their intended targets are known. Preserve existing
+SSO identity and routing; a cluster chooser or generic HTTP response is not a substitute.
+Additional parallel-window or socket-mode checks must use owned fixtures and preserve working
+editor/agent state.
+
+Volume exclusivity history requires infrastructure evidence from the actual replacement.
+Wrong-volume/UID-collision failures, interrupted bootstrap, cross-user isolation and rollback
+require separately approved environments or identities. They are not blockers to calling the
+confirmed client-rebind path verified, but they keep the broader cross-boundary spec open.
+
+The incident also exposed a discoverability gap: the useful replacement-review action was
+present in the app while VS Code showed the generic proxy refusal. No new UX change is claimed
+implemented by this acceptance record.
