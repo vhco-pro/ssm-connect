@@ -142,7 +142,8 @@ caches. A same-instance reboot is not this test.
 | REBUILD-11 | Approved rollback to recorded previous image/bootstrap | Data identity and safe attachment/ownership remain intact through another replacement. The exact prior image is recorded; pointing at a floating latest value is not rollback proof. |
 
 Section 9 records the subsequent real-replacement results: REBUILD-02 is met for the exercised
-native TCP editor workflow, REBUILD-06 is met, and REBUILD-08 is met for the expired-lease overlap.
+native TCP editor workflow, REBUILD-06 and REBUILD-07 are met, and REBUILD-08 is met for the
+expired-lease overlap.
 The later dashboard API/WebSocket checks initially failed because Azure reauthentication was
 required. Owner-approved sign-in subsequently restored both, as recorded in section 10.2.
 Remaining composite criteria are not verified as complete requirements; this resolved credential
@@ -423,7 +424,7 @@ it does not retroactively change what that reviewer observed.
 | REBUILD-04 | not verified | Native SOCKS, named forward, dashboard API and native WebSocket now pass after authorized Azure reauthentication (section 10.2). Actual private HTTPS domains and outage fail-closed behavior remain untested in this replacement incident. |
 | REBUILD-05 | not verified | Current home is mounted and ownership matches. Missing/wrong-volume and UID-collision refusal require a disposable negative-readiness environment, not destructive manipulation of the working host. |
 | REBUILD-06 | met | Actual changed instance was refused until explicit native confirmation; fresh key/generation, same user/authority, per-instance host trust and no stream redirection were observed. Existing executed regression coverage supplies ambiguity, wrong-user, stale-candidate and conflicting-owner negative cases. |
-| REBUILD-07 | not verified | Fresh native authentications on the replacement succeeded beyond the initial EIC window. Parallel original Recent windows/key loading during a replacement were not jointly exercised. Prior same-instance concurrency evidence remains narrower. |
+| REBUILD-07 | met | Two simultaneous native workspaces on the replacement independently saved/read their exact owned markers. Three fresh concurrent SSH authentications after a measured 65-second wait also passed with the lease/key/generation/owner unchanged (section 10.4). |
 | REBUILD-08 | met | The real replacement overlapped an expired editor lease. Owner-bound recovery, explicit candidate confirmation and native retry produced a fresh same-authority grant without an extra workspace or retry loop. App-restart/SSO variants overlapping replacement were not run live in this incident. |
 | REBUILD-09 | not verified | Previous cancellation/Stop tests pass, but interruption/cancellation during this actual bootstrap was not exercised; do not stop the working access solely to promote that result. |
 | REBUILD-10 | not verified | Listener, chooser, saved configuration and the read-only development-cluster API/watch work after Azure reauthentication (section 10.2). Full service-data fidelity, cross-user rejection and boot dependency ordering remain unverified. |
@@ -547,4 +548,32 @@ The complete native Release app/helper build and ad-hoc signature verification p
 owned expired copy of the grant was then supplied to the built helper: it exited unsuccessfully,
 wrote no stdout, named Reconnect Existing Workspace on stderr and left the live grant bytes
 unchanged. No AWS channel authorization was needed for that expired-copy check. The top-menu
-warning compiled but was not exercised by replacing or restarting the working installed app.
+warning was subsequently exercised in a separately identified native fixture using the actual
+candidate MenuContentView. Its synthetic profile, memory-only preferences, private SSH config,
+dummy keys and mocked/refused network backends never used production configuration or AWS.
+Native accessibility observed the warning before Open VS Code, with Review Replacement Workstation
+present. The fixture reported zero EC2 starts and was quit normally. The working installed app
+was not replaced or restarted for that UI check.
+
+### 10.4 Parallel Native Workspaces on the Replacement
+
+Two owned test workspaces were opened simultaneously through the existing installed helper,
+same original authority and current replacement, alongside the existing working editor windows.
+The normal workspace-trust configuration was retained; no trust bypass was added.
+
+Each test window natively opened, edited, saved and displayed its own marker. Independent SSH
+reads verified the exact A/B contents and absence of cross-workspace files. Both windows remained
+open during a measured wait of at least 65 seconds after an initial fresh authentication.
+Three additional, independent native SSH processes then authenticated concurrently and returned
+their exact unique markers. The lease bytes, key path, generation and owner remained unchanged.
+Both native windows still displayed their own saved contents afterward.
+
+Only the two verified test windows were closed normally, and their exact marker files/empty
+directories were removed. A before/after native window-title comparison verified that every
+pre-existing window remained open at cleanup. Later optional Recent-history cleanup was not
+attempted after the accessible editor window set changed; no unrelated window or history was
+modified to force that cleanup.
+
+This is direct native replacement evidence for REBUILD-07, in the configured TCP mode. It does
+not claim socket-mode replacement acceptance, preservation of destroyed-VM agent processes or
+safe exclusive volume attachment during the earlier infrastructure operation.

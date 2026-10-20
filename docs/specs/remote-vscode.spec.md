@@ -752,7 +752,8 @@ not claimed.
 
 This closes the replacement subcase of AC-R6 and contributes direct native evidence to AC-R5/
 AC-R9, without asserting every other scenario in those composite criteria is passed.
-Current REBUILD-02, REBUILD-06 and the expired-lease scenario of REBUILD-08 are recorded in
+Current REBUILD-02, REBUILD-06, parallel-window/EIC coverage in REBUILD-07 and the expired-lease
+scenario of REBUILD-08 are recorded in
 [the live replacement acceptance](./logical-workstation-replacement.spec.md#9-real-replacement-acceptance-2026-10-20).
 Full data/bootstrap, browser/WebSocket, parallel/socket-mode, cross-user and rollback acceptance
 retain their separate boundaries there.
