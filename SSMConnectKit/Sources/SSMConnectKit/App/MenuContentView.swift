@@ -37,6 +37,10 @@ public struct MenuContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if remoteDevelopment?.pendingReplacement != nil {
+                Label("VS Code: replacement review required", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
 
             ForEach(machine.authorizationSessions.indices, id: \.self) { index in
                 let authorization = machine.authorizationSessions[index]

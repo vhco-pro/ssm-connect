@@ -12,7 +12,7 @@ import SSMConnectKit
             let result = try await RemoteSSHProxyRuntime.run(configurationPath: CommandLine.arguments[2])
             exit(result)
         } catch {
-            FileHandle.standardError.write(Data(RemoteSSHProxyRuntime.failureMessage.utf8))
+            FileHandle.standardError.write(Data(RemoteSSHProxyRuntime.failureMessage(for: error).utf8))
             exit(1)
         }
     }

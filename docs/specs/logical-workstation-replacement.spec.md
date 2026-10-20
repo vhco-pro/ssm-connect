@@ -1,10 +1,11 @@
 # SPECIFICATION: Same Workspace and Native Forwarding After Workstation Replacement
 
-- **Status:** use case raised by the owner on 2026-10-16; editor and native-forwarding client
-  implementation is in PR #31 with deterministic tests. Server readiness and real replacement
-  acceptance are not complete; no infrastructure replacement is approved or accepted as passed.
-- **Baselines:** released macOS v0.6.0 and the same-owner rolling-lease fix merged in PR #28.
-  Neither provides a complete physical-instance replacement/rebind workflow.
+- **Status:** client implementation shipped in macOS v0.7.0 through PR #31. On 2026-10-20,
+  real replacement confirmation, original-window reconnection and native editor workflows
+  passed. Current criterion dispositions are in section 9; broader infrastructure, routing
+  and isolation acceptance is not complete.
+- **Baselines:** v0.6.0 and the PR #28 rolling-lease fix established the original gaps.
+  Released v0.7.0 adds the reviewed client rebind and recovery workflow.
 - **Outcome:** after an authorized OS/root-image replacement, select the same VS Code Recent
   workspace and reuse native browser/domain-forward settings against the replacement once ready.
 - **Related:** [native editor](./remote-vscode.spec.md), [web forwards](./web-forwards.spec.md),
@@ -31,7 +32,7 @@ destruction of its VM. Reconnecting to a saved conversation or workspace is dist
 an in-memory process across machines. This is not the same case as upgrading only the Mac app
 while the remote server remains alive.
 
-## 2. Source-Verified Existing Coverage
+## 2. Historical Source-Verified Coverage Before v0.7.0
 
 | Surface | Existing behavior | Gap for replacement |
 | --- | --- | --- |
@@ -140,9 +141,15 @@ caches. A same-instance reboot is not this test.
 | REBUILD-10 | Persisted user dashboard/service | Service returns with the intended user's data and functioning identity-gated access; actual cross-user rejection and dependency ordering are verified. |
 | REBUILD-11 | Approved rollback to recorded previous image/bootstrap | Data identity and safe attachment/ownership remain intact through another replacement. The exact prior image is recorded; pointing at a floating latest value is not rollback proof. |
 
-All replacement criteria remain **not verified**. Existing lease-renewal, reboot/canary and editor
-fixture tests do not close them. Windows and any required GPU/DCV/multi-engineer workflows need
-their own native acceptance before they are declared supported.
+Section 9 records the subsequent real-replacement results: REBUILD-01, REBUILD-02 for the
+exercised native TCP editor workflow, REBUILD-06 and REBUILD-07 are met, and REBUILD-08 is met
+for the expired-lease overlap.
+The later dashboard API/WebSocket checks initially failed because Azure reauthentication was
+required. Owner-approved sign-in subsequently restored both, as recorded in section 10.2.
+Remaining composite criteria are not verified as complete requirements; this resolved credential
+failure is not carried as an open client defect. Existing same-instance fixtures alone do not
+close replacement acceptance. Windows and any required GPU/DCV/multi-engineer or socket-mode
+workflows need their own applicable native evidence.
 
 ## 6. Decisions and Operational Boundary
 
@@ -185,8 +192,8 @@ Executed package evidence at the reviewed checkpoint: **292 tests in 36 suites p
 deterministic explicit
 relaunch, confirmation/reconfirmation, cancellation, terminal errors, SSM readiness, stale helper
 requests, another live owner, Stop/Quit/Restore intent and the measured 60-second lease budget.
-This is client-seam evidence only. All complete REBUILD criteria in section 5 remain **not
-verified** until their required native/server observations exist.
+This checkpoint was client-seam evidence only. Section 9 separately records the later
+owner-approved observations on an actual replacement and the current acceptance disposition.
 
 Native forwarding now keeps its applied browser/PAC/forward configuration while waiting for
 expected readiness after a drop. The same 30-minute outer budget includes backoff and connection
@@ -348,3 +355,257 @@ concurrent native SSH, fresh authentication after 65 seconds and native Stop/rel
 The earlier review's unexecuted interprocess-contention limitation is therefore closed for that
 specific subcheck. Parallel original Recent windows, physical replacement and complete-contract
 verdicts are not promoted by this narrower evidence.
+
+## 9. Real Replacement Acceptance (2026-10-20)
+
+### 9.1 Confirmed Client Rebind: Closed
+
+The owner reported that the workstation had been replaced and that the existing remote window
+could not reconnect. Installed v0.7.0 logs independently showed a new running instance under the
+same logical selector. SSM was online; the desktop agent ensured the same user's session and
+the desktop tunnel connected. These observations did not establish editor access.
+
+The editor was still bound to the former instance, with an expired lease and a matching helper
+recovery notice. The app already displayed Review Replacement Workstation. After the owner
+explicitly approved the displayed old/new candidate, the normal native review/Continue action:
+
+- retained the original local profile UUID and SSH authority;
+- created a fresh key/generation and finite lease for the approved replacement and same user;
+- updated the per-instance HostName/HostKeyAlias coherently while retaining accept-new checking;
+- did not open a Code window, edit the user's SSH Include, bypass trust or restart either host.
+
+The owner retried the existing Code window. Its native Remote-SSH log then authenticated to the
+replacement and resolved the original authority. The owner confirmed that window worked.
+This closes the confirmed-replacement client-rebind scenario; it is not still awaiting a
+hypothetical first replacement run.
+
+### 9.2 Agent-Executed Native Workflows
+
+At the owner's request, further checks were executed directly in the original remote window:
+
+| Check | Observed result |
+| --- | --- |
+| User and home | Login user, UID/GID and home ownership matched. `findmnt` placed the home on a separately mounted ext4 `/home`, not a root-backed fallback. |
+| Retained project data | The previously created October 15 editor fixture still existed, retained its saved recovery/window markers and matching ownership, and its original Node test passed without rewriting the fixture. |
+| Native open/edit/save | A clearly owned new test file was opened in the original remote editor, changed and saved through native File > Save. Independent SSH reads verified the exact expected content. No existing project source was edited. |
+| Native terminal | A newly created remote bash terminal executed the owned Node test; an exact proof file independently verified success. The user's default terminal profile was local, so it was not mistaken for replacement-host execution. Defaults were not changed. |
+| Language navigation | Native TypeScript Go to Definition moved from the owned function call on line 6 to its declaration on line 2, column 17. |
+| Debugger | A native JavaScript Debug Terminal paused the owned program at its debugger statement. The proof file was absent while paused; native Continue produced the exact expected value and the process completed. |
+| Conversation availability | Existing chat history was visible in the reconnected original window. No chat request was sent, no private conversation was exported, and individual previous agent executions were not claimed resumed. |
+| Named local forward | The configured forwarding transport started successfully against the replacement. Its named loopback forward returned HTTP 200 for the existing Headlamp page and valid API JSON. |
+| Dashboard configuration | Headlamp returned 26 configured clusters and its cluster chooser rendered in a browser. No cluster operation, credential change or service restart was performed. Cluster access, data fidelity and cross-user rejection were not inferred from this. |
+| Native SOCKS | A request using SOCKS remote-hostname resolution reached the replacement-local dashboard API with HTTP 200. This is not a test of a particular private HTTPS site or WebSocket. |
+
+The shared browser initially produced CORS errors at numeric loopback, while its localhost
+page rendered. Subsequent isolated native Chrome testing in section 10 did not reproduce that
+problem at either origin. The shared-browser observation is not evidence of a production
+launch-link bug, and the app's existing numeric-loopback URL semantics were retained.
+
+The active editor configuration used TCP Remote-SSH, not remote-server-listen-on-socket mode.
+No private-domain browser routing settings, workspace-trust settings, existing code buffers,
+desktop process or remote service configuration were changed.
+
+Temporary test files, proof files and their empty directory were removed after collecting
+evidence. Only the four owned editor tabs and three test-created terminal shells were closed.
+The debugger completed normally. The original Code window, prior terminals, installed app and
+preview draft stayed open. Native web forwards were left on and ready for the owner's use.
+
+### 9.3 Current Criterion Disposition
+
+The October 17 independent-review blocks in section 8 remain immutable historical evidence.
+This table supersedes their all-not-verified replacement summary for the exercised scenarios;
+it does not retroactively change what that reviewer observed.
+
+| Criterion | Current verdict | Evidence and remaining boundary |
+| --- | --- | --- |
+| REBUILD-01 | met | Same profile/authority/original window plus a fresh root volume and the exact retained home volume are verified. Mounted-device/AWS correlation, non-multi-attach gp3 settings and successful non-forced detach-before-attach CloudTrail chronology establish the observed transition (section 10.5). |
+| REBUILD-02 | met | Original window reconnected to the replacement; native open/edit/save, remote terminal/test, language navigation and debugger passed for its configured TCP workflow. Socket-mode replacement acceptance is not claimed for this TCP-configured profile. |
+| REBUILD-03 | not verified | Retained pre-replacement fixture, saved markers, current home ownership, user config/server directories and visible history are verified. Complete expected tools/extensions/configuration/conversation fidelity lacks a recorded baseline comparison. Destroyed-VM live processes are not expected to migrate. |
+| REBUILD-04 | not verified | Native SOCKS, named forward, dashboard API and native WebSocket now pass after authorized Azure reauthentication (section 10.2). Actual private HTTPS domains and outage fail-closed behavior remain untested in this replacement incident. |
+| REBUILD-05 | not verified | Current home is mounted and ownership matches. Missing/wrong-volume and UID-collision refusal require a disposable negative-readiness environment, not destructive manipulation of the working host. |
+| REBUILD-06 | met | Actual changed instance was refused until explicit native confirmation; fresh key/generation, same user/authority, per-instance host trust and no stream redirection were observed. Existing executed regression coverage supplies ambiguity, wrong-user, stale-candidate and conflicting-owner negative cases. |
+| REBUILD-07 | met | Two simultaneous native workspaces on the replacement independently saved/read their exact owned markers. Three fresh concurrent SSH authentications after a measured 65-second wait also passed with the lease/key/generation/owner unchanged (section 10.4). |
+| REBUILD-08 | met | The real replacement overlapped an expired editor lease. Owner-bound recovery, explicit candidate confirmation and native retry produced a fresh same-authority grant without an extra workspace or retry loop. App-restart/SSO variants overlapping replacement were not run live in this incident. |
+| REBUILD-09 | not verified | Previous cancellation/Stop tests pass, but interruption/cancellation during this actual bootstrap was not exercised; do not stop the working access solely to promote that result. |
+| REBUILD-10 | not verified | Listener, chooser, saved configuration and the read-only development-cluster API/watch work after Azure reauthentication (section 10.2). Full service-data fidelity, cross-user rejection and boot dependency ordering remain unverified. |
+| REBUILD-11 | not verified | No rollback or second replacement using a recorded prior image/bootstrap was performed or authorized. |
+
+### 9.4 Remaining Work, Without Requiring Another Replacement
+
+Private HTTPS/WebSocket endpoints and the dashboard's normal authenticated workflow can be
+checked on this running replacement when their intended targets are known. Preserve existing
+SSO identity and routing; a cluster chooser or generic HTTP response is not a substitute.
+Parallel TCP-window checks are recorded in section 10.4. Additional socket-mode or identity
+checks must use owned fixtures and preserve working editor/agent state.
+
+Volume/attachment evidence from the actual replacement is now recorded in section 10.5.
+Wrong-volume/UID-collision failures, interrupted bootstrap, cross-user isolation and rollback
+require separately approved environments or identities. They are not blockers to calling the
+confirmed client-rebind path verified, but they keep the broader cross-boundary spec open.
+
+The incident also exposed a discoverability gap: the useful replacement-review action was
+present in the app while VS Code showed the generic proxy refusal. Section 10 records the
+separate, not-yet-released diagnostic improvement.
+
+## 10. Autonomous Follow-Up Verification (2026-10-20)
+
+### 10.1 Native Browser Origin: No Production Defect Reproduced
+
+A dedicated native Chrome 156.0.8078.36 profile tested both `http://127.0.0.1:4466/` and
+`http://localhost:4466/` through the existing named forward. Both rendered the Home/cluster
+chooser, returned HTTP 200 and 26 configured clusters from `/config`, and recorded zero CORS
+errors, zero failed network requests and zero cross-origin loopback requests.
+
+The normal browser profile, cookies and proxy settings were not read or modified. No TLS/CORS
+protection was disabled. This agrees with the earlier native-browser findings in the
+[web-forward specification](./web-forwards.spec.md#32-spike-results-2026-10-12).
+A separate isolated headless Zen screenshot was blank; that invocation was not counted as
+successful native page rendering. Chrome evidence is not promoted to a full default-Zen run.
+
+There is therefore no justified application URL change from this observation. Keep the existing
+IPv4 listener and Open-link contract, rather than introducing a global localhost behavior change
+or an unnecessary profile-format option.
+
+### 10.2 Dashboard API/WebSocket: Azure Reauthentication Resolved
+
+A read-only namespace-watch smoke test used an existing development context, not a production
+cluster or a write operation. Its native browser WebSocket did not open. An ordinary read-only
+namespace API request through Headlamp returned HTTP 502.
+
+The replacement independently resolved that configured API hostname and established TCP access
+to its HTTPS port. The dashboard listener belonged to the expected user, and the existing
+`headlamp.service` log reported a credential executable returning exit code 1. The executable
+was not reported missing. Those initial logs alone did not establish the specific cause.
+
+Subsequent read-only inspection of only that context's exec configuration identified
+`kubelogin --login azurecli`. Both kubelogin and Azure CLI were available in the dashboard
+service and interactive PATH. The service used the intended home directory, with no custom
+Azure configuration-directory override. Azure CLI could read an enabled default cached account,
+but a noninteractive token request for the existing AKS audience failed with **AADSTS70043**.
+Only expiry/type metadata was requested; no access token or private configuration was printed.
+
+[Microsoft's error reference](https://login.microsoftonline.com/error?code=70043) identifies
+that code as an expired or invalid refresh token due to Conditional Access sign-in-frequency
+checks. This is a concrete downstream Azure authentication blocker, not a missing runtime,
+DNS failure, SSM tunnel failure or evidence that the saved dashboard configuration was lost.
+It required fresh interactive Azure authentication in the workstation's existing user context.
+The Mac app's separate AWS SSO login cannot repair that Azure token, and an enabled cached
+account is not proof that silent token renewal is still permitted.
+
+This separates transport from application authorization: serving the chooser/configuration and
+forwarding TCP do not prove that Headlamp can obtain its downstream cluster credentials.
+During diagnosis no credential provider, Kubernetes context, account selection, remote service
+or permission was changed, and no login flow was started. The owner subsequently explicitly
+requested Azure authentication. The workstation CLI used its normal device-code login, restricted
+to the existing tenant and exact subscription. The owner completed Microsoft sign-in/MFA in
+the browser; no password, MFA response or access token was collected, and no credentials were
+copied between machines.
+
+The SSH connection carrying that login exited before the wrapper could report its final
+before/after assertions. That interrupted wrapper was not reported successful. Independent
+post-login checks instead established:
+
+| Check | Result |
+| --- | --- |
+| Existing cached account | Azure CLI reported enabled/default state. The login command was scoped to the prior tenant/subscription; the interrupted wrapper's complete identity comparison was not observed. |
+| Silent token acquisition for the same configured AKS audience | Exit 0 with a valid expiry. Only expiry/type metadata was requested, never the token value. |
+| Actual dashboard downstream API | HTTP 200, valid NamespaceList and one requested item through the existing named forward. |
+| Native-browser namespace-watch WebSocket | HTTP 101 upgrade, open connection and an 894-byte valid ADDED event. No event contents or cluster credentials were retained in the report. |
+| Transport preservation | Original editor SSH access, native SOCKS/local forwarding and the running client/Code/preview processes remained intact. |
+
+The credential incident is therefore resolved and its earlier failing API/WebSocket checks
+now pass. No service restart, application update or permission change was needed. Temporary
+native-browser processes/profile and the copied device-code prompt were cleaned up. Broader
+REBUILD-04/REBUILD-10 criteria retain only their separately listed private-domain/outage,
+data-fidelity, cross-user and startup-ordering gaps; they are not blocked by this old token.
+
+### 10.3 Actionable Reconnect Guidance: Local Implementation
+
+The follow-up helper maps only recognized errors to static, noncredential recovery instructions:
+
+- Changed target: Review Replacement Workstation, verify the expected instance/user, Continue,
+  then retry the existing window; do not approve an unexpected replacement.
+- Unavailable/expired local access: Reconnect Existing Workspace and complete any requested
+  replacement review/sign-in before retrying the original window.
+- Rejected authorization: Sign In with SSO, then same-context reconnect/retry.
+- Configuration conflict: review the independently changed setup; do not overwrite it or
+  disable host-key checking.
+
+Unknown errors keep the existing generic message; arbitrary AWS/process error descriptions
+are not copied into SSH diagnostics. Messages are written only to stderr, preserving raw
+SSH stdout. A pending replacement also produces a warning near the top of the native app menu,
+even if the independent desktop transport is connected.
+
+These are discoverability changes only. They do not silently authorize a replacement, launch
+another editor, force a window reload or alter authentication/trust policy. They remain local
+until separately shipped; installed v0.7.0 still has its original diagnostics.
+
+The focused editor/recovery run passed 39 tests in two suites. The full run passed
+**298 tests in 36 suites**, including measured 35-second initial-readiness and 60-second
+lease-attempt regressions. The new checks distinguish replacement, local-access and sign-in
+instructions and verify that an unknown error's secret-shaped description is not printed.
+The complete native Release app/helper build and ad-hoc signature verification passed. An
+owned expired copy of the grant was then supplied to the built helper: it exited unsuccessfully,
+wrote no stdout, named Reconnect Existing Workspace on stderr and left the live grant bytes
+unchanged. No AWS channel authorization was needed for that expired-copy check. The top-menu
+warning was subsequently exercised in a separately identified native fixture using the actual
+candidate MenuContentView. Its synthetic profile, memory-only preferences, private SSH config,
+dummy keys and mocked/refused network backends never used production configuration or AWS.
+Native accessibility observed the warning before Open VS Code, with Review Replacement Workstation
+present. The fixture reported zero EC2 starts and was quit normally. The working installed app
+was not replaced or restarted for that UI check.
+
+### 10.4 Parallel Native Workspaces on the Replacement
+
+Two owned test workspaces were opened simultaneously through the existing installed helper,
+same original authority and current replacement, alongside the existing working editor windows.
+The normal workspace-trust configuration was retained; no trust bypass was added.
+
+Each test window natively opened, edited, saved and displayed its own marker. Independent SSH
+reads verified the exact A/B contents and absence of cross-workspace files. Both windows remained
+open during a measured wait of at least 65 seconds after an initial fresh authentication.
+Three additional, independent native SSH processes then authenticated concurrently and returned
+their exact unique markers. The lease bytes, key path, generation and owner remained unchanged.
+Both native windows still displayed their own saved contents afterward.
+
+Only the two verified test windows were closed normally, and their exact marker files/empty
+directories were removed. A before/after native window-title comparison verified that every
+pre-existing window remained open at cleanup. Later optional Recent-history cleanup was not
+attempted after the accessible editor window set changed; no unrelated window or history was
+modified to force that cleanup.
+
+This is direct native replacement evidence for REBUILD-07, in the configured TCP mode. It does
+not claim socket-mode replacement acceptance, preservation of destroyed-VM agent processes or
+safe exclusive volume attachment during the earlier infrastructure operation.
+
+### 10.5 Read-Only Root and Retained-Home Verification
+
+No infrastructure changes were needed to inspect the actual replacement. The mounted `/home`
+NVMe serial was correlated with the exact EBS volume returned for the replacement's device
+mapping, rather than assuming that any attached non-root disk was the persistent home.
+
+| Observation | Measured result |
+| --- | --- |
+| Mounted home | `/home`, ext4, on the volume identified by the device serial |
+| Home volume | Encrypted 200 GiB gp3; multi-attach disabled; one current attachment, to the replacement |
+| Retention policies | Home DeleteOnTermination false; root DeleteOnTermination true |
+| Existing home volume creation | 2026-06-13, before the retained October 15 fixture |
+| Old-instance home detach | Successful at 05:07:31 UTC on October 20; force detach was not requested |
+| Prior instance termination request | Successful at 05:07:42 UTC |
+| Current root volume creation | 05:15:37 UTC, after the prior termination request and after the saved fixture's original creation |
+| Same home volume attached to replacement | Successful at 05:15:58 UTC, after its detach from the prior instance |
+
+CloudTrail lookup for the exact home volume covered October 20 with no remaining result pages.
+Combined with gp3's non-multi-attach behavior, the observed successful non-forced detach and
+later attach demonstrate the serial attachment of that retained volume in this transition.
+The current root volume's creation time establishes that it is not the old instance's root.
+The current image identifier was measured privately; no previous-image rollback is inferred.
+
+A broader first page of replacement-instance activity had more pages and was not presented
+as exhaustive launch history. No absence-of-events assertion, host reconfiguration, Terraform
+operation, mount change, formatting, permissions change or additional replacement was used.
+Resource identifiers and identity-bearing CloudTrail payloads were kept out of this specification.
+
+This closes REBUILD-01 for the observed replacement. It does not test wrong/missing-volume
+bootstrap refusal, UID collisions, application startup ordering or rollback; those remain the
+separate REBUILD-05/REBUILD-10/REBUILD-11 requirements.
