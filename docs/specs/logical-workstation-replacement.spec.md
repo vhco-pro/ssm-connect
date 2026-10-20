@@ -141,9 +141,9 @@ caches. A same-instance reboot is not this test.
 | REBUILD-10 | Persisted user dashboard/service | Service returns with the intended user's data and functioning identity-gated access; actual cross-user rejection and dependency ordering are verified. |
 | REBUILD-11 | Approved rollback to recorded previous image/bootstrap | Data identity and safe attachment/ownership remain intact through another replacement. The exact prior image is recorded; pointing at a floating latest value is not rollback proof. |
 
-Section 9 records the subsequent real-replacement results: REBUILD-02 is met for the exercised
-native TCP editor workflow, REBUILD-06 and REBUILD-07 are met, and REBUILD-08 is met for the
-expired-lease overlap.
+Section 9 records the subsequent real-replacement results: REBUILD-01, REBUILD-02 for the
+exercised native TCP editor workflow, REBUILD-06 and REBUILD-07 are met, and REBUILD-08 is met
+for the expired-lease overlap.
 The later dashboard API/WebSocket checks initially failed because Azure reauthentication was
 required. Owner-approved sign-in subsequently restored both, as recorded in section 10.2.
 Remaining composite criteria are not verified as complete requirements; this resolved credential
@@ -418,7 +418,7 @@ it does not retroactively change what that reviewer observed.
 
 | Criterion | Current verdict | Evidence and remaining boundary |
 | --- | --- | --- |
-| REBUILD-01 | not verified | Real instance change, same profile/authority and original window are verified. Exclusive data-volume attachment throughout the replacement and exact root-image provenance were not observed. |
+| REBUILD-01 | met | Same profile/authority/original window plus a fresh root volume and the exact retained home volume are verified. Mounted-device/AWS correlation, non-multi-attach gp3 settings and successful non-forced detach-before-attach CloudTrail chronology establish the observed transition (section 10.5). |
 | REBUILD-02 | met | Original window reconnected to the replacement; native open/edit/save, remote terminal/test, language navigation and debugger passed for its configured TCP workflow. Socket-mode replacement acceptance is not claimed for this TCP-configured profile. |
 | REBUILD-03 | not verified | Retained pre-replacement fixture, saved markers, current home ownership, user config/server directories and visible history are verified. Complete expected tools/extensions/configuration/conversation fidelity lacks a recorded baseline comparison. Destroyed-VM live processes are not expected to migrate. |
 | REBUILD-04 | not verified | Native SOCKS, named forward, dashboard API and native WebSocket now pass after authorized Azure reauthentication (section 10.2). Actual private HTTPS domains and outage fail-closed behavior remain untested in this replacement incident. |
@@ -435,10 +435,10 @@ it does not retroactively change what that reviewer observed.
 Private HTTPS/WebSocket endpoints and the dashboard's normal authenticated workflow can be
 checked on this running replacement when their intended targets are known. Preserve existing
 SSO identity and routing; a cluster chooser or generic HTTP response is not a substitute.
-Additional parallel-window or socket-mode checks must use owned fixtures and preserve working
-editor/agent state.
+Parallel TCP-window checks are recorded in section 10.4. Additional socket-mode or identity
+checks must use owned fixtures and preserve working editor/agent state.
 
-Volume exclusivity history requires infrastructure evidence from the actual replacement.
+Volume/attachment evidence from the actual replacement is now recorded in section 10.5.
 Wrong-volume/UID-collision failures, interrupted bootstrap, cross-user isolation and rollback
 require separately approved environments or identities. They are not blockers to calling the
 confirmed client-rebind path verified, but they keep the broader cross-boundary spec open.
@@ -577,3 +577,35 @@ modified to force that cleanup.
 This is direct native replacement evidence for REBUILD-07, in the configured TCP mode. It does
 not claim socket-mode replacement acceptance, preservation of destroyed-VM agent processes or
 safe exclusive volume attachment during the earlier infrastructure operation.
+
+### 10.5 Read-Only Root and Retained-Home Verification
+
+No infrastructure changes were needed to inspect the actual replacement. The mounted `/home`
+NVMe serial was correlated with the exact EBS volume returned for the replacement's device
+mapping, rather than assuming that any attached non-root disk was the persistent home.
+
+| Observation | Measured result |
+| --- | --- |
+| Mounted home | `/home`, ext4, on the volume identified by the device serial |
+| Home volume | Encrypted 200 GiB gp3; multi-attach disabled; one current attachment, to the replacement |
+| Retention policies | Home DeleteOnTermination false; root DeleteOnTermination true |
+| Existing home volume creation | 2026-06-13, before the retained October 15 fixture |
+| Old-instance home detach | Successful at 05:07:31 UTC on October 20; force detach was not requested |
+| Prior instance termination request | Successful at 05:07:42 UTC |
+| Current root volume creation | 05:15:37 UTC, after the prior termination request and after the saved fixture's original creation |
+| Same home volume attached to replacement | Successful at 05:15:58 UTC, after its detach from the prior instance |
+
+CloudTrail lookup for the exact home volume covered October 20 with no remaining result pages.
+Combined with gp3's non-multi-attach behavior, the observed successful non-forced detach and
+later attach demonstrate the serial attachment of that retained volume in this transition.
+The current root volume's creation time establishes that it is not the old instance's root.
+The current image identifier was measured privately; no previous-image rollback is inferred.
+
+A broader first page of replacement-instance activity had more pages and was not presented
+as exhaustive launch history. No absence-of-events assertion, host reconfiguration, Terraform
+operation, mount change, formatting, permissions change or additional replacement was used.
+Resource identifiers and identity-bearing CloudTrail payloads were kept out of this specification.
+
+This closes REBUILD-01 for the observed replacement. It does not test wrong/missing-volume
+bootstrap refusal, UID collisions, application startup ordering or rollback; those remain the
+separate REBUILD-05/REBUILD-10/REBUILD-11 requirements.
