@@ -210,10 +210,13 @@ was installed or launched, no live authorization was performed, and no commit/pu
 
 ## 9. Parallel Windows Follow-Up (2026-10-16)
 
-The Windows increment is uncommitted on `feature/windows-profile-auth-followups`, based on the
-inspected port at `33b68c1`, in the separate `ssm-connect-windows-followups` worktree. The original
-macOS edits and existing audit/maintenance worktrees remain intact. This is not a wholesale merge
-of the old modular Swift branch into released macOS.
+The Windows increment was uncommitted on `feature/windows-profile-auth-followups`, based on
+the inspected port at `33b68c1`. On 2026-11-12 its source was preserved in commit
+`ce24cf25983f05c243d0f6218e719614a48d6845`, reachable through the preservation merge on
+`feat/shared-swift-core`. The active tree retains current macOS code, not the old C# core.
+See the [shared-core spec](cross-platform-client.spec.md) for extraction pointers and the
+revised architecture. The results below are dated October evidence, not acceptance of that
+revision or a new native Windows verification.
 
 - .NET reads v1 and v2 JSON plus YAML through YamlDotNet 18.1.0, with the same byte/depth/node
   limits and credential/alias/tag/duplicate-key refusals. Actual-client export fixtures cross both

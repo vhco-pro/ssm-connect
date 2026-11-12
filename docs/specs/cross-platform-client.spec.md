@@ -1,586 +1,381 @@
-# SPECIFICATION: Cross-Platform SSM Connect Client
+---
+status: draft
+status_description: "Shared Swift core direction selected; native feasibility, integration and platform decisions, independent spec review and acceptance remain open."
+issue: null
+goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
+branch: feat/shared-swift-core
+covers:
+  - SSMConnectKit/
+  - SSMConnect/
+  - windows/
+  - linux/
+  - contracts/
+  - packaging/
+  - project.yml
+  - scripts/
+  - .github/workflows/
+---
 
-- **Status:** native-shell architecture accepted; local macOS and parallel Windows profile/auth increments are implemented and portable-tested. Reconciliation of browser/editor adapters and native Windows/live acceptance remains open; full parity is not established.
-- **Date:** 2026-10-15 (original design 2026-08-17)
-- **Scope:** reuse the existing modular Swift/WPF work, preserve current macOS behavior, and extend portable configuration, browser access and native VS Code across platforms.
-- **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md), which remains the source of truth for current macOS behavior
-- **Follow-up contract:** [portable profiles](./portable-profiles.spec.md); proactive SSO recovery is specified in [section 13 of the client spec](./ssm-connect.spec.md#13-authentication-freshness-and-recovery-follow-up-2026-10-15).
+# Shared Swift core and native desktop clients
 
-Section 17 supersedes the stale Phase 0-only status and scopes the new reconciliation. Earlier
-spike tables are dated historical evidence, not a claim that the branch still contains only spikes.
+## Context
 
-## 1. Summary
+### Owner summary
 
-SSM Connect currently ships as a working native macOS application. The repository has good
-protocol seams and tests, but `SSMConnectKit` is one macOS-only Swift target containing domain
-models, AWS implementations, connection orchestration, SwiftUI views, and operating-system
-adapters. The connection state machine also directly owns macOS lifecycle concerns such as Darwin
-signals, notifications, clipboard behavior, and application shutdown.
+SSM Connect already supplies the required workstation workflows on macOS. The
+owner wants the same application on Windows and Linux while reusing that working
+Swift implementation. The selected direction is one shared Swift core with
+native presentation and platform adapters. It does not require a Go, Rust or C#
+rewrite of the connection algorithms.
 
-There is no supported tool that translates SwiftUI/AppKit into .NET or a Windows desktop UI.
-Swift can compile for Windows, but that does not make Apple frameworks available there. The current
-`aws-sdk-swift` integration and all platform integrations would still require separate validation
-or replacement.
+This revises the August design, which deliberately maintained separate Swift and
+C# cores with shared behavioral tests. Windows C#/WPF work remains useful for its
+UI, operating-system adapters, installer experience and tests. Its duplicate
+domain, authentication and workflow implementations are reference material, not
+the new runtime architecture. The earlier Swift target separation is also useful,
+but it predates the current macOS browser, editor, profile and recovery features.
+Implementation must preserve the current versions of those features.
 
-This specification chooses an incremental **native shells plus shared behavioral contracts**
-architecture:
+The consolidation branch starts from released macOS main at
+`eb4f0bc0b8f98f206ed519feb461c70ba3614b41`. A preservation merge retains the
+old branch and all 42 formerly dirty/untracked source files without applying
+them over current macOS code. The preserved implementation is accessible through
+Git history, not included as a second active core. Extraction pointers appear
+below.
 
-- Keep the existing native SwiftUI macOS application.
-- Separate its domain, workflow, AWS, and macOS responsibilities into explicit Swift targets.
-- Add a native Windows tray application in C# on .NET 10 LTS using WPF.
-- Share versioned JSON schemas, state-transition fixtures, and acceptance behavior between clients.
-- Do not attempt source-to-source translation or call Swift from .NET.
+Swift supports Windows and Linux, but this application's exact SDK, networking,
+filesystem and process dependencies have not been verified there. The GUI/core
+bridge, supported OS/CPU matrix, Linux interface and performance budgets remain
+owner decisions. Compilation alone will not establish native support.
 
-The two clients will share a product contract rather than a runtime binary. This avoids replacing a
-working macOS app while still preventing the implementations from drifting.
+This document is a draft and replaces the old two-core scope. Its historical
+acceptance and passing tests do not accept or verify this revision. The current
+request authorizes branch preparation, preservation and specification work,
+not the application rewrite, installation, live AWS access or release. The owner
+requested branch-first preparation for this revision; main remains unchanged.
+Further work uses vh-adlc review, acceptance, tasks and implementation gates.
 
-## 2. Current-State Assessment
+### Existing workflow and baseline
 
-The code is modular at the file and protocol level; it is not one large file. Existing strengths
-that MUST be preserved include:
+The repository previously used separate specifications, plans and reviewer
+summaries. For example,
+[the region-failure plan](../plans/bug-invalid-region-connect-failure.plan.md)
+links a separate spec and records phased tests; its
+[implementation summary](../../summaries/bug-invalid-region-connect-failure.md)
+maps acceptance criteria to executed checks. No pinned repository instruction
+entry point existed at the inspected main commit.
 
-- Provider protocols for authentication, EC2, SSM, Secrets Manager, tunnels, and DCV launching.
-- An injected and heavily tested connection state machine.
-- A thin `SSMConnectApp` executable target.
-- A config-driven connection profile with no environment baked into the app.
-- More than 100 tests around connection behavior and adapters.
+[AGENTS.md](../../AGENTS.md) now pins vh-adlc conventions and declares
+`docs/specs/` as the feature root. This document contains the active spec and
+plan; historical plans and summaries remain evidence, not a second task store.
 
-The portability problem is target ownership:
+Current macOS behavior is defined by the
+[client spec](ssm-connect.spec.md),
+[portable profiles](portable-profiles.spec.md),
+[web forwards](web-forwards.spec.md),
+[browser bootstrap](browser-bootstrap.spec.md),
+[native editor](remote-vscode.spec.md) and
+[workstation replacement](logical-workstation-replacement.spec.md).
+Preserve their documented limits as well as their implemented behavior.
+[Integrated editor-browser routing](remote-browser-private-dns.spec.md) and
+[trusted macOS distribution](macos-trusted-distribution.spec.md) retain their
+separate, unfinished scopes.
 
-| Concern | Current location | Portability issue |
-|---------|------------------|-------------------|
-| Models and profile validation | `SSMConnectKit` | Built in the same macOS-only target as SwiftUI/AppKit |
-| Connection state machine | `SSMConnectKit` | Imports Observation and Darwin; owns app quit, clipboard, and notifications |
-| AWS operations | `SSMConnectKit` | Coupled to Swift SDK error types in orchestration |
-| Tunnel process | `SSMConnectKit` | Assumes a macOS app bundle, POSIX signals, and a macOS ARM plugin |
-| DCV launch | `SSMConnectKit` | Assumes `/Applications`, AppKit, Unix mode `0600`, and macOS viewer settings |
-| Persistence and login item | `SSMConnectKit` | Uses UserDefaults and `SMAppService` |
-| UI | `SSMConnectKit` | SwiftUI, AppKit, SF Symbols, and Apple window APIs |
+The current [package manifest](../../SSMConnectKit/Package.swift) builds one
+umbrella target. OS responsibilities are still mixed into orchestration:
+`SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:1`
+imports Darwin and owns shutdown signals;
+`SSMConnectKit/Sources/SSMConnectKit/Auth/AWSAuthProvider.swift:1` imports AppKit
+and opens the browser. These are boundaries to refactor, not a reason to translate
+the working algorithms into another language.
 
-The first goal is therefore separation by responsibility, not a rewrite for its own sake.
+## Scope
 
-## 3. Platform and Technology Decision
+Included:
 
-### 3.1 Chosen approach
+- Extract and reuse current Swift domain, configuration, authentication and
+  desktop/web/editor workflow behavior.
+- Keep the macOS SwiftUI interface and its observable user behavior.
+- Supply Windows and Linux interfaces backed by that same Swift core.
+- Implement OS adapters for process ownership, files, local integration,
+  notifications and other native capabilities.
+- Reuse historical Swift separation, Windows UI/adapters, fixtures and packaging
+  work selectively, with current regression tests.
+- Preserve profile compatibility, consent, target identity, recovery and
+  independently releasable platform artifacts.
 
-| Platform | UI/runtime | AWS integration | Distribution |
-|----------|------------|-----------------|--------------|
-| macOS | Existing SwiftUI application | AWS SDK for Swift | Existing Homebrew cask and `.app` release |
-| Windows | C#/.NET 10 LTS WPF tray application | AWS SDK for .NET | Signed installer published through WinGet |
+Not included:
 
-WPF is selected for the first Windows client because it is stable, Windows-native, supports a
-small background/tray application well, and has straightforward Win32 interoperability. WinUI 3
-is not required to produce a modern-looking utility and adds packaging and tray integration risk.
-The Windows UI MUST use current Fluent styling and MUST NOT imitate macOS controls.
+- A second implementation of connection algorithms in C#, Go or Rust.
+- Transpiling SwiftUI, replacing native desktop rendering with a web UI, or
+  introducing a permanent system service without a separate decision.
+- Replacing Session Manager plugin, OpenSSH, Amazon DCV or their wire protocols.
+- Changes to remote workstation infrastructure, SSH policy, browser policy or
+  the companion session agent merely to make a client test pass.
+- Claiming every OS, Linux distribution, desktop, browser or CPU is supported.
+  Initial targets are the owner's macOS, Windows and Linux hosts; the exact
+  supported matrix is Q2.
+- Automatically including unfinished features from related specifications.
 
-Homebrew supports macOS, Linux, and Linux running under WSL; it does not install native Windows
-desktop applications. WSL Homebrew is therefore not a distribution channel for this client.
-**WinGet is the required Windows package-manager channel.** WinGet does not replace the installer:
-it downloads and runs a publisher-hosted installer described by a versioned YAML manifest.
+## Design
 
-### 3.2 Rejected approaches
-
-| Approach | Reason rejected |
-|----------|-----------------|
-| Transpile Swift/SwiftUI to C# | No production-grade transpiler exists; Apple UI and service frameworks have no Windows equivalent |
-| Compile the current package with Swift for Windows | The package declares macOS 14 and directly imports AppKit, SwiftUI, ServiceManagement, UserNotifications, Observation, and Darwin |
-| Rewrite both clients in Avalonia/Electron/Tauri now | Replaces a working native app and creates a large regression surface before Windows feasibility is proven |
-| Share a Swift library through C ABI/FFI | Adds toolchain, ABI, packaging, debugging, and async interop complexity without removing the need for Windows AWS and OS adapters |
-| Independently clone behavior with no contract | Fast initially, but profile formats, state transitions, retry behavior, and security rules would drift |
-
-Avalonia MAY be reconsidered only if maintaining two native UIs becomes demonstrably more costly
-than replacing the macOS UI. It is not part of this specification.
-
-## 4. Goals and Non-Goals
-
-### Goals
-
-- Ship a Windows tray client with feature parity for single-user and multi-user connections.
-- Preserve current macOS behavior throughout the refactor.
-- Make workflow rules independent from UI and operating-system lifecycle APIs.
-- Define one versioned, portable profile interchange format.
-- Run the same behavioral conformance cases against Swift and .NET implementations.
-- Keep credentials and DCV authentication material out of persistent storage.
-- Produce independently releasable and testable macOS and Windows applications.
-- Make the Windows client installable, upgradeable, and removable through WinGet.
-
-### Non-Goals
-
-- Linux desktop support in the first cross-platform release.
-- Replacing Amazon DCV Viewer or `session-manager-plugin`.
-- Sharing UI code between macOS and Windows.
-- Loading Swift code into the Windows process.
-- Changing workstation infrastructure or `dcv-session-agent` behavior.
-- Redesigning the existing connection modes.
-- Dropping or rewriting the current macOS application before Windows is proven.
-
-## 5. Target Architecture
-
-```mermaid
-flowchart TB
-    Contracts["Versioned contracts<br/>JSON Schema + conformance fixtures"]
-
-    subgraph Mac[macOS]
-        MacUI[SwiftUI menu-bar shell]
-        MacAdapters[macOS adapters]
-        SwiftWorkflow[Swift workflow]
-        SwiftAWS[AWS SDK for Swift adapters]
-        MacUI --> SwiftWorkflow
-        MacAdapters --> SwiftWorkflow
-        SwiftAWS --> SwiftWorkflow
-    end
-
-    subgraph Win[Windows]
-        WinUI[WPF tray shell]
-        WinAdapters[Windows adapters]
-        DotNetWorkflow[.NET workflow]
-        DotNetAWS[AWS SDK for .NET adapters]
-        WinUI --> DotNetWorkflow
-        WinAdapters --> DotNetWorkflow
-        DotNetAWS --> DotNetWorkflow
-    end
-
-    Contracts --> SwiftWorkflow
-    Contracts --> DotNetWorkflow
-    Plugin[AWS session-manager-plugin] --> MacAdapters
-    Plugin --> WinAdapters
-    DCV[Amazon DCV Viewer] --> MacAdapters
-    DCV --> WinAdapters
-```
-
-### 5.1 Repository layout
-
-The final layout SHOULD be recognizable as follows. Names may change during planning, but the
-boundaries MUST remain.
+### One implementation, several shells
 
 ```text
-contracts/
-  connection-profile.schema.json
-  state-machine.schema.json
-  fixtures/
-    profiles/
-    workflows/
-SSMConnectKit/
-  Sources/
-    SSMConnectDomain/       # values, states, validation; no UI or OS APIs
-    SSMConnectWorkflow/     # orchestration against ports; no Apple frameworks
-    SSMConnectAWS/          # aws-sdk-swift adapters and SDK error mapping
-    SSMConnectMacOS/        # AppKit, notifications, clipboard, plugin, DCV
-    SSMConnectUI/           # SwiftUI presentation
-windows/
-  SSMConnect.sln
-  src/
-    SSMConnect.Domain/
-    SSMConnect.Workflow/
-    SSMConnect.Aws/
-    SSMConnect.Windows/
-  tests/
-    SSMConnect.Domain.Tests/
-    SSMConnect.Workflow.Tests/
-    SSMConnect.Windows.Tests/
+macOS SwiftUI --------+
+Windows native UI ---+--- versioned commands/events --- shared Swift core
+Linux desktop UI ----+                                      |
+                                                      platform ports
+                                                           |
+                                                OS-specific adapters
 ```
 
-### 5.2 Boundary rules
-
-`SSMConnectDomain` and `SSMConnect.Domain` MUST contain only:
-
-- Connection profile and app settings value types.
-- Connection state and event value types.
-- Validation rules and typed domain errors.
-- Portable DCV connection-file rendering.
-- No AWS SDK types, UI framework types, process APIs, persistence APIs, or global singletons.
-
-`SSMConnectWorkflow` and `SSMConnect.Workflow` MUST:
-
-- Implement the same ordered connection algorithm and state transitions.
-- Depend only on domain types and injected ports.
-- Receive timeout, clock, retry, lifecycle, and event-output dependencies.
-- Not import AppKit, SwiftUI, ServiceManagement, UserNotifications, Darwin, WPF, Win32, or an AWS SDK.
-- Not open browsers, update clipboards, post notifications, or send operating-system signals
-  directly.
-
-Platform and AWS projects MUST implement those ports. UI projects MUST observe workflow snapshots or
-events and issue commands; they MUST NOT reproduce connection rules.
-
-## 6. Portable Contracts
-
-### 6.1 Connection profile
-
-The existing branch implements a JSON Schema with an explicit `schemaVersion`. Its version 1
-profile covers:
-
-- Stable profile ID and display name.
-- SSO start URL, SSO region, account ID, role name, and resource region.
-- Instance tag key and value.
-- Connect mode: `singleUser` or `multiUser`.
-- Local and remote DCV ports.
-- Single-user secret ID.
-- Multi-user agent remote port.
-- The DCV-only connect action. Global app preferences remain local and are not part of this
-  implemented v1 document; this corrects the original proposal to include client preferences.
-
-The schema MUST NOT contain cached AWS credentials, access tokens, DCV passwords, presigned STS
-URLs, tunnel session responses, or local temporary-file paths.
-
-Each client MAY retain native storage internally. Both clients MUST support export and import of the
-portable profile document. Unknown optional fields MUST be preserved where practical, and newer
-unsupported required schema versions MUST fail with an actionable message.
-
-These are contract requirements, not certification of every UI persistence path. The inspected
-macOS UI imports a local copy with a fresh UUID and later exports the native model without the
-DTO's unknown-field bag. The new [portable-profile spec](./portable-profiles.spec.md) explicitly
-requires GUI round-trip and identity/ownership tests, YAML/JSON equivalence, current capability
-coverage and a checked file-backed editing workflow. Do not silently extend v1's DCV-only action
-or claim these additional behaviors are already implemented.
-
-### 6.2 Workflow conformance fixtures
-
-Fixtures MUST describe inputs, provider outcomes, expected calls, emitted states, and terminal
-results. At minimum, both implementations MUST run cases for:
-
-- Reused SSO session and device login.
-- Running, stopped, pending, stopping, and terminated instances.
-- SSM readiness timeout and successful recovery.
-- Tunnel startup, local-port collision, unexpected drop, and bounded reconnect.
-- Single-user secret retrieval and DCV launch.
-- Multi-user identity resolution, agent provisioning, token refresh, and DCV launch.
-- Expired credentials during each AWS stage.
-- Disconnect and stop-workstation cancellation.
-- Application shutdown while a tunnel is active.
-- Workstation instance replacement.
-
-Fixtures MUST contain synthetic identifiers and credentials only.
-
-## 7. Required Workflow Ports
-
-Both workflow implementations MUST expose equivalent behavior through these conceptual ports:
-
-| Port | Responsibility |
-|------|----------------|
-| `AuthProvider` | Reuse, refresh, or obtain AWS IAM Identity Center credentials |
-| `EC2Provider` | Resolve, start, stop, and poll an instance |
-| `SSMProvider` | Poll managed-instance readiness, start, and terminate an SSM session |
-| `SecretsProvider` | Retrieve the single-user DCV password |
-| `IdentityProvider` | Resolve caller identity and create fresh presigned identity tokens |
-| `AgentClient` | Call the multi-user workstation agent through its transient tunnel |
-| `TunnelProvider` | Validate plugin availability and manage a port-forward child process |
-| `ReadinessProbe` | Test the forwarded DCV endpoint and classify failures |
-| `DCVLauncher` | Materialize, launch, and clean a secure DCV connection file |
-| `InstanceIdStore` | Remember the non-secret last instance ID for replacement detection |
-| `Clock` / `Delay` | Supply deterministic timeouts, polling, and retry backoff |
-| `EventSink` | Publish state snapshots, logs, warnings, and notification-worthy events |
-
-Clipboard, desktop notifications, login-at-startup registration, browser opening, sleep/wake
-handling, and application shutdown are shell services. They MUST be invoked by platform policy in
-response to workflow events rather than embedded in the portable workflow.
-
-## 8. Windows Functional Requirements
-
-| ID | Priority | Requirement |
-|----|----------|-------------|
-| XP-01 | P0 | Run as a Windows notification-area application without requiring a console window. |
-| XP-02 | P0 | Import AWS IAM Identity Center profiles from the standard user AWS config directory. |
-| XP-03 | P0 | Implement existing SSO cache reuse, refresh, and interactive device authorization behavior with the AWS SDK for .NET. |
-| XP-04 | P0 | Resolve, start, stop, and monitor the configured EC2 workstation with behavior matching macOS. |
-| XP-05 | P0 | Start and supervise the official Windows `session-manager-plugin` using the same SSM port-forward document and session values. |
-| XP-06 | P0 | Launch Amazon DCV Viewer for Windows from a generated connection file in both connection modes. |
-| XP-07 | P0 | Support multi-user agent provisioning and presigned `sts:GetCallerIdentity` authentication. |
-| XP-08 | P0 | Never persist AWS credentials, DCV passwords, or identity tokens. Restrict temporary connection files to the current user and remove them after launch. |
-| XP-09 | P0 | Match the shared state-transition and error conformance suite. |
-| XP-10 | P1 | Support connect, disconnect, reconnect, stop workstation, profile CRUD, and auto-connect. |
-| XP-11 | P1 | Register startup behavior through a supported per-user Windows mechanism and expose a user-controlled toggle. |
-| XP-12 | P1 | Post native Windows notifications for the same lifecycle events as macOS. |
-| XP-13 | P1 | Recover or clean up a tunnel after process exit, app crash, suspend/resume, and user logoff. |
-| XP-14 | P0 | Produce a signed, versioned x64 installer with silent install, upgrade, and uninstall support. The app itself MUST install per-user without elevation unless a validated dependency makes that impossible. |
-| XP-15 | P1 | Provide accessible keyboard navigation, screen-reader labels, and high-DPI behavior. |
-| XP-16 | P0 | Publish each stable Windows release through the WinGet community repository under a stable package identifier, proposed as `VHCo.SSMConnect`. |
-
-## 9. Platform Adapter Requirements
-
-### 9.1 Session Manager plugin
-
-Before implementation, a Windows spike MUST verify the official plugin's five-argument invocation,
-stdout/stderr behavior, exit codes, shutdown behavior, and x64 availability. AWS documents the
-plugin for PowerShell and Command Prompt and warns that third-party command-line tools may be
-incompatible, so the spike MUST launch it directly through `.NET Process` without relying on an
-interactive shell. The product MUST either:
-
-1. Bundle a pinned, checksum-verified official Windows binary and its license, matching the macOS
-   supply-chain policy; or
-2. Reliably discover and validate an official user installation.
-
-Bundling is preferred for a one-click experience, subject to the spike confirming package layout
-and redistribution terms. Process containment SHOULD use a Windows Job Object so the plugin is
-terminated if the app exits unexpectedly.
-
-### 9.2 Amazon DCV Viewer
-
-The Windows adapter MUST discover the installed viewer using documented installation information or
-file association, not one hardcoded path. A spike MUST prove:
-
-- The Windows viewer accepts the generated `.dcv` format for both auth modes.
-- Shell launch passes the file to the intended viewer.
-- The viewer has consumed the file before deletion.
-- Orphan cleanup is safe after crashes.
-
-The temporary directory and file ACL MUST grant access only to the current user. Startup MUST sweep
-only files created by SSM Connect, using an application-specific name and bounded age.
-
-### 9.3 Windows lifecycle
-
-The Windows shell MUST handle session ending, system suspend/resume, and process exit. Workflow
-cancellation MUST run first; the Job Object provides best-effort cleanup if graceful shutdown does
-not finish. Resume MUST run the same health check used by macOS wake handling before reporting the
-tunnel as connected.
-
-### 9.4 Installer and WinGet
-
-Each stable Windows release MUST attach an immutable installer to the matching GitHub Release. The
-installer URL MUST be direct HTTPS, version-specific, and owned by the publisher. The installer
-MUST support unattended install and uninstall, register accurate Publisher and PackageName values
-in Windows Installed Apps, and return reliable exit codes.
-
-Release automation MUST generate the WinGet installer SHA-256 and a multi-file manifest containing
-version, installer, and default-locale metadata. CI MUST validate the manifest. Before submission,
-the release MUST be exercised in Windows Sandbox or a clean Windows VM for install, launch,
-upgrade, uninstall, and residue checks. The release process then submits a version-specific pull
-request to `microsoft/winget-pkgs` and records its status.
-
-WinGet supports MSI, WiX, MSIX, EXE, and other installer formats. The Phase 0 packaging spike MUST
-choose the underlying format based on tray startup, child-process launch, per-user installation,
-code signing, clean upgrades, and clean uninstall. WinGet compatibility alone does not decide
-between MSIX and WiX/MSI.
-
-## 10. macOS Refactor Requirements
-
-| ID | Priority | Requirement |
-|----|----------|-------------|
-| MR-01 | P0 | Preserve all current macOS behavior and public installation instructions. |
-| MR-02 | P0 | Split domain/workflow code from Apple UI and lifecycle APIs before changing behavior. |
-| MR-03 | P0 | Move concrete default dependency construction out of the workflow and into the macOS composition root. |
-| MR-04 | P0 | Move Darwin signal handling and `AppQuitHandler` ownership into the macOS plugin/lifecycle adapter. |
-| MR-05 | P0 | Move Observation annotations into an observable presenter or snapshot store; workflow rules MUST not require Observation. |
-| MR-06 | P0 | Move AWS SDK error inspection into AWS adapters and expose typed portable failures to the workflow. |
-| MR-07 | P1 | Compile and test the Swift domain/workflow targets without importing Apple-only frameworks. |
-| MR-08 | P1 | Convert existing state-machine tests into shared fixture-backed tests where possible. |
-
-The refactor MUST proceed in small behavior-preserving steps. It MUST NOT combine target extraction
-with retry, authentication, profile, or UI redesign.
-
-## 11. macOS Deployment Target
-
-The existing minimum of **macOS 14 Sonoma** is intentional and uses modern APIs:
-
-- Swift Observation (`@Observable` and `@Bindable`) is available from macOS 14.
-- `MenuBarExtra` and `SMAppService` are modern APIs available from macOS 13.
-- The SwiftUI app lifecycle is current and appropriate for this application.
-
-This is not an old application model. The main executable uses SwiftUI and delegates only the
-lifecycle behavior that still belongs in AppKit.
-
-The author currently uses macOS 15 Sequoia and newer. The deployment target MAY be raised to macOS
-15, but doing so provides no architectural benefit and would only exclude Sonoma users. Keep
-macOS 14 unless a required API or dependency needs 15. The more significant current restriction is
-**Apple Silicon only**, caused by fetching and packaging only the `mac_arm64`
-`session-manager-plugin`. Intel support is outside this specification.
-
-After MR-05, the pure workflow target will no longer require macOS 14 merely because of
-Observation. The shipping app may still retain macOS 14 as its supported baseline.
-
-## 12. Security Requirements
-
-- Continue the current no-inbound-rules architecture; all workstation traffic uses SSM tunnels.
-- Never log credentials, SSO tokens, secret values, presigned URLs, or DCV auth tokens.
-- Keep DCV passwords and tokens in memory only for the shortest practical duration.
-- Restrict temporary DCV files to the current OS user and remove them after viewer consumption.
-- Verify downloaded plugin and packaging artifacts with pinned cryptographic checksums.
-- Include third-party licenses in each platform package.
-- Sign Windows release artifacts before general release.
-- Run CodeQL for C# and GitHub Actions plus dependency and secret scanning.
-- Threat-model profile import, process arguments, temporary files, URI/browser launch, and plugin
-  replacement before release.
-
-## 13. Delivery Phases
-
-### Phase 0: Windows feasibility spikes
-
-Build disposable command-line spikes for AWS SSO, SSM plugin invocation, and DCV launch. No UI and
-no production abstractions. Record exact supported SDK/package versions and results in a plan.
-Failure of a spike MUST change this specification before broad refactoring begins.
-
-The spikes MUST run on actual Windows 11 x64, either physical or virtual. Linux inspection of a
-Windows artifact can establish package contents and architecture, but it cannot validate process,
-registry, file-association, ACL, browser, suspend/resume, or installer behavior.
-
-#### Phase 0 status (2026-08-17)
-
-| Spike | Status | Evidence / remaining work |
-|-------|--------|---------------------------|
-| Host readiness | Partial | Fedora host has KVM/QEMU, 20 GiB available RAM, and enough CPU support. No Windows image is present; only about 37 GiB disk is free. |
-| AWS SDK for .NET SSO capability | Documented | AWS SDK for .NET v4 supports shared IAM Identity Center profiles, cached sessions, and programmatic browser login through `SSOAWSCredentials`; `AWSSDK.SSO` and `AWSSDK.SSOOIDC` are mandatory. Runtime login, refresh, and service calls remain untested. |
-| Windows Session Manager plugin artifact | Inspected | Official current ZIP contains an x86-64 PE `session-manager-plugin.exe`, license, notice, third-party notices, and release notes. Direct `.NET Process` five-argument invocation, output draining, termination, and Job Object behavior remain untested on Windows. |
-| Amazon DCV Windows artifact | Inspected | Amazon publishes signed x64 MSI and portable clients; the portable package contains `dcvviewer.exe`. `.dcv` consumption, both auth modes, process launch, and safe deletion remain untested on Windows. |
-| Installer and WinGet | Documented | WinGet accepts MSI/WiX/MSIX/EXE and requires manifest validation, hashes, silent operation, clean install/uninstall, and publisher-hosted direct URLs. Installer format and clean-VM behavior remain untested. |
-
-Phase 0 is complete only when all runtime rows pass on Windows, both connection modes reach DCV,
-and the installer passes a clean install/upgrade/uninstall cycle. Artifact inspection alone is not
-an implementation go-ahead.
-
-### Phase 1: Contracts and golden fixtures
-
-Create the versioned profile schema and extract representative conformance fixtures from current
-Swift tests. Add schema validation and fixture checks to CI.
-
-### Phase 2: Behavior-preserving Swift separation
-
-Create the Swift domain, workflow, AWS, and macOS targets. Move one dependency boundary at a time,
-running the existing focused tests after every move. Keep the released app behavior unchanged.
-
-### Phase 3: Windows domain and workflow
-
-Implement .NET domain types and workflow ports. Pass schema and mocked conformance tests before
-writing the tray UI.
-
-### Phase 4: Windows adapters and tray shell
-
-Implement AWS, plugin, DCV, persistence, notification, startup, and lifecycle adapters. Add the WPF
-tray and settings UI after one end-to-end connection succeeds from a development harness.
-
-### Phase 5: Packaging and release hardening
-
-Add installer creation, signing, checksums, CodeQL, release assets, WinGet manifest generation and
-submission, upgrade/uninstall tests, and end-to-end tests on supported Windows versions.
-
-## 14. Acceptance Criteria
-
-- **AC-01:** Existing macOS tests pass before and after target separation with no user-visible
-  regression in connect, reconnect, stop, wake, login item, settings, or DCV launch behavior.
-- **AC-02:** Swift workflow/domain targets contain no imports of AppKit, SwiftUI,
-  ServiceManagement, UserNotifications, or Darwin.
-- **AC-03:** A versioned profile exported on macOS imports on Windows and produces equivalent
-  validated values; the reverse direction also passes.
-- **AC-04:** Swift and .NET pass the same required conformance fixtures and emit the same ordered
-  states and terminal error categories.
-- **AC-05:** Windows completes a single-user connection from SSO through DCV auto-login without a
-  terminal command or inbound security-group rule.
-- **AC-06:** Windows completes a multi-user connection with the resolved identity, agent-created
-  session, and fresh identity token.
-- **AC-07:** Disconnect, app exit, logoff, and crash do not leave a reusable orphan tunnel; startup
-  safely handles any process or file residue.
-- **AC-08:** Automated security tests find no persisted credential, DCV password, or presigned token
-  in profile storage, logs, or ordinary temporary files.
-- **AC-09:** Windows release CI builds, tests, scans, packages, and publishes a signed versioned
-  artifact with checksums and licenses; the stable release is installable, upgradeable, and
-  uninstallable through WinGet.
-- **AC-10:** The current macOS release remains independently buildable and releasable throughout
-  Windows development.
-
-## 15. Initial Open Questions and Spike Decisions
-
-These questions MUST be answered in Phase 0 rather than guessed during implementation:
-
-1. Does AWS SDK for .NET v4 runtime behavior match the current app for IAM Identity Center cache,
-  refresh, and device authorization when tested against a real SSO profile?
-2. Does the official x64 Windows `session-manager-plugin` preserve the same five-argument contract,
-  and may its ZIP payload be redistributed inside SSM Connect under the included terms?
-3. Does Amazon DCV Viewer for Windows consume the current `.dcv` file fields identically in both
-   modes, and what signal makes post-launch deletion safe?
-4. Is MSIX compatible with plugin and DCV process launch plus per-user startup, or is a signed
-   installer such as WiX the lower-risk packaging choice?
-5. Which Windows 11 servicing baseline should be the minimum? Architecture is decided: x64 only for
-  v1 because the official Session Manager plugin and DCV client artifacts inspected are x64.
-6. Should profile export include app preferences, or only connection profiles? Proposed: profiles
-   only in schema v1.
-
-## 16. Planning Gate
-
-The original planning gate required all Phase 0 runtime checks before broad target extraction or
-Windows UI work. The branch now contains that implementation; do not restart the same rewrite
-because the main-branch document was not updated. Section 17 defines reconciliation and
-capability-scoped validation for the owner's new priorities. Existing runtime observations must
-be checked against the actual branch/version and must not certify new adapters automatically.
-
-## 17. Reconciliation Findings (2026-10-15)
-
-### 17.1 Inspected Baselines and Executed Checks
-
-- Released macOS baseline: v0.5.0, main commit
-  `0ba81578e5a502c89304ab80406565ce3b23b39d`.
-- Existing port: `chore/windows-phase-0-spikes`, commit
-  `33b68c1365a2ad325068190ddeb098b49467cdfe`, dated 2026-08-20.
-- Relative to that main baseline, the port has 28 unique commits and is one large, squashed
-  feature commit behind. This is not a small textual merge despite the one-commit count.
-- Source includes domain/workflow/AWS/macOS/UI Swift targets, WPF settings/tray code, .NET AWS
-  and process adapters, profile schema/validators, both clients' file import/export controls,
-  and shared exchange/conformance fixtures.
-- The unchanged .NET domain suite passed 102 tests and workflow suite passed 40 tests on macOS
-  with .NET SDK 10.0.401. These are portable-layer tests, not Windows runtime or UI proof.
-- A non-checkout merge analysis reported 16 conflicting paths around the manifest, moved domain
-  types, SSM interfaces, plugin handling, UI composition and new browser/editor workflows.
-
-### 17.2 Reuse and Rework
-
-Retain the native SwiftUI/WPF direction, separate portable DTO/schema boundary, existing provider
-seams and verified portable tests. Do not replace the native clients with another UI framework
-or discard the branch as an abandoned spike.
-
-Reconcile all current macOS behavior and regression tests, not just fields that compile:
-
-- `tunnelOnly` must skip DCV readiness, password/desktop provisioning and launch while requiring
-  a live owned listener. The existing portable v1 schema only accepts `dcvViewer`.
-- Web forwards, managed browser setup/restore and the native Remote-SSH coordinator/bridge are
-  absent from the inspected port. Move platform-neutral rules into the appropriate boundaries;
-  implement and verify OS-specific process, file-lock, browser and SSH behavior separately.
-- Carry current authentication handoff, lease renewal/identity checks, bounded owned-process
-  shutdown, profile-switch cancellation, and setup/restore regressions into the modular targets.
-- Preserve main's stable empty-store profile identity. The port's getter still creates a fresh
-  template on every read; choosing that old implementation would restore a fixed first-run bug.
-- Portable DTO preservation does not establish GUI preservation. The macOS UI's import-as-copy
-  behavior and lost unknown-field state need explicit contract/identity reconciliation.
-
-### 17.3 Updated Product Priorities and Gates
-
-The owner requested reusable text configuration and prioritizing Windows browser access and native
-VS Code over fixing DCV first. Keep DCV as an optional capability; do not gate an independently
-verified browser/editor feature on perfect Windows DCV. Do not weaken macOS DCV regression gates.
-
-The shared contract must represent current configuration and the
-[observed SSO recovery failure](./ssm-connect.spec.md#13-authentication-freshness-and-recovery-follow-up-2026-10-15).
-Schema migration and attached-file semantics are specified separately; the owner accepted the
-attached-source/canonical-save direction on 2026-10-15 and continued implementation on 2026-10-16.
-Their local verification does not waive the OS-specific acceptance gates below.
-
-An actual Windows run is still required for each Windows capability being declared supported:
-native AWS SSO recovery, raw plugin/proxy I/O, OpenSSH execution/forwarding, per-channel EIC
-authorization, ACLs, process ownership/cleanup, browser routing and editor reconnection. A passing
-C# test on macOS cannot prove those behaviors. SSH lease ownership must use Windows equivalents
-of user identity and process creation time; POSIX permission checks are not portable substitutes.
-
-Retain installer, signing and upgrade/uninstall requirements for any declared Windows release.
-Existing unsigned branch artifacts are not proof of signed distribution. Do not certify isolated
-multi-user Remote-SSH merely because socket mode connects: the earlier live socket was group
-writable, and actual cross-user isolation remains a separate host/security acceptance.
-
-Reconcile in accepted user-visible increments, preserving rollback points and current tests.
-This status update authorizes neither a wholesale merge nor privileged workstation changes.
-
-### 17.4 Executed Local Follow-Up (2026-10-16)
-
-Work is preserved in two uncommitted worktrees: the existing macOS branch and
-`feature/windows-profile-auth-followups`, based on port baseline `33b68c1`. No existing worktree
-was reset, merged, switched, installed or restarted.
-
-The Windows increment adds safe v2 YAML/JSON plus v1 reading, actual-client export crossing,
-checked attached-file editing and staging in WPF, shared auth freshness/recovery and a tunnel-only
-path that never performs DCV readiness, password fetch, desktop provisioning or launch. Healthy
-targets remain active when saved selection changes. Missing web/browser/editor adapters are
-explicit configuration failures, not silent fallback paths.
-
-Evidence: 245 Swift tests; 122 .NET domain, 91 workflow, 11 SDK and 6 persisted-store tests;
-all Windows projects cross-build without warnings/errors. Six native filesystem cases are
-explicitly skipped on macOS. Both actual-client v2 export directions and the retained v1/39-case
-workflow contracts validate. Workflow lint, MSI XML and packaged YAML notice checks pass.
-
-Native Windows UI/SSO/ACL/rename/installer execution, browser/editor adapters and parity with the
-current macOS transport integrations remain separate work. The refreshed macOS candidate is
-unreleased and uninstalled; no hosted CI, commit, push or release was performed.
+The same core source supplies profile rules, authorization coordination,
+connection state machines, retry/cancellation policies, transport orchestration
+and recovery decisions on every supported platform. Each target is compiled and
+packaged for its OS/architecture. Native adapters remain necessary beyond the UI.
+
+The presentation layer renders snapshots and sends commands. It must not
+reimplement AWS sequencing, retry rules, profile validation or target/lease
+ownership. C# may remain the language of a Windows shell and adapter; that does
+not justify retaining the separate C# core.
+
+Use the historical target split as prior art:
+
+| Boundary | Responsibility |
+| --- | --- |
+| `SSMConnectDomain` | Models, validation, portable document semantics, state/event values and typed errors. |
+| `SSMConnectWorkflow` | Authentication and desktop/web/editor orchestration against injected ports. |
+| `SSMConnectAWS` | Swift SDK calls, credential providers and error translation. |
+| Platform adapters | Native files, process containment, browser/editor integration, clipboard, notifications and startup. |
+| UI/composition | Native presentation, user consent, event observation and dependency assembly. |
+
+Names may be adjusted when tasks are written. Preserve compatibility through
+the existing umbrella where needed; do not make current macOS callers migrate
+unnecessarily. Domain/workflow boundaries must not import AppKit, SwiftUI,
+Darwin, ServiceManagement, UserNotifications or expose AWS SDK/native UI types.
+Foundation APIs also require platform checks; importing Foundation is not proof
+that every API used is portable.
+
+### Integration and feasibility
+
+Q1 selects an embedded library interface or a bundled user-scoped helper with
+private IPC. Both expose high-level commands, ordered state/events, typed
+failures, cancellation and explicit shutdown. UI updates must remain responsive.
+Do not pass Swift object layouts directly across a foreign-language boundary.
+Do not implement both integration mechanisms as permanent alternatives.
+
+If a helper is chosen, define framing, version negotiation, endpoint/process
+ownership, failure reporting and crash cleanup. It is not an unauthenticated
+localhost web service. SSH raw-stream proxy traffic remains separate from
+control messages; diagnostics must not corrupt its stdout.
+
+Before broad extraction, the first accepted implementation increment must prove
+the selected bridge and exact Swift dependency stack on native Windows and
+Linux. Exercise SSO authorization/refresh, an AWS service call, real SSM/plugin
+I/O, cancellation and owned-child cleanup. A dependency blocker stops that
+increment for an owner decision; it does not silently authorize another core
+language, duplicated workflow or CLI-based authentication fallback.
+
+### Behavior, identity and local state
+
+Preserve all current supported capabilities, including single-user and
+identity-only multi-user DCV, tunnel-only connections, web forwards, managed
+browser consent/restore, native VS Code, authorization recovery, rolling leases
+and explicitly confirmed workstation replacement.
+
+Desktop, web and editor actions remain independent. Headless paths must not
+fetch a DCV password, provision a desktop or launch Viewer. Unsupported required
+capabilities produce an actionable refusal before AWS or local setup effects;
+they never silently downgrade to a different connection mode.
+
+Keep stable local profile and editor authority identities. Do not copy lease
+ownership, browser paths or user consent from one machine to another. Preserve
+v1/v2 profile reading, canonical-save consent, unknown-field handling, revision
+conflict behavior and connected-profile staging. Use native ownership,
+permission and atomic-file guarantees rather than translating POSIX checks
+literally to Windows.
+
+Authorization state and renewal decisions belong to the shared core.
+Platform/UI adapters may open an approved sign-in URL and report interaction,
+but do not own a parallel authentication state machine. Ordinary snapshots,
+profiles and logs exclude credentials and tokens. Preserve explicit
+password-copy behavior through a protected capability, not generic event logs.
+Existing authorized SSO cache behavior is not a license to persist credentials
+in profiles or new integration metadata.
+
+### Preservation and selective reuse
+
+The preservation snapshot is
+`ce24cf25983f05c243d0f6218e719614a48d6845`, with tree
+`116eb74004527f7fe741dbadd93077e1091113fe`.
+It contains all 42 source changes from the old Windows follow-up worktree.
+Its parent, `33b68c1365a2ad325068190ddeb098b49467cdfe`, retains the earlier
+committed port. Preservation merge
+`0a38c0eae8f526c825e2f0d30d4342bcf631df48` makes both reachable from this branch
+without changing the active application source tree.
+
+Read a preserved file with `git show ce24cf2:<path>`:
+
+| Preserved path | Reuse |
+| --- | --- |
+| `SSMConnectKit/Package.swift` and `Sources/SSMConnectDomain`, `SSMConnectWorkflow`, `SSMConnectAWS`, `SSMConnectMacOS`, `SSMConnectUI` below that package | Earlier Swift boundaries, injected ports and composition. Reapply to current code; do not restore the stale implementation wholesale. |
+| `windows/src/SSMConnect.App/` | WPF settings, tray, profile-file UI and Windows interaction experience, after removing ownership of connection rules. |
+| `windows/src/SSMConnect.Windows/` | Native ACL/file identity, process containment, launch, clipboard and startup behavior. Adapt to the selected Swift boundary. |
+| `contracts/fixtures/workflows/` and Windows tests | Historical behavioral cases, negative cases and native-adapter expectations. Extend for current behavior; old passing results are not fresh proof. |
+| `packaging/` and Windows workflows | Installer prerequisites, license notices and install/upgrade/uninstall lessons. Rebuild around the new artifacts. |
+| `windows/src/SSMConnect.Domain`, `SSMConnect.Workflow`, `SSMConnect.Aws` | Behavioral reference and test inputs only; no second production core. |
+
+The current macOS source and tests remain the integration baseline. Historical
+evidence stays in Git, including the old spec and handoffs. Do not copy their
+completed criterion marks into this revision. Previous IDs AC-01 through AC-10
+remain historical; this scope starts at AC-11.
+
+### Migration, performance and release boundaries
+
+Refactor in reviewed increments with a working macOS rollback point. Preserve
+profiles and local integration metadata; do not perform irreversible migrations
+or redirect healthy connections during extraction.
+
+Measure startup, idle memory/CPU, UI responsiveness and connection latency.
+Language choice does not establish performance parity. Q4 sets numeric budgets
+and a reproducible baseline before this draft can be accepted.
+
+Retain the existing macOS release path through
+[release.yml](../../.github/workflows/release.yml),
+[release.sh](../../scripts/release.sh), the GitHub release ZIP and the Homebrew
+cask. New helper/framework artifacts, if selected, must be bundled, licensed and
+signed with the application. Windows and Linux need native build/test/package
+paths, prerequisite checks and install/upgrade/uninstall verification for the
+chosen matrix. Do not resurrect old release workflows as if they publish the new
+core, or change macOS signing claims through this refactor.
+
+## Acceptance Criteria
+
+- [ ] AC-11: Each supported desktop client performs its connection workflows through the same shared Swift core, without a second language implementation of those rules.
+- [ ] AC-12: Single-user and multi-user desktop connections retain the current authentication, readiness, viewer-launch and no-shared-user-fallback behavior on each supported DCV target.
+- [ ] AC-13: Tunnel-only, web and editor actions operate independently without unintended DCV password fetch, desktop provisioning or Viewer launch.
+- [ ] AC-14: Existing profiles remain readable and retain identity, portable fields, checked attached-file saves, conflict recovery and explicit consent across the migration.
+- [ ] AC-15: One shared authorization workflow preserves silent refresh, explicit sign-in recovery, pending-action context and cancellation without redirecting established connections.
+- [ ] AC-16: Supported browser integrations retain consent, ownership, restore and fail-closed private-domain routing without modifying unrelated browser or system settings.
+- [ ] AC-17: Native editor access preserves stable workspace authority, owned leases, unsaved windows and explicit replacement/recovery behavior without weakening host trust.
+- [ ] AC-18: Disconnect, cancellation, app exit, crash and supported sleep/logoff transitions leave no unintended owned local processes or reusable unauthorized access.
+- [ ] AC-19: Profiles, ordinary state/events, diagnostics and temporary artifacts do not expose credentials or tokens; local caches and integration artifacts enforce the target OS's ownership and permission rules.
+- [ ] AC-20: The macOS application retains its current native interaction and documented desktop, browser, editor and recovery behavior while using the extracted core.
+- [ ] AC-21: Every declared Windows/Linux artifact installs, starts with its required dependencies, upgrades and uninstalls correctly on its declared native OS/CPU/desktop matrix.
+- [ ] AC-22: Each declared client meets the owner-approved numeric startup, idle-resource, responsiveness and connection-latency budgets established under Q4.
+- [ ] AC-23: Supported Windows and Linux clients complete real SSO/refresh, AWS/SSM/plugin and native-integration scenarios; cross-compilation is not their sole support evidence.
+- [ ] AC-24: macOS, Windows and Linux artifacts remain independently buildable and releasable, with all selected core/helper assets and required notices present in their final packages.
+
+## Test Plan
+
+| Criterion | Proof |
+| --- | --- |
+| AC-11 | Boundary checks and common-core tests on each OS, plus a native UI command/event drive-through proving all clients invoke the same Swift implementation. Inspect the built dependency graph for duplicate production workflows. |
+| AC-12 | On each supported native DCV target, connect in both modes, exercise readiness failure/retry and agent rejection, and verify authenticated Viewer access plus cleanup. Rejection must not fall back to a shared identity. |
+| AC-13 | Run headless, web-only and editor-only flows with DCV unavailable; assert zero password/provision/Viewer operations and verify an owned working transport. Repeat with concurrent capabilities. |
+| AC-14 | Run current profile/codec/store tests with `swift test --package-path SSMConnectKit`; cross-import v1/v2 fixtures, change attached files externally, race Save, and verify identity, unknown fields, consent and original bytes on conflict. Repeat native file-permission/rename cases. |
+| AC-15 | Controlled clock/expiry tests and native expiry/revocation scenarios: silent renewal, rejected refresh, one explicit login, pending-action resume, profile change, Stop and cancellation. Healthy established transports retain their target/auth context. |
+| AC-16 | On each supported browser/OS combination, run consent/setup/restore, policy/ownership refusal and transport-loss scenarios. Selected private suffixes must fail closed while unrelated public browsing remains unchanged. |
+| AC-17 | Native Remote-SSH scenarios cover concurrent windows, expired authorization/lease recovery, dirty buffers, app interruption and confirmed replacement. Reopen the original workspace authority and verify remote commands/editing without bypassing host-key checks. |
+| AC-18 | Kill only the owned test client/process by PID, then check local child containment and server-session recovery; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
+| AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
+| AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
+| AC-21 | Install the final packaged payload on a clean native target, verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Record exact OS/CPU/desktop and artifact hash. |
+| AC-22 | Before acceptance, record numeric limits in this document. On matched native targets measure repeated startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the recorded workload; compare every metric to its approved limit. |
+| AC-23 | Native Windows/Linux feasibility records must include exact Swift/SDK/plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
+| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Verify one platform's release does not require publishing another's. |
+
+## Tasks
+
+None yet. Resolve the questions, review the exact spec commit independently and
+obtain owner acceptance before generating one-commit tasks through vh-adlc.
+The branch preparation and historical snapshot are not implementation tasks or
+evidence that the criteria above are met.
+
+## Open Questions
+
+### Q1: How should non-Swift native interfaces call the shared core?
+
+**Recommendation:** A. Evaluate a bundled user-scoped helper first, preserving
+Swift core ownership while avoiding foreign-language object and async ABI coupling.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Bundled helper with private IPC** | One command/event interface usable by different native UI languages. | Another owned process, protocol/versioning, secure IPC and lifecycle packaging. |
+| **B. Embedded library with a small C-compatible interface** | In-process calls without a separate core process. | Per-language bindings, async callback/cancellation and memory ownership work. |
+
+**Why this is yours:** This changes deployment, debugging and the integration
+contract. Neither option has been proven for this app on Windows/Linux.
+
+### Q2: Which OS versions, CPUs and Linux desktops are required for the first supported release?
+
+**Recommendation:** A. Name the owner's actual Windows/Linux targets and retain
+the current macOS baseline; add other targets only with dependency and native proof.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. An explicit initial host matrix** | Bounded native acceptance and packaging. | Other distributions, desktops and architectures remain unsupported until added. |
+| **B. A broader declared matrix immediately** | More initial supported environments. | Additional toolchains, dependency/Viewer checks, native runners and packaging. |
+
+**Why this is yours:** Swift availability alone does not establish SDK, plugin,
+browser, DCV or desktop integration support. No Fedora/Ubuntu or CPU choice has
+been inferred from an unrelated tagged file.
+
+### Q3: Which native interface should Linux use?
+
+**Recommendation:** A. Select a desktop-native toolkit after Q2, while retaining
+the existing macOS UI and evaluating reuse of the Windows WPF shell.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. A Linux-native shell over the shared core** | Native desktop integration without changing the existing macOS interface. | A separate presentation layer and its toolkit bindings. |
+| **B. A shared Windows/Linux presentation toolkit** | More shared UI code. | Changes to the existing WPF shell and a separate native-integration assessment. |
+
+**Why this is yours:** Core reuse does not decide the desktop toolkit or tray,
+accessibility and Wayland/X11 experience.
+
+### Q4: What measured performance budgets must the migration preserve?
+
+**Recommendation:** A. Measure the current macOS app and approve numeric
+tolerances plus explicit Windows/Linux limits before accepting this spec.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Baseline-relative macOS limits and explicit new-platform budgets** | Evidence-based parity with the working app. | Native baseline collection and an owner budget decision before implementation. |
+| **B. Fixed absolute limits for all platforms** | One initial pass/fail target independent of the old app. | Choosing limits without current measurements may exclude usable hosts or miss regressions. |
+
+**Why this is yours:** Performance equivalence cannot be inferred from retaining
+Swift. This branch preparation ran no application benchmarks.
+
+## Review Log
+
+| Date | Review | Kind | Commit | Model | Isolation | Outcome |
+| --- | --- | --- | --- | --- | --- | --- |
+
+No independent review or acceptance has been recorded for this revision.
+
+## Sources
+
+- Owner direction on 2026-11-12: preserve working Swift, share its core across
+  macOS/Windows/Linux, permit component redesign, adopt vh-adlc and prepare a
+  clean consolidation branch before implementation.
+- [Current main baseline](https://github.com/vhco-pro/ssm-connect/commit/eb4f0bc0b8f98f206ed519feb461c70ba3614b41):
+  application source and release behavior retained by this branch.
+- `git show 2aa079d:docs/specs/cross-platform-client.spec.md`: the original
+  two-core decision explicitly rejected Swift/.NET FFI for integration cost,
+  not a demonstrated inability to run a refactored Swift core on Windows.
+- `git show ce24cf2:SSMConnectKit/Package.swift`: the historical Swift target
+  split; current macOS features still need to be retained during extraction.
+- `git rev-parse ce24cf2^{tree}` returned
+  `116eb74004527f7fe741dbadd93077e1091113fe`; the preservation commit matched
+  the staged source tree, including all 18 previously untracked files.
+- `git diff --exit-code 0a38c0e^1 0a38c0e -- .` passed: the archival merge
+  changed no active source files.
+- [Swift platform support](https://www.swift.org/platform-support/): Swift
+  development/deployment support includes Windows and Linux.
+- [AWS SDK for Swift setup](https://docs.aws.amazon.com/sdk-for-swift/latest/developer-guide/setting-up.html):
+  SDK cross-platform/toolchain guidance; not native validation of this app.
+- [Feature-document conventions](https://github.com/vhco-pro/docs/blob/d8f07c9dd69038375a535af8ad586086688f85ab/conventions/feature-documents.md)
+  and [prose guide](https://github.com/vhco-pro/docs/blob/d8f07c9dd69038375a535af8ad586086688f85ab/guides/humanize-prose.md):
+  the pinned format and authoring rules for this revision.
