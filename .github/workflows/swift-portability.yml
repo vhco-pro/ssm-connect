@@ -1,0 +1,50 @@
+name: Swift portability spikes
+
+on:
+  push:
+    branches: [feat/shared-swift-core]
+    paths:
+      - .github/workflows/swift-portability.yml
+      - spikes/swift-portability/**
+      - SSMConnectKit/Package.resolved
+      - SSMConnectKit/Sources/SSMConnectKit/Models/AWSRegion.swift
+      - SSMConnectKit/Sources/SSMConnectKit/Services/AWSConfigParser.swift
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portability:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Run credential-free portability checks
+        shell: bash
+        run: bash spikes/swift-portability/run.sh "$RUNNER_TEMP/ssm-connect-spike"
+      - name: Retain spike evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: swift-portability-${{ matrix.os }}
+          path: ${{ runner.temp }}/ssm-connect-spike/
+          if-no-files-found: warn
+          retention-days: 7

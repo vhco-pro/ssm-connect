@@ -1,0 +1,8 @@
+{"version":1,"command":"hello"}
+{"version":1,"command":"region","value":"eu-central-1"}
+{"version":1,"command":"region","value":" eu-central-1 "}
+{"version":1,"command":"profile","value":"workstation","config":"[profile workstation]\nsso_session = team\nregion = eu-west-1\n[sso-session team]\nsso_region = eu-central-1\n"}
+{"version":1,"command":"unknown"}
+{"version":2,"command":"hello"}
+{"version":1,"command":"hello"
+{"version":1,"command":"stop"}
