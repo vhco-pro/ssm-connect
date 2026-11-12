@@ -17,6 +17,7 @@ public enum ConnectMode
 public enum ConnectAction
 {
     DcvViewer,
+    TunnelOnly,
 }
 
 /// <summary>
@@ -57,6 +58,8 @@ public sealed record ConnectionProfile
 
     /// <summary>Secrets Manager secret ID for the DCV password. An identifier, never the value.</summary>
     public string? SecretId { get; init; }
+    public WebForwardsConfiguration? WebForwards { get; init; }
+    public RemoteDevelopmentConfiguration? RemoteDevelopment { get; init; }
 
     public const int DefaultAgentRemotePort = 8444;
 
@@ -76,6 +79,29 @@ public sealed record ConnectionProfile
         && AwsRegion.IsValid(ResourceRegion)
         && !string.IsNullOrEmpty(InstanceTagKey)
         && !string.IsNullOrEmpty(InstanceTagValue);
+}
+
+public enum ManagedBrowserChoice { Automatic, Chrome, Edge, Firefox, Zen }
+public enum BrowserMode { Existing, Separate }
+
+public sealed record LocalForward(
+    string Name, int LocalPort, string RemoteHost, int RemotePort, string? OpenPath = null);
+
+public sealed record WebForwardsConfiguration
+{
+    public bool Enabled { get; init; }
+    public string? SshUser { get; init; }
+    public int? SocksPort { get; init; } = 1080;
+    public IReadOnlyList<string> ProxySuffixes { get; init; } = [];
+    public IReadOnlyList<LocalForward> LocalForwards { get; init; } = [];
+    public ManagedBrowserChoice? Browser { get; init; }
+    public BrowserMode? BrowserMode { get; init; }
+}
+
+public sealed record RemoteDevelopmentConfiguration
+{
+    public bool Enabled { get; init; }
+    public string? Folder { get; init; }
 }
 
 /// <summary>Global settings that influence the connection lifecycle.</summary>

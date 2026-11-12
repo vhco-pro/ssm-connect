@@ -40,6 +40,7 @@ public sealed class ConnectionWorkflow
     private SsmSession? _session;
     private CancellationTokenSource? _cancellation;
     private ConnectionState _state = ConnectionState.Disconnected;
+    private ConnectionProfile _selectedProfile;
 
     public ConnectionWorkflow(
         IAuthProvider auth,
@@ -71,11 +72,15 @@ public sealed class ConnectionWorkflow
         _delay = delay;
         _events = events;
         Profile = profile;
+        _selectedProfile = profile;
         Settings = settings;
         _timeouts = timeouts ?? ConnectionTimeouts.Default;
     }
 
     public ConnectionProfile Profile { get; private set; }
+
+    /// <summary>The selected context; a connected transport retains Profile until explicitly replaced.</summary>
+    public ConnectionProfile SelectedProfile => _selectedProfile;
 
     public AppSettings Settings { get; private set; }
 
@@ -113,15 +118,37 @@ public sealed class ConnectionWorkflow
     // MARK: Public API
 
     /// <summary>
-    /// Applies a new profile or settings. Ignored while a connection is in flight so the target is
-    /// never swapped out from under an active tunnel; settings that are safe to change live do.
+    /// Applies settings immediately and invalidates pending work for a changed selection. A healthy
+    /// connection retains its profile and transport until explicit reconnect or disconnect.
     /// </summary>
     public void Apply(ConnectionProfile profile, AppSettings settings)
     {
         Settings = settings;
+        if (profile == SelectedProfile)
+        {
+            return;
+        }
+
+        _selectedProfile = profile;
+        Task? previous = CancelCurrent();
+        if (_auth is AuthorizationSession authorization) { authorization.Apply(profile); }
+        if (State == ConnectionState.Connected && TunnelActive)
+        {
+            return;
+        }
+
         if (State == ConnectionState.Disconnected)
         {
-            Profile = profile;
+            ActivateSelectedProfile();
+        }
+        else
+        {
+            Launch(async _ =>
+            {
+                await AwaitQuietlyAsync(previous).ConfigureAwait(false);
+                await TeardownTunnelAsync().ConfigureAwait(false);
+                ResetToDisconnected();
+            });
         }
     }
 
@@ -138,12 +165,20 @@ public sealed class ConnectionWorkflow
     /// <summary>Runs the full connection flow. A no-op if already connecting or connected.</summary>
     public void Connect()
     {
-        if (State == ConnectionState.Connected)
+        if (State is not ConnectionState.Disconnected and not ConnectionState.Error)
         {
             return;
         }
 
-        Launch(RunConnectAsync);
+        Launch(async token =>
+        {
+            if (Profile != SelectedProfile)
+            {
+                await TeardownTunnelAsync().ConfigureAwait(false);
+                ActivateSelectedProfile();
+            }
+            await RunConnectAsync(token).ConfigureAwait(false);
+        });
     }
 
     /// <summary>Tears any tunnel down and returns to disconnected.</summary>
@@ -166,6 +201,7 @@ public sealed class ConnectionWorkflow
         {
             await AwaitQuietlyAsync(previous).ConfigureAwait(false);
             await TeardownTunnelAsync().ConfigureAwait(false);
+            ActivateSelectedProfile();
             await RunConnectAsync(token).ConfigureAwait(false);
         });
     }
@@ -175,12 +211,20 @@ public sealed class ConnectionWorkflow
     {
         string? instanceId = InstanceId;
         AwsCredentials? credentials = _credentials;
+        Task? previous = CancelCurrent();
         if (instanceId is null || credentials is null)
         {
+            Launch(async _ =>
+            {
+                await AwaitQuietlyAsync(previous).ConfigureAwait(false);
+                await TeardownTunnelAsync().ConfigureAwait(false);
+                ResetToDisconnected();
+            });
             return;
         }
 
-        Task? previous = CancelCurrent();
+        // Stop addresses the retained active instance, not a staged selection.
+        if (_auth is AuthorizationSession authorization) { authorization.Apply(Profile); }
         Launch(async token =>
         {
             await AwaitQuietlyAsync(previous).ConfigureAwait(false);
@@ -188,8 +232,11 @@ public sealed class ConnectionWorkflow
             try
             {
                 _events.Log("ec2", $"Stopping instance {instanceId}…");
-                await _ec2.StopInstanceAsync(instanceId, Profile.ResourceRegion, credentials, token)
-                    .ConfigureAwait(false);
+                await WithReauthAsync(async fresh =>
+                {
+                    await _ec2.StopInstanceAsync(instanceId, Profile.ResourceRegion, fresh, token).ConfigureAwait(false);
+                    return true;
+                }, token).ConfigureAwait(false);
                 ResetToDisconnected();
                 _events.Notify(ConnectionNotification.Stopped);
             }
@@ -212,11 +259,19 @@ public sealed class ConnectionWorkflow
             return;
         }
 
-        bool healthy = await _readiness
-            .WaitUntilReadyAsync(port, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(2), cancellationToken)
-            .ConfigureAwait(false);
+        bool healthy = Profile.ConnectAction == ConnectAction.TunnelOnly
+            ? await _readiness.IsListeningAsync(port, TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false)
+            : await _readiness.WaitUntilReadyAsync(
+                port, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
         if (healthy)
         {
+            return;
+        }
+
+        if (Profile != SelectedProfile)
+        {
+            WarningMessage = "The previous target did not respond after wake. Reconnect explicitly to use the selected profile.";
+            _events.Log("tunnel", WarningMessage);
             return;
         }
 
@@ -271,6 +326,10 @@ public sealed class ConnectionWorkflow
 
         try
         {
+            if (Profile.WebForwards?.Enabled == true || Profile.RemoteDevelopment?.Enabled == true)
+            {
+                throw new UnsupportedConnectionFeatureException();
+            }
             // 0. Pre-flight. A malformed region would otherwise reach the SDK's endpoint resolver
             //    and surface as an opaque client error, so both regions are validated here, before
             //    any state transition or network call.
@@ -292,7 +351,7 @@ public sealed class ConnectionWorkflow
                 token => _auth.AuthenticateAsync(Profile, token),
                 cancellationToken).ConfigureAwait(false);
             _credentials = credentials;
-            _events.Log("auth", "Authenticated; SSO session valid.");
+            _events.Log("auth", "Authorization ready for new operations; SSO session deadline is unknown.");
 
             // 2. Resolve the workstation by tag.
             State = ConnectionState.Resolving;
@@ -329,15 +388,17 @@ public sealed class ConnectionWorkflow
             {
                 State = ConnectionState.Starting;
                 _events.Log("ec2", $"Instance is {instance.State.Wire()}; starting it…");
-                instance = await WithReauthAsync(
+                await WithReauthAsync(
                     async creds =>
                     {
                         await _ec2.StartInstanceAsync(instance.Id, Profile.ResourceRegion, creds, cancellationToken)
                             .ConfigureAwait(false);
-                        return await _ec2.PollUntilRunningAsync(
-                            instance.Id, Profile.ResourceRegion, creds,
-                            _timeouts.Start, _timeouts.StartPollInterval, cancellationToken).ConfigureAwait(false);
+                        return true;
                     },
+                    cancellationToken).ConfigureAwait(false);
+                instance = await WithReauthAsync(
+                    creds => _ec2.PollUntilRunningAsync(instance.Id, Profile.ResourceRegion, creds,
+                        _timeouts.Start, _timeouts.StartPollInterval, cancellationToken),
                     cancellationToken).ConfigureAwait(false);
                 _events.Log("ec2", "Instance is now running.");
             }
@@ -374,16 +435,20 @@ public sealed class ConnectionWorkflow
                 .ConfigureAwait(false);
 
             // 7. Auto-login. Failures here are non-fatal: the tunnel stays up and the user is warned.
-            if (Profile.ResolvedConnectMode == ConnectMode.SingleUser)
+            if (Profile.ConnectAction != ConnectAction.TunnelOnly)
             {
-                await FetchSecretAndLaunchAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await EnsureSessionAndLaunchMultiUserAsync(instance.Id, cancellationToken).ConfigureAwait(false);
+                if (Profile.ResolvedConnectMode == ConnectMode.SingleUser)
+                {
+                    await FetchSecretAndLaunchAsync(cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await EnsureSessionAndLaunchMultiUserAsync(instance.Id, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             // 8. Connected.
+            cancellationToken.ThrowIfCancellationRequested();
             State = ConnectionState.Connected;
             _events.Log("tunnel", $"Connected: 127.0.0.1:{Profile.LocalPort} → {instance.Id}:{Profile.RemotePort}.");
             StartTunnelMonitor(handle);
@@ -459,6 +524,14 @@ public sealed class ConnectionWorkflow
     /// </summary>
     private async Task AssertEndpointReadyAsync(int port, CancellationToken cancellationToken)
     {
+        if (Profile.ConnectAction == ConnectAction.TunnelOnly)
+        {
+            if (!await _readiness.IsListeningAsync(port, _timeouts.TunnelListen, cancellationToken).ConfigureAwait(false))
+            {
+                throw DcvReadinessException.TunnelNotEstablished(port);
+            }
+            return;
+        }
         if (await _readiness.WaitUntilReadyAsync(port, _timeouts.DcvReady, _timeouts.DcvReadyPollInterval, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -503,7 +576,7 @@ public sealed class ConnectionWorkflow
         }
         catch (Exception error)
         {
-            WarningMessage = error.Message;
+            WarningMessage = SafeMessage(error);
         }
     }
 
@@ -517,9 +590,11 @@ public sealed class ConnectionWorkflow
         {
             AwsCredentials credentials = _credentials ?? throw new SignInRequiredException();
 
-            string username = await _identity
-                .ResolveIdentityAsync(Profile.ResourceRegion, credentials, cancellationToken).ConfigureAwait(false);
-            _events.Log("auth", $"Multi-user identity resolved to '{username}'.");
+            _ = await WithReauthAsync(
+                creds => _identity.ResolveIdentityAsync(Profile.ResourceRegion, creds, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+            credentials = _credentials ?? throw new SignInRequiredException();
+            _events.Log("auth", "Multi-user identity resolved.");
 
             // The agent tunnel is needed for this one call only — DCV reaches the verifier locally
             // on the instance, not through the client — so it is always torn down straight after,
@@ -531,8 +606,9 @@ public sealed class ConnectionWorkflow
             EnsureSessionResult provisioned;
             try
             {
-                provisioned = await EnsureSessionWithRetryAsync(agentPort, credentials, cancellationToken)
-                    .ConfigureAwait(false);
+                provisioned = await WithReauthAsync(
+                    creds => EnsureSessionWithRetryAsync(agentPort, creds, cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -542,7 +618,7 @@ public sealed class ConnectionWorkflow
                 await CloseSessionQuietlyAsync(agentSession).ConfigureAwait(false);
             }
 
-            _events.Log("tunnel", $"Agent ensured session '{provisioned.SessionId}' for '{provisioned.User}'.");
+            _events.Log("tunnel", "Agent ensured the caller's desktop session.");
 
             if (!_dcv.IsViewerInstalled())
             {
@@ -551,6 +627,7 @@ public sealed class ConnectionWorkflow
             }
 
             // Minted last, immediately before launch, so it is as fresh as possible.
+            credentials = _credentials ?? throw new SignInRequiredException();
             string token = _identity.PresignedIdentityToken(Profile.ResourceRegion, credentials);
             await _dcv.LaunchAsync(
                 DcvConnectionFile.MultiUser(Profile.LocalPort, provisioned.User, provisioned.SessionId, token),
@@ -562,8 +639,8 @@ public sealed class ConnectionWorkflow
         }
         catch (Exception error)
         {
-            WarningMessage = error.Message;
-            _events.Log("tunnel", $"Multi-user connect issue: {error.Message}");
+            WarningMessage = SafeMessage(error);
+            _events.Log("tunnel", $"Multi-user connect issue: {WarningMessage}");
         }
     }
 
@@ -589,6 +666,10 @@ public sealed class ConnectionWorkflow
                 throw;
             }
             catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (ExpiredCredentialsException)
             {
                 throw;
             }
@@ -653,9 +734,13 @@ public sealed class ConnectionWorkflow
     private async Task HandleTunnelDropAsync(TunnelDropReason.ProcessExited exited, CancellationToken cancellationToken)
     {
         _handle = null;
-        string detail = string.IsNullOrEmpty(exited.StandardError)
-            ? $"exit code {exited.ExitCode}"
-            : exited.StandardError;
+        string detail = $"exit code {exited.ExitCode}";
+
+        if (Profile != SelectedProfile)
+        {
+            Fail(new TunnelException("The previous target's tunnel dropped. Reconnect explicitly to use the selected profile."));
+            return;
+        }
 
         if (!Settings.AutoReconnect)
         {
@@ -678,7 +763,9 @@ public sealed class ConnectionWorkflow
             {
                 await _delay.WaitAsync(_timeouts.ReconnectBackoff, cancellationToken).ConfigureAwait(false);
                 State = ConnectionState.Tunneling;
-                ITunnelHandle handle = await EstablishTunnelAsync(instanceId, cancellationToken).ConfigureAwait(false);
+                ITunnelHandle handle = Profile.ConnectAction == ConnectAction.TunnelOnly
+                    ? await EstablishReadyTunnelAsync(instanceId, cancellationToken).ConfigureAwait(false)
+                    : await EstablishTunnelAsync(instanceId, cancellationToken).ConfigureAwait(false);
                 State = ConnectionState.Connected;
                 StartTunnelMonitor(handle);
                 _events.Log("tunnel", $"Reconnected after {attempt} attempt(s).");
@@ -696,7 +783,7 @@ public sealed class ConnectionWorkflow
                     // Never leave a half-open plugin process behind.
                     await TeardownTunnelAsync().ConfigureAwait(false);
                     Fail(new TunnelException(
-                        $"Auto-reconnect failed after {_timeouts.MaxReconnectAttempts} attempts ({detail}): {error.Message}",
+                        $"Auto-reconnect failed after {_timeouts.MaxReconnectAttempts} attempts ({detail}).",
                         error));
                 }
             }
@@ -713,6 +800,16 @@ public sealed class ConnectionWorkflow
     private async Task<T> WithReauthAsync<T>(
         Func<AwsCredentials, Task<T>> operation, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_auth is AuthorizationSession authorization)
+        {
+            return await authorization.ExecuteAsync(Profile, async credentials =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _credentials = credentials;
+                return await operation(credentials).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
+        }
         AwsCredentials credentials = _credentials ?? throw new SignInRequiredException();
         try
         {
@@ -720,7 +817,7 @@ public sealed class ConnectionWorkflow
         }
         catch (ExpiredCredentialsException)
         {
-            _events.Log("auth", "SSO session expired; re-authenticating…");
+            _events.Log("auth", "AWS authorization was rejected; renewing credentials…");
             _events.Notify(ConnectionNotification.SignInRequired);
             AwsCredentials fresh = await _auth.AuthenticateAsync(Profile, cancellationToken).ConfigureAwait(false);
             _credentials = fresh;
@@ -787,6 +884,7 @@ public sealed class ConnectionWorkflow
 
         source?.Cancel();
         source?.Dispose();
+        if (_auth is AuthorizationSession authorization) { authorization.CancelPending(); }
         return previous;
     }
 
@@ -823,7 +921,7 @@ public sealed class ConnectionWorkflow
         }
         catch (Exception error)
         {
-            _events.Log("ssm", $"Could not close the session server-side ({error.Message}); " +
+            _events.Log("ssm", $"Could not close the session server-side ({SafeMessage(error)}); " +
                                "the next connection will reap it.");
         }
     }
@@ -848,6 +946,7 @@ public sealed class ConnectionWorkflow
 
     private void ResetToDisconnected()
     {
+        ActivateSelectedProfile();
         State = ConnectionState.Disconnected;
         ErrorMessage = null;
         ErrorCategory = ErrorCategory.None;
@@ -857,11 +956,30 @@ public sealed class ConnectionWorkflow
         Password = null;
     }
 
+    private void ActivateSelectedProfile()
+    {
+        Profile = SelectedProfile;
+        if (_auth is AuthorizationSession authorization) { authorization.Apply(Profile); }
+    }
+
     private void Fail(Exception error)
     {
-        ErrorMessage = error.Message;
+        ErrorMessage = SafeMessage(error);
         ErrorCategory = ErrorCategories.Classify(error);
-        _events.Log("ui", $"Error: {error.Message}");
+        _events.Log("ui", $"Error: {ErrorMessage}");
         State = ConnectionState.Error;
     }
+
+    private static string SafeMessage(Exception error) => error switch
+    {
+        SignInRequiredException or ExpiredCredentialsException or AuthorizationAccessDeniedException
+            or AuthorizationUnavailableException or UnsupportedConnectionFeatureException
+            or ProfileConfigurationException or InstanceTerminatedException or StageTimeoutException
+            or DcvReadinessException => error.Message,
+        AgentException { Responded: true } => "The workstation agent rejected the request. Check workstation access.",
+        AgentException => "The workstation agent could not be reached. Check the tunnel and retry.",
+        AwsServiceException => "AWS could not complete the operation. Check network connectivity and account permissions.",
+        TunnelException => "The SSM tunnel could not be established or recovered.",
+        _ => "The operation could not be completed. Retry or check configuration.",
+    };
 }

@@ -158,6 +158,9 @@ public sealed class PortableProfileTests
             "accessToken", "refreshToken", "ssoAccessToken",
             "password", "dcvPassword", "secretValue", "authToken", "presignedUrl",
             "sessionResponse", "ssmSession", "connectionFilePath", "tempFilePath",
+            "clientSecret", "privateKey", "privateKeyPath", "keyPath", "browserProfilePath",
+            "helperPath", "executablePath", "attachmentPath", "knownHosts", "cookies", "history",
+            "generation", "lease", "ownerPid", "ownerLaunchDate", "consent", "restoreJournal",
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), ProfilePortability.ForbiddenKeys.Order(StringComparer.Ordinal));
@@ -167,11 +170,11 @@ public sealed class PortableProfileTests
     public void RejectsAnUnsupportedSchemaVersionWithAnActionableMessage()
     {
         JsonObject root = (JsonObject)JsonNode.Parse(ProfilePortability.Export(Example()))!;
-        root["schemaVersion"] = 2;
+        root["schemaVersion"] = 999;
 
         var error = Assert.Throws<ProfilePortabilityException>(
             () => ProfilePortability.Import(root.ToJsonString()));
-        Assert.Contains("version 2", error.Message, StringComparison.Ordinal);
+        Assert.Contains("version 999", error.Message, StringComparison.Ordinal);
         Assert.Contains("Update SSM Connect", error.Message, StringComparison.Ordinal);
     }
 
@@ -179,7 +182,7 @@ public sealed class PortableProfileTests
     public void RejectsAMultiUserProfileCarryingASecretId()
     {
         JsonObject root = (JsonObject)JsonNode.Parse(
-            ProfilePortability.Export(Example() with { ConnectMode = ConnectMode.MultiUser }))!;
+            ProfilePortability.Export(Example() with { ConnectMode = ConnectMode.MultiUser, SecretId = null }))!;
         root["secretId"] = "example/dcv/password";
 
         var error = Assert.Throws<ProfilePortabilityException>(

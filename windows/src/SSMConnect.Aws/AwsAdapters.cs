@@ -2,7 +2,6 @@ using Amazon;
 using Amazon.EC2;
 using Amazon.EC2.Model;
 using Amazon.Runtime;
-using Amazon.Runtime.CredentialManagement;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
 using Amazon.SecurityToken;
@@ -20,18 +19,23 @@ namespace SSMConnect.Aws;
 /// Translates AWS SDK failures into the workflow's typed errors.
 /// </summary>
 /// <remarks>
-/// Only expiry is singled out, because the workflow acts on it: it re-authenticates and retries in
-/// place. Everything else becomes an AWS service error carrying the SDK's own message, which the
-/// .NET SDK already renders usefully. The macOS client needs a much larger interpreter here only
-/// because its SDK throws error-only types that bridge to opaque strings.
+/// Provider messages and inner exceptions can contain request URLs or credentials. Only safe,
+/// fixed messages cross the adapter boundary.
 /// </remarks>
 public static class AwsErrors
 {
     public static Exception Translate(Exception error) => error switch
     {
         ExpiredCredentialsException or SignInRequiredException or ConnectionException => error,
-        AmazonServiceException service when IsExpiry(service) => new ExpiredCredentialsException(service),
-        AmazonServiceException service => new AwsServiceException(Describe(service), service),
+        AmazonServiceException service when IsExpiry(service) => new ExpiredCredentialsException(),
+        AmazonServiceException { ErrorCode: "AccessDenied" or "AccessDeniedException" or "ForbiddenException" } =>
+            new AuthorizationAccessDeniedException(),
+        AmazonServiceException { StatusCode: System.Net.HttpStatusCode.Forbidden } =>
+            new AuthorizationAccessDeniedException(),
+        HttpRequestException or System.Net.Sockets.SocketException or IOException => new AuthorizationUnavailableException(),
+        AmazonServiceException { InnerException: HttpRequestException or System.Net.Sockets.SocketException or IOException } =>
+            new AuthorizationUnavailableException(),
+        AmazonServiceException => new AwsServiceException("AWS could not complete the operation. Check network connectivity and account permissions."),
         _ => error,
     };
 
@@ -50,94 +54,11 @@ public static class AwsErrors
 
     private static bool IsExpiry(AmazonServiceException error) =>
         error.ErrorCode is "ExpiredToken" or "ExpiredTokenException" or "RequestExpired"
-            or "UnauthorizedAccess" or "InvalidClientTokenId"
+            or "UnauthorizedAccess" or "InvalidClientTokenId" or "UnauthorizedException"
+            or "UnrecognizedClientException"
+        || error.StatusCode == System.Net.HttpStatusCode.Unauthorized
         || error is AmazonSecurityTokenServiceException { ErrorCode: "ExpiredToken" };
 
-    /// <summary>
-    /// The type name and status are what turn an otherwise generic message such as "No access" into
-    /// something actionable in a bug report.
-    /// </summary>
-    private static string Describe(AmazonServiceException error)
-    {
-        string detail = string.Join(", ", new[]
-        {
-            string.IsNullOrEmpty(error.ErrorCode) ? null : error.ErrorCode,
-            error.StatusCode == 0 ? null : $"HTTP {(int)error.StatusCode}",
-        }.Where(part => part is not null));
-
-        string summary = string.IsNullOrWhiteSpace(error.Message)
-            ? "AWS returned an unrecognized error."
-            : error.Message;
-
-        return detail.Length == 0 ? summary : $"{summary} ({detail})";
-    }
-}
-
-/// <summary>
-/// Resolves IAM Identity Center credentials for a profile.
-/// </summary>
-/// <remarks>
-/// The SDK's default options attempt cache reuse and refresh but never start interactive
-/// authorization, so a stale refresh token fails instead of recovering. Phase 0 established that
-/// <c>SupportsGettingNewToken</c>, a <c>ClientName</c>, and a verification callback are all required
-/// for expiry to fall back to the browser the way the macOS client does.
-/// </remarks>
-public sealed class SsoAuthProvider(Action<string> openVerificationUri) : IAuthProvider
-{
-    public const string ClientName = "SSM Connect";
-
-    public async Task<AwsCredentials> AuthenticateAsync(
-        ConnectionProfile profile, CancellationToken cancellationToken)
-    {
-        AWSCredentials credentials = Resolve(profile);
-        ImmutableCredentials resolved = await AwsErrors
-            .GuardAsync(() => credentials.GetCredentialsAsync()).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(resolved.AccessKey) || string.IsNullOrWhiteSpace(resolved.Token))
-        {
-            throw new SignInRequiredException();
-        }
-
-        return new AwsCredentials(resolved.AccessKey, resolved.SecretKey, resolved.Token, null);
-    }
-
-    /// <summary>
-    /// Builds the credential source for a profile, preferring a matching entry in the shared AWS
-    /// config so a session the user already has is reused rather than re-authorised.
-    /// </summary>
-    public AWSCredentials Resolve(ConnectionProfile profile)
-    {
-        var chain = new CredentialProfileStoreChain();
-        foreach (CredentialProfile candidate in chain.ListProfiles())
-        {
-            if (Matches(candidate, profile) && chain.TryGetAWSCredentials(candidate.Name, out AWSCredentials? existing))
-            {
-                return Configure(existing);
-            }
-        }
-
-        // No shared-config entry matches, so drive Identity Center straight from the profile.
-        return Configure(new SSOAWSCredentials(
-            profile.AccountId, profile.SsoRegion, profile.RoleName, profile.SsoStartUrl));
-    }
-
-    private static bool Matches(CredentialProfile candidate, ConnectionProfile profile) =>
-        string.Equals(candidate.Options?.SsoAccountId, profile.AccountId, StringComparison.Ordinal)
-        && string.Equals(candidate.Options?.SsoRoleName, profile.RoleName, StringComparison.Ordinal)
-        && string.Equals(candidate.Options?.SsoStartUrl, profile.SsoStartUrl, StringComparison.OrdinalIgnoreCase);
-
-    private AWSCredentials Configure(AWSCredentials credentials)
-    {
-        if (credentials is SSOAWSCredentials sso)
-        {
-            sso.Options.ClientName = ClientName;
-            sso.Options.SupportsGettingNewToken = true;
-            sso.Options.SsoVerificationCallback = verification =>
-                openVerificationUri(verification.VerificationUriComplete);
-        }
-
-        return credentials;
-    }
 }
 
 /// <summary>Builds SDK clients from the workflow's credential value type.</summary>

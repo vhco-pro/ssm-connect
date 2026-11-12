@@ -105,9 +105,8 @@ public sealed class ProfileStoreTests
         Assert.Null(loaded.ActiveProfileId);
     }
 
-    /// <summary>A corrupt file must not stop the app from starting.</summary>
     [Fact]
-    public void SurvivesACorruptDocument()
+    public void CorruptDocumentIsReportedWithoutDiscardingOrRewritingIt()
     {
         string directory = TempDirectory();
         try
@@ -115,13 +114,43 @@ public sealed class ProfileStoreTests
             Directory.CreateDirectory(directory);
             File.WriteAllText(Path.Combine(directory, "profiles.v1.json"), "{ this is not json");
 
-            StoredState loaded = new ProfileStore(directory).Load();
-            Assert.Empty(loaded.Profiles);
+            Assert.Throws<ProfilePortabilityException>(() => new ProfileStore(directory).Load());
+            Assert.Equal("{ this is not json", File.ReadAllText(Path.Combine(directory, "profiles.v1.json")));
         }
         finally
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public void Cfg04AttachmentIdentityAndUnknownFieldsPersistSeparatelyFromSettings()
+    {
+        string directory = TempDirectory();
+        try
+        {
+            ConnectionProfile profile = Example("Attached");
+            PortableProfileDocument document = PortableProfileDocument.FromProfile(profile, documentId: Guid.NewGuid()) with
+            {
+                UnknownFields = new Dictionary<string, System.Text.Json.Nodes.JsonNode?>
+                {
+                    ["futureOptional"] = System.Text.Json.Nodes.JsonValue.Create("retain"),
+                },
+            };
+            var revision = new SSMConnect.Workflow.ProfileFileRevision("digest", "volume:file", "user-only", 100, 1);
+            var attachment = new SSMConnect.Workflow.ProfileAttachment(Path.Combine(directory, "source.yaml"), revision, true);
+            new ProfileStore(directory).Save(new StoredState([profile], AppSettings.Default, profile.Id,
+                new Dictionary<Guid, PortableProfileDocument> { [profile.Id] = document },
+                new Dictionary<Guid, SSMConnect.Workflow.ProfileAttachment> { [profile.Id] = attachment }));
+            StoredState loaded = new ProfileStore(directory).Load();
+            Assert.Equal(profile.Id, loaded.Profiles.Single().Id);
+            Assert.Equal(document.Id, loaded.Documents![profile.Id].Id);
+            Assert.NotEqual(profile.Id, loaded.Documents[profile.Id].Id);
+            Assert.Equal("retain", loaded.Documents[profile.Id].UnknownFields["futureOptional"]!.GetValue<string>());
+            Assert.Equal(attachment, loaded.Attachments![profile.Id]);
+            Assert.Equal(AppSettings.Default, loaded.Settings);
+        }
+        finally { if (Directory.Exists(directory)) { Directory.Delete(directory, recursive: true); } }
     }
 }
 

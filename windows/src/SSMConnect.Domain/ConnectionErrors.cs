@@ -43,7 +43,7 @@ public sealed class ProfileConfigurationException(string field, string value)
 
 /// <summary>No usable credentials are held and interactive sign-in has not run.</summary>
 public sealed class SignInRequiredException()
-    : ConnectionException("Sign-in is required before connecting.")
+    : ConnectionException("Sign-in is required for new AWS operations.")
 {
     public override ErrorCategory Category => ErrorCategory.Authentication;
 }
@@ -53,9 +53,27 @@ public sealed class SignInRequiredException()
 /// and retries the failed step without tearing down an active tunnel.
 /// </summary>
 public sealed class ExpiredCredentialsException(Exception? inner = null)
-    : ConnectionException("The AWS session has expired.", inner)
+    : ConnectionException("The temporary AWS role credentials were rejected or expired.", inner)
 {
     public override ErrorCategory Category => ErrorCategory.Authentication;
+}
+
+public sealed class AuthorizationAccessDeniedException()
+    : ConnectionException("Access to this account or role was denied. Check the permission-set assignment; signing in again may not help.")
+{
+    public override ErrorCategory Category => ErrorCategory.Authentication;
+}
+
+public sealed class AuthorizationUnavailableException()
+    : ConnectionException("Authorization is unavailable. Check your network and retry; established connections are unchanged.")
+{
+    public override ErrorCategory Category => ErrorCategory.Authentication;
+}
+
+public sealed class UnsupportedConnectionFeatureException()
+    : ConnectionException("Enabled web forwarding or remote development is not supported by this client yet.")
+{
+    public override ErrorCategory Category => ErrorCategory.Configuration;
 }
 
 /// <summary>The workstation is terminated or shutting down and cannot be connected to.</summary>

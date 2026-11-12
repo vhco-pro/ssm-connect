@@ -117,7 +117,7 @@ internal sealed class FakeSsmProvider(PortRecorder recorder) : ISsmProvider
     public Task TerminateSessionAsync(
         string sessionId, string region, AwsCredentials credentials, CancellationToken cancellationToken)
     {
-        recorder.Invoke("SSMProvider", "terminateSession", ("sessionId", sessionId));
+        recorder.Invoke("SSMProvider", "terminateSession", ("sessionId", sessionId), ("region", region));
         return Task.CompletedTask;
     }
 }

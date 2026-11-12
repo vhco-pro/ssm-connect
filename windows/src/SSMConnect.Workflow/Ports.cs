@@ -7,10 +7,24 @@ public sealed record AwsCredentials(
     string AccessKeyId,
     string SecretAccessKey,
     string SessionToken,
-    DateTimeOffset? Expiration);
+    DateTimeOffset? Expiration)
+{
+    public override string ToString() => "AWS credentials (redacted)";
+}
+
+/// <summary>Access-token lifetime, not the Identity Center session deadline.</summary>
+public sealed record AuthorizationMetadata(DateTimeOffset AccessTokenExpiry, bool CanRefresh);
+
+public interface IClock
+{
+    DateTimeOffset UtcNow { get; }
+}
 
 /// <summary>An SSM port-forward session, as returned by StartSession.</summary>
-public sealed record SsmSession(string SessionId, string StreamUrl = "", string TokenValue = "");
+public sealed record SsmSession(string SessionId, string StreamUrl = "", string TokenValue = "")
+{
+    public override string ToString() => "SSM session (redacted)";
+}
 
 /// <summary>Why a tunnel stopped.</summary>
 public abstract record TunnelDropReason
@@ -37,6 +51,17 @@ public interface ITunnelHandle
 public interface IAuthProvider
 {
     Task<AwsCredentials> AuthenticateAsync(ConnectionProfile profile, CancellationToken cancellationToken);
+
+    /// <summary>Must never open a browser. Legacy fixture providers can reuse authentication.</summary>
+    Task<AwsCredentials> RefreshAsync(ConnectionProfile profile, CancellationToken cancellationToken) =>
+        AuthenticateAsync(profile, cancellationToken);
+
+    /// <summary>Explicit user action; must not reuse an access token rejected by AWS.</summary>
+    Task<AwsCredentials> SignInAsync(ConnectionProfile profile, CancellationToken cancellationToken) =>
+        AuthenticateAsync(profile, cancellationToken);
+
+    Task<AuthorizationMetadata?> GetMetadataAsync(ConnectionProfile profile, CancellationToken cancellationToken) =>
+        Task.FromResult<AuthorizationMetadata?>(null);
 }
 
 /// <summary>Resolve, start, stop, and poll the workstation instance.</summary>

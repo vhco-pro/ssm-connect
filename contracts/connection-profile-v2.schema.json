@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/vhco-pro/ssm-connect/contracts/connection-profile.schema.json",
+  "title": "SSM Connect portable profile v2",
+  "description": "Normalized YAML/JSON contract. Clients retain reading v1 JSON and migrate only on explicit Save or Export. Native persistence and machine-local ownership are not part of this format.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "ssoStartUrl", "ssoRegion", "accountId", "roleName", "resourceRegion", "instanceTagKey", "instanceTagValue", "localPort", "remotePort"],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "id": {"type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"},
+    "name": {"type": "string", "minLength": 1},
+    "ssoStartUrl": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "ssoRegion": {"$ref": "#/$defs/region"},
+    "accountId": {"type": "string", "pattern": "^[0-9]{12}$"},
+    "roleName": {"type": "string", "minLength": 1},
+    "resourceRegion": {"$ref": "#/$defs/region"},
+    "instanceTagKey": {"type": "string", "minLength": 1},
+    "instanceTagValue": {"type": "string"},
+    "secretId": {"type": ["string", "null"]},
+    "connectMode": {"enum": ["singleUser", "multiUser", null], "default": "singleUser"},
+    "connectAction": {"enum": ["dcvViewer", "tunnelOnly"], "default": "dcvViewer"},
+    "localPort": {"$ref": "#/$defs/port"},
+    "remotePort": {"$ref": "#/$defs/port"},
+    "agentRemotePort": {"anyOf": [{"$ref": "#/$defs/port"}, {"type": "null"}]},
+    "requiredCapabilities": {"type": "array", "items": {"type": "string"}},
+    "webForwards": {
+      "type": ["object", "null"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "sshUser": {"type": ["string", "null"]},
+        "socksPort": {"anyOf": [{"$ref": "#/$defs/port"}, {"type": "null"}], "default": 1080},
+        "proxySuffixes": {"type": "array", "items": {"type": "string", "pattern": "^\\.[A-Za-z0-9._-]+$"}},
+        "browser": {"enum": ["automatic", "chrome", "edge", "firefox", "zen", null]},
+        "browserMode": {"enum": ["existing", "separate", null]},
+        "localForwards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "localPort", "remoteHost", "remotePort"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "localPort": {"$ref": "#/$defs/port"},
+              "remoteHost": {"type": "string", "minLength": 1},
+              "remotePort": {"$ref": "#/$defs/port"},
+              "openPath": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "remoteDevelopment": {
+      "type": ["object", "null"],
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "folder": {"type": ["string", "null"], "description": "Remote POSIX path, never a local machine path."}
+      }
+    }
+  },
+  "allOf": [
+    {"$ref": "#/$defs/nonSecret"},
+    {
+      "if": {"properties": {"connectAction": {"const": "tunnelOnly"}}, "required": ["connectAction"]},
+      "then": {"required": ["requiredCapabilities"], "properties": {"requiredCapabilities": {"contains": {"const": "tunnelOnly"}}}}
+    },
+    {
+      "if": {"properties": {"webForwards": {"type": "object", "properties": {"enabled": {"const": true}}, "required": ["enabled"]}}, "required": ["webForwards"]},
+      "then": {"required": ["requiredCapabilities"], "properties": {"requiredCapabilities": {"contains": {"const": "webForwards"}}}}
+    },
+    {
+      "if": {"properties": {"webForwards": {"type": "object", "properties": {"enabled": {"const": true}, "browserMode": {"enum": ["existing", "separate"]}}, "required": ["enabled", "browserMode"]}}, "required": ["webForwards"]},
+      "then": {"required": ["requiredCapabilities"], "properties": {"requiredCapabilities": {"contains": {"const": "browserBootstrap"}}}}
+    },
+    {
+      "if": {"properties": {"remoteDevelopment": {"type": "object", "properties": {"enabled": {"const": true}}, "required": ["enabled"]}}, "required": ["remoteDevelopment"]},
+      "then": {"required": ["requiredCapabilities"], "properties": {"requiredCapabilities": {"contains": {"const": "remoteDevelopment"}}}}
+    },
+    {
+      "if": {"properties": {"connectMode": {"const": "multiUser"}}, "required": ["connectMode"]},
+      "then": {"properties": {"secretId": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+    "region": {"type": "string", "pattern": "^(?!.*-$)(?!-)[a-zA-Z0-9-]{1,63}$"},
+    "nonSecret": {
+      "if": {"type": "object"},
+      "then": {
+        "propertyNames": {
+          "not": {"enum": ["accessKeyId", "secretAccessKey", "sessionToken", "credentials", "accessToken", "refreshToken", "clientSecret", "password", "privateKey", "presignedUrl", "sessionResponse", "browserProfilePath", "helperPath", "keyPath", "generation", "lease", "cookies", "history", "consent"]}
+        },
+        "additionalProperties": {"$ref": "#/$defs/nonSecret"}
+      },
+      "else": {
+        "if": {"type": "array"},
+        "then": {"items": {"$ref": "#/$defs/nonSecret"}}
+      }
+    }
+  }
+}

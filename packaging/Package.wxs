@@ -80,6 +80,9 @@
       <Component Id="ApplicationLicense" Guid="*">
         <File Id="AppLicense" Source="$(RepositoryRoot)\LICENSE" Name="LICENSE" KeyPath="yes" />
       </Component>
+      <Component Id="ApplicationThirdPartyNotices" Guid="*">
+        <File Id="AppThirdPartyNotices" Source="$(PayloadDirectory)\ThirdPartyNotices.txt" Name="ThirdPartyNotices.txt" KeyPath="yes" />
+      </Component>
     </ComponentGroup>
 
     <!-- Apache-2.0 section 4: a copy of the licence, the NOTICE contents, and the attribution

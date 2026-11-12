@@ -4,7 +4,9 @@
   pass the same 39 conformance fixtures and exchange profile documents in both directions. The
   Windows client connects to a real workstation end to end and installs from a verified MSI. Phase 2
   has MR-05 and MR-08 outstanding on macOS.
-- **Date:** 2026-08-20
+  These verdicts describe the August baseline only. The October profile/auth follow-up in section
+  17 is portable-tested and cross-built, not newly accepted on native Windows.
+- **Date:** 2026-08-20 baseline; 2026-10-16 follow-up
 - **Scope:** refactor the existing macOS implementation into explicit boundaries and add a Windows client
 - **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md), which remains the source of truth for current macOS behavior
 
@@ -873,3 +875,53 @@ and the installer lifecycle passed again in a clean Windows Sandbox. Phase 1 may
 
 Release signing is not part of this gate. It needs a purchased code-signing certificate rather than
 an engineering answer, and it gates the first general release under AC-09, not the refactor.
+
+## 17. Local Profile/Auth Reconciliation (2026-10-16)
+
+The new increment is uncommitted on `feature/windows-profile-auth-followups`, based on `33b68c1`.
+The existing macOS worktree and audit/maintenance worktrees remain intact. No wholesale Swift
+merge, app replacement, live authorization or active-session restart was performed.
+
+### Implemented Scope
+
+- v2 JSON/YAML and legacy v1 reading over the existing DTO boundary. Required capabilities, nested
+  unknown values, strict type/null/UUID checks, 256 KiB/depth-32/8192-node limits, duplicate/tag/
+  anchor/alias/credential rejection and significant-decimal precision are tested across both
+  actual exporters. V1 schema/exchange fixtures remain unchanged; the v2 schema is
+  [versioned separately](../../contracts/connection-profile-v2.schema.json).
+- WPF preview/attach/import-copy/export, canonical checked Save, local-copy recovery, pending
+  file review/Apply, Locate and Detach. Portable IDs map to fresh local IDs; global settings and
+  native ownership are never imported. Bad saved metadata is reported, not silently replaced.
+- A Windows-native file adapter checks user SID, file identity and ACLs; refuses reparse/hard-link/
+  network/alternate-stream/ambiguous paths; and uses checked same-directory atomic rename.
+  Native ACL and rename behavior remains an execution gate, not a portability assertion.
+- Shared authorization with five-minute proactive renewal, explicit persistent sign-in/retry,
+  same-context pending-operation recovery and cancellation-safe generations. Healthy active
+  connections survive a changed saved selection until explicit reconnect/disconnect.
+- Tunnel-only mode verifies a listener and skips DCV readiness, passwords, multi-user desktop
+  provisioning and viewer launch. Web/browser/editor configurations are represented but explicitly
+  rejected by this client until their adapters exist.
+- The SDK backend isolates tested Core 4.0.101 public-but-Internal cache APIs, without reflection,
+  Logout or shared-cache deletion. YamlDotNet 18.1.0 notices travel through app output/publish and MSI.
+
+### Evidence and Open Gates
+
+122 domain, 91 workflow, 11 SDK and 6 persisted-store tests passed on macOS. A callback re-entry
+race was fixed and the focused 40-test authorization suite passed 21 sequential runs. Every
+Windows/WPF/harness/test project cross-builds with zero warnings/errors. Six native filesystem
+tests are explicitly skipped off-Windows, not counted as passing.
+
+The current macOS worktree passes 245 tests across 34 suites and builds a signed ARM64 candidate.
+Actual Swift exports import/save through .NET, and actual .NET exports import/save through Swift.
+V1 schemas, 39 workflow fixtures and three legacy exports still validate. The v2 exports pass
+their schema. Actionlint 1.7.12, installer XML and copied YAML license checks passed.
+
+Normal and single-file `win-x64` publish outputs also succeeded. The apphosts are Windows x86-64
+GUI PE images and the YAML notice is retained as an MSI sidecar. These local framework-dependent
+payloads are not installers or native-run proof; .NET 10 Windows Desktop and the Session Manager
+plugin are still required. Neither payload was installed or launched.
+
+None of this reopens or extends the August real-Windows verdicts to the new code. Native Windows
+SSO/expiry/revocation, UI, ACL/rename, installer install/upgrade/uninstall, browser/editor adapters
+and cross-user process/isolation behavior remain open. No hosted CI, commit, push, merge or new
+release was performed.

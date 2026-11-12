@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace SSMConnect.Domain;
 
@@ -18,8 +19,8 @@ namespace SSMConnect.Domain;
 /// </remarks>
 public sealed record PortableProfileDocument
 {
-    /// <summary>The only version this client writes, and the only one it accepts.</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>New documents use v2; imported v1 documents migrate only on explicit editing.</summary>
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>The one connect action v1 defines.</summary>
     public const string DcvViewerAction = "dcvViewer";
@@ -51,6 +52,9 @@ public sealed record PortableProfileDocument
     public string? SecretId { get; init; }
 
     public string ConnectAction { get; init; } = DcvViewerAction;
+    public JsonObject? WebForwards { get; init; }
+    public JsonObject? RemoteDevelopment { get; init; }
+    public IReadOnlyList<string> RequiredCapabilities { get; init; } = [];
 
     /// <summary>
     /// Optional properties this client does not model, preserved verbatim so a document written by
@@ -64,9 +68,10 @@ public sealed record PortableProfileDocument
         new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
 
     public static PortableProfileDocument FromProfile(
-        ConnectionProfile profile, IReadOnlyDictionary<string, JsonNode?>? unknownFields = null) => new()
+        ConnectionProfile profile, IReadOnlyDictionary<string, JsonNode?>? unknownFields = null,
+        Guid? documentId = null) => new()
         {
-            Id = profile.Id,
+            Id = documentId ?? profile.Id,
             Name = profile.Name,
             SsoStartUrl = profile.SsoStartUrl,
             SsoRegion = profile.SsoRegion,
@@ -80,6 +85,10 @@ public sealed record PortableProfileDocument
             ConnectMode = profile.ConnectMode,
             AgentRemotePort = profile.AgentRemotePort,
             SecretId = profile.SecretId,
+            ConnectAction = profile.ConnectAction == Domain.ConnectAction.TunnelOnly ? "tunnelOnly" : DcvViewerAction,
+            WebForwards = ProfilePortability.ConfigurationNode(profile.WebForwards),
+            RemoteDevelopment = ProfilePortability.ConfigurationNode(profile.RemoteDevelopment),
+            RequiredCapabilities = ProfilePortability.Capabilities(profile).Order(StringComparer.Ordinal).ToArray(),
             UnknownFields = unknownFields ?? new Dictionary<string, JsonNode?>(StringComparer.Ordinal),
         };
 
@@ -99,7 +108,56 @@ public sealed record PortableProfileDocument
         ConnectMode = ConnectMode,
         AgentRemotePort = AgentRemotePort,
         SecretId = SecretId,
+        ConnectAction = ConnectAction == "tunnelOnly" ? Domain.ConnectAction.TunnelOnly : Domain.ConnectAction.DcvViewer,
+        WebForwards = ProfilePortability.Configuration<WebForwardsConfiguration>(WebForwards, "webForwards"),
+        RemoteDevelopment = ProfilePortability.Configuration<RemoteDevelopmentConfiguration>(RemoteDevelopment, "remoteDevelopment"),
     };
+
+    public PortableProfileDocument WithProfile(ConnectionProfile profile)
+    {
+        PortableProfileDocument updated = FromProfile(profile, UnknownFields, Id);
+        JsonObject? web = MergeConfiguration(WebForwards, updated.WebForwards,
+            ["enabled", "sshUser", "socksPort", "proxySuffixes", "localForwards", "browser", "browserMode"]);
+        if (web is not null && WebForwards?["localForwards"] is JsonArray oldForwards
+            && updated.WebForwards?["localForwards"] is JsonArray newForwards)
+        {
+            web["localForwards"] = new JsonArray(newForwards.Select(value =>
+            {
+                var current = value as JsonObject;
+                JsonObject? old = oldForwards.OfType<JsonObject>()
+                    .FirstOrDefault(previous => JsonNode.DeepEquals(previous["localPort"], current?["localPort"]));
+                return (JsonNode?)MergeConfiguration(old, current, ["name", "localPort", "remoteHost", "remotePort", "openPath"]);
+            }).ToArray());
+        }
+        return updated with
+        {
+            WebForwards = web,
+            RemoteDevelopment = MergeConfiguration(RemoteDevelopment, updated.RemoteDevelopment, ["enabled", "folder"]),
+            RequiredCapabilities = RequiredCapabilities.Union(updated.RequiredCapabilities, StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal).ToArray(),
+        };
+    }
+
+    public void EnsureSupported(IReadOnlySet<string> capabilities)
+    {
+        string[] unsupported = RequiredCapabilities.Where(required => !capabilities.Contains(required))
+            .Order(StringComparer.Ordinal).ToArray();
+        if (unsupported.Length > 0)
+        {
+            throw new ProfilePortabilityException(
+                $"This client does not yet support required capabilities: {string.Join(", ", unsupported)}. " +
+                "Use a compatible client or disable those capabilities explicitly in the source file. Nothing was attached or connected.");
+        }
+    }
+
+    private static JsonObject? MergeConfiguration(JsonObject? old, JsonObject? current, string[] known)
+    {
+        if (current is null) { return null; }
+        var merged = old?.DeepClone().AsObject() ?? new JsonObject();
+        foreach (string key in known) { merged.Remove(key); }
+        foreach ((string key, JsonNode? value) in current) { merged[key] = value?.DeepClone(); }
+        return merged;
+    }
 }
 
 /// <summary>
@@ -107,7 +165,7 @@ public sealed record PortableProfileDocument
 /// same reason <see cref="ProfileConfigurationException"/> does: an import failure the user cannot
 /// act on is barely better than a silent one.
 /// </summary>
-public sealed class ProfilePortabilityException(string message) : ConnectionException(message)
+public class ProfilePortabilityException(string message) : ConnectionException(message)
 {
     public override ErrorCategory Category => ErrorCategory.Configuration;
 
@@ -146,6 +204,9 @@ public static class ProfilePortability
         "accessToken", "refreshToken", "ssoAccessToken",
         "password", "dcvPassword", "secretValue", "authToken", "presignedUrl",
         "sessionResponse", "ssmSession", "connectionFilePath", "tempFilePath",
+        "clientSecret", "privateKey", "privateKeyPath", "keyPath", "browserProfilePath",
+        "helperPath", "executablePath", "attachmentPath", "knownHosts", "cookies", "history",
+        "generation", "lease", "ownerPid", "ownerLaunchDate", "consent", "restoreJournal",
     };
 
     private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
@@ -153,9 +214,16 @@ public static class ProfilePortability
         "schemaVersion", "id", "name", "ssoStartUrl", "ssoRegion", "accountId", "roleName",
         "resourceRegion", "instanceTagKey", "instanceTagValue", "connectMode", "connectAction",
         "localPort", "remotePort", "agentRemotePort", "secretId",
+        "webForwards", "remoteDevelopment", "requiredCapabilities",
     };
 
-    private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions ConfigurationOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+    };
+    private static readonly HashSet<string> NormalizedForbidden = ForbiddenKeys
+        .Select(NormalizeKey).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
     /// Encodes a profile as a portable document. Keys are written in a stable order and the output
@@ -165,7 +233,7 @@ public static class ProfilePortability
         ConnectionProfile profile, IReadOnlyDictionary<string, JsonNode?>? unknownFields = null) =>
         Export(PortableProfileDocument.FromProfile(profile, unknownFields));
 
-    public static string Export(PortableProfileDocument document)
+    public static string Export(PortableProfileDocument document, ProfileFileFormat format = ProfileFileFormat.Json)
     {
         var root = new JsonObject
         {
@@ -200,9 +268,16 @@ public static class ProfilePortability
         {
             root["secretId"] = document.SecretId;
         }
+        if (document.WebForwards is not null) { root["webForwards"] = document.WebForwards.DeepClone(); }
+        if (document.RemoteDevelopment is not null) { root["remoteDevelopment"] = document.RemoteDevelopment.DeepClone(); }
+        if (document.RequiredCapabilities.Count > 0)
+        {
+            root["requiredCapabilities"] = new JsonArray(document.RequiredCapabilities.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
+        }
 
         foreach ((string key, JsonNode? value) in document.UnknownFields)
         {
+            if (KnownKeys.Contains(key)) { throw new ProfilePortabilityException("Unknown optional fields cannot replace modeled profile fields."); }
             root[key] = value?.DeepClone();
         }
 
@@ -212,47 +287,30 @@ public static class ProfilePortability
             ordered[key] = root[key]?.DeepClone();
         }
 
-        return ordered.ToJsonString(WriteOptions);
+        string result = ProfileDocumentSyntax.Write(ordered, format);
+        _ = Import(result, format);
+        return result;
     }
 
     /// <summary>Reads a portable document, validating it the way the schema does.</summary>
-    public static PortableProfileDocument Import(string json)
+    public static PortableProfileDocument Import(string json, ProfileFileFormat format = ProfileFileFormat.Json)
     {
-        JsonNode? node;
-        try
-        {
-            node = JsonNode.Parse(json);
-        }
-        catch (JsonException)
-        {
-            throw ProfilePortabilityException.MalformedJson();
-        }
-
-        if (node is not JsonObject root)
-        {
-            throw ProfilePortabilityException.NotAnObject();
-        }
+        JsonObject root = ProfileDocumentSyntax.Read(json, format);
 
         // Version first: a newer document must fail with an actionable message rather than be
         // partially understood.
         int version = RequiredInt(root, "schemaVersion");
-        if (version != PortableProfileDocument.CurrentSchemaVersion)
+        if (version is not (1 or PortableProfileDocument.CurrentSchemaVersion))
         {
             throw ProfilePortabilityException.UnsupportedSchemaVersion(version);
         }
 
         // Reject before reading anything else, so a document carrying a secret is never partially
         // materialised.
-        foreach (string key in root.Select(pair => pair.Key).ToList())
-        {
-            if (ForbiddenKeys.Contains(key))
-            {
-                throw ProfilePortabilityException.ForbiddenField(key);
-            }
-        }
+        CheckSecurity(root);
 
         string idText = RequiredString(root, "id");
-        if (!Guid.TryParse(idText, out Guid id))
+        if (!Guid.TryParseExact(idText, "D", out Guid id))
         {
             throw ProfilePortabilityException.InvalidField("id", idText, "it is not a UUID.");
         }
@@ -260,7 +318,7 @@ public static class ProfilePortability
         ConnectMode? mode = null;
         if (root["connectMode"] is JsonNode modeNode && modeNode.GetValueKind() != JsonValueKind.Null)
         {
-            string modeText = modeNode.GetValue<string>();
+            string modeText = RequiredString(root, "connectMode");
             mode = modeText switch
             {
                 "singleUser" => Domain.ConnectMode.SingleUser,
@@ -271,21 +329,25 @@ public static class ProfilePortability
         }
 
         string action = PortableProfileDocument.DcvViewerAction;
+        if (root.ContainsKey("connectAction") && root["connectAction"] is null)
+        {
+            throw new ProfilePortabilityException("connectAction must be a supported string, not null.");
+        }
         if (root["connectAction"] is JsonNode actionNode && actionNode.GetValueKind() != JsonValueKind.Null)
         {
-            action = actionNode.GetValue<string>();
-            if (action != PortableProfileDocument.DcvViewerAction)
+            action = RequiredString(root, "connectAction");
+            if (action != PortableProfileDocument.DcvViewerAction && !(version == 2 && action == "tunnelOnly"))
             {
                 throw ProfilePortabilityException.InvalidField(
                     "connectAction", action,
-                    $"this version only supports {PortableProfileDocument.DcvViewerAction}.");
+                    "it is not supported by this schema version.");
             }
         }
 
         string? secretId = null;
         if (root["secretId"] is JsonNode secretNode && secretNode.GetValueKind() != JsonValueKind.Null)
         {
-            secretId = secretNode.GetValue<string>();
+            secretId = RequiredString(root, "secretId");
         }
 
         if (mode == Domain.ConnectMode.MultiUser && secretId is not null)
@@ -304,7 +366,27 @@ public static class ProfilePortability
             }
         }
 
-        return new PortableProfileDocument
+        JsonObject? web = OptionalObject(root, "webForwards");
+        JsonObject? remote = OptionalObject(root, "remoteDevelopment");
+        string[] capabilities = [];
+        if (root.ContainsKey("requiredCapabilities"))
+        {
+            if (root["requiredCapabilities"] is not JsonArray values || values.Any(value => value?.GetValueKind() != JsonValueKind.String))
+            {
+                throw new ProfilePortabilityException("requiredCapabilities must be an array of strings.");
+            }
+            capabilities = values.Select(value => value!.GetValue<string>()).ToArray();
+            if (capabilities.Any(value => value is not ("tunnelOnly" or "webForwards" or "browserBootstrap" or "remoteDevelopment")))
+            {
+                throw new ProfilePortabilityException("This profile requires a capability this version does not understand.");
+            }
+        }
+        if (version == 1 && (root.ContainsKey("webForwards") || root.ContainsKey("remoteDevelopment") || root.ContainsKey("requiredCapabilities")))
+        {
+            throw new ProfilePortabilityException("Web, browser, editor and required-capability fields need schemaVersion 2.");
+        }
+
+        var document = new PortableProfileDocument
         {
             SchemaVersion = version,
             Id = id,
@@ -323,7 +405,18 @@ public static class ProfilePortability
             SecretId = secretId,
             ConnectAction = action,
             UnknownFields = unknown,
+            WebForwards = web,
+            RemoteDevelopment = remote,
+            RequiredCapabilities = capabilities,
         };
+        ValidateBlockShape(web, remote);
+        ConnectionProfile profile = document.ToProfile();
+        ValidateConfiguration(profile);
+        if (!Capabilities(profile).IsSubsetOf(capabilities.ToHashSet(StringComparer.Ordinal)))
+        {
+            throw new ProfilePortabilityException("requiredCapabilities must declare every enabled tunnel, web/browser and editor capability.");
+        }
+        return document;
     }
 
     public static ConnectionProfile ImportProfile(string json) => Import(json).ToProfile();
@@ -356,12 +449,14 @@ public static class ProfilePortability
     private static int RequiredInt(JsonObject root, string key)
     {
         JsonNode value = RequiredValue(root, key);
-        if (value.GetValueKind() != JsonValueKind.Number || !value.AsValue().TryGetValue(out int parsed))
+        if (value.GetValueKind() != JsonValueKind.Number
+            || !decimal.TryParse(value.ToJsonString(), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number)
+            || number != decimal.Truncate(number) || number < int.MinValue || number > int.MaxValue)
         {
             throw ProfilePortabilityException.InvalidField(key, value.ToJsonString(), "it must be a whole number.");
         }
 
-        return parsed;
+        return (int)number;
     }
 
     private static string RequiredRegion(JsonObject root, string key)
@@ -407,5 +502,148 @@ public static class ProfilePortability
         }
 
         return RequiredPort(root, key);
+    }
+
+    internal static JsonObject? ConfigurationNode<T>(T? value) where T : class =>
+        value is null ? null : JsonSerializer.SerializeToNode(value, ConfigurationOptions)?.AsObject();
+
+    internal static T? Configuration<T>(JsonObject? value, string field) where T : class
+    {
+        if (value is null) { return null; }
+        try { return value.Deserialize<T>(ConfigurationOptions) ?? throw new ProfilePortabilityException($"{field} must be an object."); }
+        catch (JsonException) { throw new ProfilePortabilityException($"{field} contains an invalid or unsupported value."); }
+    }
+
+    public static HashSet<string> Capabilities(ConnectionProfile profile)
+    {
+        var required = new HashSet<string>(StringComparer.Ordinal);
+        if (profile.ConnectAction == ConnectAction.TunnelOnly) { required.Add("tunnelOnly"); }
+        if (profile.WebForwards?.Enabled == true)
+        {
+            required.Add("webForwards");
+            if (profile.WebForwards.BrowserMode is not null) { required.Add("browserBootstrap"); }
+        }
+        if (profile.RemoteDevelopment?.Enabled == true) { required.Add("remoteDevelopment"); }
+        return required;
+    }
+
+    private static JsonObject? OptionalObject(JsonObject root, string key)
+    {
+        if (root[key] is null) { return null; }
+        return root[key] as JsonObject ?? throw new ProfilePortabilityException($"{key} must be an object or null.");
+    }
+
+    private static void ValidateConfiguration(ConnectionProfile profile)
+    {
+        if (!Uri.TryCreate(profile.SsoStartUrl, UriKind.Absolute, out Uri? uri)
+            || uri.Scheme != "https" || uri.Host.Length == 0 || uri.UserInfo.Length != 0
+            || uri.Query.Length != 0 || uri.Fragment.Length != 0)
+        {
+            throw new ProfilePortabilityException("ssoStartUrl must be an HTTPS URL without credentials, a query or a fragment.");
+        }
+
+        if (profile.RemoteDevelopment?.Folder is { Length: > 0 } folder
+            && (!folder.StartsWith('/') || folder.Any(char.IsControl)))
+        {
+            throw new ProfilePortabilityException("remoteDevelopment.folder must be an absolute remote path.");
+        }
+        if (profile.WebForwards is not { Enabled: true } web) { return; }
+        if (web.ProxySuffixes is null || web.LocalForwards is null)
+        {
+            throw new ProfilePortabilityException("Web proxy suffixes and local forwards must be arrays.");
+        }
+        var ports = web.LocalForwards.Select(value => value.LocalPort).Concat(web.SocksPort is int socks ? [socks] : []).ToArray();
+        if (ports.Length == 0 || ports.Any(value => value is < 1 or > 65535)
+            || web.LocalForwards.Any(value => value.RemotePort is < 1 or > 65535)
+            || ports.Distinct().Count() != ports.Length)
+        {
+            throw new ProfilePortabilityException("Web forwards require valid, unique local ports and remote ports between 1 and 65535.");
+        }
+        if (web.SshUser is { Length: > 0 } user && !SafeHost(user))
+        {
+            throw new ProfilePortabilityException("webForwards.sshUser contains unsupported characters.");
+        }
+        foreach (string suffix in web.ProxySuffixes)
+        {
+            if (suffix is null || !suffix.StartsWith('.') || suffix.Length < 2 || !SafeHost(suffix)
+                || suffix.Contains("..", StringComparison.Ordinal) || suffix.EndsWith('.') || web.SocksPort is null)
+            {
+                throw new ProfilePortabilityException("Proxy suffixes require a SOCKS port and dot-prefixed domain names.");
+            }
+        }
+        foreach (LocalForward forward in web.LocalForwards)
+        {
+            if (string.IsNullOrWhiteSpace(forward.Name) || !SafeHost(forward.RemoteHost)
+                || (forward.OpenPath is { Length: > 0 } path && (!path.StartsWith('/') || path.Any(char.IsWhiteSpace))))
+            {
+                throw new ProfilePortabilityException("Each local forward needs a name, safe remote host and optional absolute open path.");
+            }
+        }
+    }
+
+    private static void ValidateBlockShape(JsonObject? web, JsonObject? remote)
+    {
+        static void Boolean(JsonObject block, string key)
+        {
+            if (block.ContainsKey(key) && block[key]?.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                throw new ProfilePortabilityException($"{key} must be a boolean.");
+            }
+        }
+        if (remote is not null) { Boolean(remote, "enabled"); }
+        if (web is null) { return; }
+        Boolean(web, "enabled");
+        if (web.ContainsKey("socksPort") && web["socksPort"] is not null) { _ = RequiredPort(web, "socksPort"); }
+        if (web.ContainsKey("proxySuffixes")
+            && (web["proxySuffixes"] is not JsonArray suffixes || suffixes.Any(value => value?.GetValueKind() != JsonValueKind.String)))
+        {
+            throw new ProfilePortabilityException("proxySuffixes must be an array of strings.");
+        }
+        if (web.ContainsKey("localForwards"))
+        {
+            if (web["localForwards"] is not JsonArray forwards)
+            {
+                throw new ProfilePortabilityException("localForwards must be an array of objects.");
+            }
+            foreach (JsonNode? value in forwards)
+            {
+                if (value is not JsonObject forward) { throw new ProfilePortabilityException("Each local forward must be an object."); }
+                _ = RequiredNonEmptyString(forward, "name");
+                _ = RequiredNonEmptyString(forward, "remoteHost");
+                _ = RequiredPort(forward, "localPort");
+                _ = RequiredPort(forward, "remotePort");
+            }
+        }
+    }
+
+    private static bool SafeHost(string? value) => !string.IsNullOrEmpty(value) && !value.StartsWith('-')
+        && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '.' or '_');
+
+    private static string NormalizeKey(string key) => new(key.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+
+    private static void CheckSecurity(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach ((string key, JsonNode? value) in obj)
+                {
+                    if (NormalizedForbidden.Contains(NormalizeKey(key))) { throw ProfilePortabilityException.ForbiddenField(key); }
+                    CheckSecurity(value);
+                }
+                break;
+            case JsonArray array:
+                foreach (JsonNode? value in array) { CheckSecurity(value); }
+                break;
+            case JsonValue value when value.GetValueKind() == JsonValueKind.String:
+                string text = value.GetValue<string>();
+                if (text.Contains("private key-----", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("x-amz-signature=", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("x-amz-credential=", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ProfilePortabilityException("The profile contains private authentication material.");
+                }
+                break;
+        }
     }
 }

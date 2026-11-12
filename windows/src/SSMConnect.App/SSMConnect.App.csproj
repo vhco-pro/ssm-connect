@@ -20,4 +20,8 @@
     <ProjectReference Include="../SSMConnect.Windows/SSMConnect.Windows.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="ThirdPartyNotices.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
 </Project>

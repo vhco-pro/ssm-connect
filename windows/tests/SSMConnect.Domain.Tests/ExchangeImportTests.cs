@@ -44,7 +44,7 @@ public sealed class ExchangeImportTests
     {
         PortableProfileDocument document = ProfilePortability.Import(Read(fileName));
 
-        Assert.Equal(PortableProfileDocument.CurrentSchemaVersion, document.SchemaVersion);
+        Assert.Equal(1, document.SchemaVersion);
         Assert.NotEqual(Guid.Empty, document.Id);
         Assert.NotEmpty(document.Name);
         Assert.True(AwsRegion.IsValid(document.SsoRegion));

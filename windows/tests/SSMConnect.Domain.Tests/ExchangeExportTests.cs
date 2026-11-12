@@ -113,7 +113,8 @@ public sealed class ExchangeExportTests
     [MemberData(nameof(Samples))]
     public void TheCommittedDocumentMatchesWhatThisClientExports(string fileName)
     {
-        string expected = ProfilePortability.Export(SampleProfiles[fileName]);
+        string expected = ProfilePortability.Export(
+            PortableProfileDocument.FromProfile(SampleProfiles[fileName]) with { SchemaVersion = 1 });
         string path = Path.Combine(ExchangeSourceDirectory, fileName);
 
         if (!File.Exists(path))

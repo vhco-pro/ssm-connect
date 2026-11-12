@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32;
 using SSMConnect.Domain;
+using SSMConnect.Workflow;
 
 namespace SSMConnect.Windows;
 
@@ -12,7 +13,9 @@ namespace SSMConnect.Windows;
 /// specification §15 question 6 settled schema v1 as carrying connection profiles only, and the
 /// macOS client stores its settings under a separate key for the same reason.
 /// </remarks>
-public sealed record StoredState(IReadOnlyList<ConnectionProfile> Profiles, AppSettings Settings, Guid? ActiveProfileId);
+public sealed record StoredState(IReadOnlyList<ConnectionProfile> Profiles, AppSettings Settings, Guid? ActiveProfileId,
+    IReadOnlyDictionary<Guid, PortableProfileDocument>? Documents = null,
+    IReadOnlyDictionary<Guid, ProfileAttachment>? Attachments = null);
 
 /// <summary>
 /// Persists profiles and settings under the user's local application data.
@@ -44,41 +47,51 @@ public sealed class ProfileStore
     {
         ProfilesDocument profiles = Read<ProfilesDocument>(_profilesPath) ?? new ProfilesDocument([], null);
         AppSettings settings = Read<AppSettings>(_settingsPath) ?? AppSettings.Default;
-        return new StoredState(profiles.Profiles, settings, profiles.ActiveProfileId);
+        if (profiles.Profiles is null)
+        {
+            throw new ProfilePortabilityException("Saved profiles are missing their profile list. Restore the original file before starting.");
+        }
+        return new StoredState(profiles.Profiles, settings, profiles.ActiveProfileId, profiles.Documents, profiles.Attachments);
     }
 
     public void Save(StoredState state)
     {
-        Write(_profilesPath, new ProfilesDocument([.. state.Profiles], state.ActiveProfileId));
+        Write(_profilesPath, new ProfilesDocument([.. state.Profiles], state.ActiveProfileId, state.Documents, state.Attachments));
         Write(_settingsPath, state.Settings);
     }
 
     private static T? Read<T>(string path)
         where T : class
     {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
         try
         {
-            return JsonSerializer.Deserialize<T>(File.ReadAllText(path), Options);
+            return JsonSerializer.Deserialize<T>(File.ReadAllText(path), Options)
+                ?? throw new ProfilePortabilityException("Saved configuration is empty. Restore it before starting; the original file was retained.");
         }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
         catch (JsonException)
         {
-            // A corrupt file must not stop the app from starting; the user can re-add the profile.
-            return null;
+            throw new ProfilePortabilityException(
+                "Saved configuration could not be read. Restore or repair it before starting; the original file was retained.");
         }
     }
 
     private static void Write<T>(string path, T value)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(value, Options));
+        string temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(value, Options));
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) { File.Delete(temporary); } }
     }
 
-    private sealed record ProfilesDocument(IReadOnlyList<ConnectionProfile> Profiles, Guid? ActiveProfileId);
+    private sealed record ProfilesDocument(IReadOnlyList<ConnectionProfile> Profiles, Guid? ActiveProfileId,
+        IReadOnlyDictionary<Guid, PortableProfileDocument>? Documents = null,
+        IReadOnlyDictionary<Guid, ProfileAttachment>? Attachments = null);
 }
 
 /// <summary>

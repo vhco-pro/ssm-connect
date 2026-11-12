@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -22,6 +23,14 @@ public partial class App : System.Windows.Application
     private readonly ProfileStore _store = new();
     private readonly StartupRegistration _startup = new();
     private readonly ConnectionLog _log = new();
+    private readonly IProfileFiles _profileFiles = new ProfileFiles();
+    private static readonly IReadOnlySet<string> SupportedCapabilities = new HashSet<string>(StringComparer.Ordinal) { "tunnelOnly" };
+    private readonly System.Windows.Threading.DispatcherTimer _fileTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly CancellationTokenSource _lifetime = new();
+    private ProfileLibrary _fileLibrary = null!;
+    private AuthorizationSession? _authorization;
+    private int _pendingFileCount;
+    private int _fileErrorCount;
     private ClipboardPolicy _clipboard = null!;
     private TrayIcon _tray = null!;
     private ContextMenu _menu = null!;
@@ -46,7 +55,18 @@ public partial class App : System.Windows.Application
             value => Dispatcher.Invoke(() => System.Windows.Clipboard.SetText(value)),
             () => Dispatcher.Invoke(System.Windows.Clipboard.Clear));
 
-        _state = _store.Load();
+        try
+        {
+            _state = _store.Load();
+            _fileLibrary = Library(_state);
+        }
+        catch (Exception error) when (error is ProfilePortabilityException or IOException or UnauthorizedAccessException)
+        {
+            System.Windows.MessageBox.Show(error.Message, "SSM Connect could not load saved configuration",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
 
         _menu = new ContextMenu();
         _tray = new TrayIcon();
@@ -57,6 +77,17 @@ public partial class App : System.Windows.Application
 
         // The workflow owns launch policy, including whether auto-connect applies.
         _workflow?.OnLaunch();
+        _fileTimer.Tick += (_, _) =>
+        {
+            _fileLibrary.Refresh();
+            if (_pendingFileCount != _fileLibrary.Pending.Count || _fileErrorCount != _fileLibrary.Errors.Count)
+            {
+                _pendingFileCount = _fileLibrary.Pending.Count;
+                _fileErrorCount = _fileLibrary.Errors.Count;
+                RebuildMenu(_workflow?.State ?? ConnectionState.Disconnected);
+            }
+        };
+        _fileTimer.Start();
 
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         SystemEvents.SessionEnding += OnSessionEnding;
@@ -70,6 +101,12 @@ public partial class App : System.Windows.Application
 
     private void RebuildWorkflow()
     {
+        if (_authorization is not null)
+        {
+            _authorization.Changed -= AuthorizationChanged;
+            _authorization.Dispose();
+            _authorization = null;
+        }
         if (ActiveProfile is not ConnectionProfile profile)
         {
             _workflow = null;
@@ -77,8 +114,10 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        _authorization = new AuthorizationSession(profile, new SsoAuthProvider(OpenInBrowser));
+        _authorization.Changed += AuthorizationChanged;
         _workflow = new ConnectionWorkflow(
-            new SsoAuthProvider(OpenInBrowser),
+            _authorization,
             new Ec2Adapter(),
             new SsmAdapter(),
             new SecretsAdapter(),
@@ -96,8 +135,41 @@ public partial class App : System.Windows.Application
         UpdateTray(_workflow.State);
     }
 
-    private static void OpenInBrowser(string uri) =>
-        Process.Start(new ProcessStartInfo { FileName = uri, UseShellExecute = true })?.Dispose();
+    private static void OpenInBrowser(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri? target) || target.Scheme != "https")
+        {
+            throw new IOException("AWS returned an invalid SSO verification address.");
+        }
+        using Process process = Process.Start(new ProcessStartInfo { FileName = uri, UseShellExecute = true })
+            ?? throw new IOException("The SSO browser could not be opened.");
+    }
+
+    private ProfileLibrary Library(StoredState state) => new(state.Profiles, _profileFiles, SupportedCapabilities,
+        state.Documents, state.Attachments);
+
+    private void AuthorizationChanged(AuthorizationSnapshot snapshot)
+    {
+        if (!Dispatcher.HasShutdownStarted)
+        {
+            Dispatcher.BeginInvoke(() => RebuildMenu(_workflow?.State ?? ConnectionState.Disconnected));
+        }
+    }
+
+    private async Task AuthorizeAsync(bool signIn)
+    {
+        if (_authorization is not { } authorization) { return; }
+        try
+        {
+            if (signIn) { await authorization.SignInAsync(_lifetime.Token); }
+            else { await authorization.RetryAsync(_lifetime.Token); }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            _log.Append("auth", authorization.ErrorMessage ?? "Authorization did not complete. Check the authorization status in the menu.");
+        }
+    }
 
     // MARK: Tray
 
@@ -114,6 +186,31 @@ public partial class App : System.Windows.Application
         bool busy = state.IsTransitioning();
 
         _menu.Items.Add(new MenuItem { Header = TrayIcons.Tooltip(state), IsEnabled = false });
+        if (_authorization is { } authorization)
+        {
+            _menu.Items.Add(new MenuItem { Header = authorization.Snapshot.Detail, IsEnabled = false });
+            if (authorization.Status == AuthorizationStatus.SignInRequired)
+            {
+                _menu.Items.Add(Item("Sign In with SSO", () => _ = AuthorizeAsync(signIn: true)));
+            }
+            else if (authorization.Status is AuthorizationStatus.Unavailable or AuthorizationStatus.AccessDenied)
+            {
+                _menu.Items.Add(Item("Retry authorization", () => _ = AuthorizeAsync(signIn: false)));
+            }
+        }
+        if (_workflow is { } current && current.Profile != current.SelectedProfile)
+        {
+            _menu.Items.Add(new MenuItem
+            {
+                Header = $"Active: {current.Profile.Name}; saved selection: {current.SelectedProfile.Name}. Reconnect to apply.",
+                IsEnabled = false,
+            });
+        }
+        if (_fileLibrary.Pending.Count > 0 || _fileLibrary.Errors.Count > 0)
+        {
+            _menu.Items.Add(new MenuItem { Header = $"Profile files: {_fileLibrary.Pending.Count} pending, {_fileLibrary.Errors.Count} issues", IsEnabled = false });
+            _menu.Items.Add(Item("Review profile files…", ShowSettings));
+        }
         _menu.Items.Add(new Separator());
 
         if (connected || busy)
@@ -201,7 +298,8 @@ public partial class App : System.Windows.Application
 
     private void UpdateTray(ConnectionState state)
     {
-        string detail = ActiveProfile is { } profile ? $" — {profile.Name}" : string.Empty;
+        ConnectionProfile? shown = state == ConnectionState.Connected || state.IsTransitioning() ? _workflow?.Profile : ActiveProfile;
+        string detail = shown is { } profile ? $" — {profile.Name}" : string.Empty;
         _tray.Update(TrayIcons.For(state), $"{TrayIcons.Tooltip(state)}{detail}");
         RebuildMenu(state);
     }
@@ -243,7 +341,7 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_state, Persist);
+        _settingsWindow = new SettingsWindow(_state, Persist, _profileFiles, SupportedCapabilities);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
@@ -251,8 +349,10 @@ public partial class App : System.Windows.Application
 
     private void Persist(StoredState updated)
     {
-        _state = updated;
+        ProfileLibrary library = Library(updated);
         _store.Save(updated);
+        _state = updated;
+        _fileLibrary = library;
 
         // A profile edit takes effect on the next connection; the workflow refuses to swap targets
         // while one is in flight, so rebuilding it is only safe while idle.
@@ -298,6 +398,9 @@ public partial class App : System.Windows.Application
     /// </summary>
     private void ShutdownCleanly()
     {
+        _fileTimer.Stop();
+        _lifetime.Cancel();
+        _authorization?.CancelPending();
         _clipboard.Cancel();
         try
         {
@@ -311,9 +414,17 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _fileTimer.Stop();
+        _lifetime.Cancel();
+        if (_authorization is not null)
+        {
+            _authorization.Changed -= AuthorizationChanged;
+            _authorization.Dispose();
+        }
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         SystemEvents.SessionEnding -= OnSessionEnding;
         _tray?.Dispose();
+        _lifetime.Dispose();
         base.OnExit(e);
     }
 
@@ -347,6 +458,8 @@ public partial class App : System.Windows.Application
         {
             (string title, string body, TrayNotificationKind kind) = notification switch
             {
+                ConnectionNotification.Connected when app._workflow?.Profile.ConnectAction == ConnectAction.TunnelOnly =>
+                    ("Workstation tunnel ready", "The SSM tunnel is ready. DCV was not started.", TrayNotificationKind.Information),
                 ConnectionNotification.Connected =>
                     ("Workstation connected", "Amazon DCV should open shortly.", TrayNotificationKind.Information),
                 ConnectionNotification.Reconnecting =>
@@ -354,7 +467,7 @@ public partial class App : System.Windows.Application
                 ConnectionNotification.Stopped =>
                     ("Workstation stopping", "The instance is shutting down.", TrayNotificationKind.Information),
                 ConnectionNotification.SignInRequired =>
-                    ("Sign-in required", "Your AWS session expired; check your browser.", TrayNotificationKind.Warning),
+                    ("Sign-in required", "Open the menu and choose Sign In with SSO. Existing connections are unchanged.", TrayNotificationKind.Warning),
                 _ => ("SSM Connect", string.Empty, TrayNotificationKind.Information),
             };
 

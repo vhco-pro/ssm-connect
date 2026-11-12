@@ -99,6 +99,10 @@ jobs:
 
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect\SSMConnect.exe'
           if (-not (Test-Path $exe)) { throw 'The application was not installed.' }
+          $notices = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect\ThirdPartyNotices.txt'
+          if (-not (Test-Path $notices) -or -not (Select-String -Path $notices -Pattern 'YamlDotNet 18.1.0' -Quiet)) {
+            throw 'The installed application is missing its YAML parser attribution and license.'
+          }
 
           # Apache-2.0 section 4: the notices must reach the machine, not merely the .wxs.
           $plugin = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect\session-manager-plugin'

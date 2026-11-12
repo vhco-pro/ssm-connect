@@ -22,6 +22,9 @@
     <Content Include="$(ContractsDirectory)/fixtures/profiles/*.json"
              Link="contracts/fixtures/profiles/%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(ContractsDirectory)/fixtures/profile-v2/*"
+             Link="contracts/fixtures/profile-v2/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
     <!-- Documents the other client actually exported, for the AC-03 crossing test. -->
     <Content Include="$(ContractsDirectory)/fixtures/exchange/*.json"
              Link="contracts/fixtures/exchange/%(Filename)%(Extension)"

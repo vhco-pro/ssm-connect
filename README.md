@@ -92,6 +92,44 @@ The app starts with **no profile** - nothing about any AWS environment is baked 
    - **Multi-user** → set the **agent port** (default `8444`); no secret needed.
 4. **Save**, then **Connect**. With auto-connect enabled, it connects on launch/login from then on.
 
+## Windows profile/auth follow-up (unreleased)
+
+This branch adds v2 YAML/JSON profile files and authorization recovery to the existing WPF client.
+It is not a published Windows release or a wholesale merge with current macOS.
+
+**Open File** previews a document before **Attach File** or **Import as Local Copy**. The normal
+editor saves back to an attached file with revision checks and explicit canonical-format consent;
+legacy v1 files upgrade to v2 only on Save/Export. External edits are polled every two seconds and
+remain pending until **Files > Apply External Changes**. Missing/invalid/read-only sources retain
+the last good profile and offer Locate, Detach or Save a Local Copy. **Save Settings Only** never
+writes the attached file. No file action enables auto-connect, authenticates or installs integration.
+
+The tray shows **Sign In with SSO** when silent renewal needs interaction. One explicit sign-in
+resumes the pending same-target operation; profile changes and Stop cancel that recovery.
+Healthy connections retain their active target while a saved selection is staged. Turn off
+**Open DCV Viewer automatically** for a listener-verified tunnel without DCV/password/desktop work.
+
+The portable contract can represent web/browser/editor configuration, but this Windows increment
+does **not** implement those adapters. Required unsupported capabilities fail explicitly before
+attachment or AWS calls instead of becoming a DCV-only connection.
+
+Portable checks:
+
+```bash
+dotnet test windows/SSMConnect.Portable.slnf --configuration Release
+dotnet test windows/tests/SSMConnect.Aws.Tests/SSMConnect.Aws.Tests.csproj --configuration Release
+```
+
+On macOS, all Windows projects can be cross-built with
+`dotnet build windows/SSMConnect.slnx -p:EnableWindowsTargeting=true`.
+Cross-builds and portable tests do not prove native UI, SSO, ACL/atomic-save, process, installer or
+browser/editor behavior. Those still require an actual Windows run.
+
+Local `win-x64` normal and single-file publish checks retain the YAML license sidecar. A
+framework-dependent publish folder is not the installer: it still needs .NET 10 Windows Desktop
+and the Session Manager plugin. Use the existing Windows packaging pipeline for a bundled MSI,
+then perform its native install/upgrade/uninstall and new-feature acceptance checks.
+
 ## Requirements
 
 - macOS 14 (Sonoma) or later, Apple Silicon
