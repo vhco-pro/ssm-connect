@@ -14,6 +14,7 @@ covers:
   - project.yml
   - scripts/
   - .github/workflows/
+  - spikes/swift-portability/
 ---
 
 # Shared Swift core and native desktop clients
@@ -54,20 +55,34 @@ request authorizes branch preparation, preservation and specification work,
 not the application rewrite, installation, live AWS access or release. The owner
 requested branch-first preparation for this revision; main remains unchanged.
 Further work uses vh-adlc review, acceptance, tasks and implementation gates.
+The owner's subsequent request authorizes publishing this consolidation branch,
+retiring the old SDD flow and running bounded, credential-free portability and
+integration spikes. It does not authorize the production rewrite or live AWS,
+browser, editor or workstation operations.
 
 ### Existing workflow and baseline
 
 The repository previously used separate specifications, plans and reviewer
-summaries. For example,
-[the region-failure plan](../plans/bug-invalid-region-connect-failure.plan.md)
-links a separate spec and records phased tests; its
-[implementation summary](../../summaries/bug-invalid-region-connect-failure.md)
-maps acceptance criteria to executed checks. No pinned repository instruction
-entry point existed at the inspected main commit.
+summaries. The historical
+[region-failure plan](https://github.com/vhco-pro/ssm-connect/blob/eb4f0bc0b8f98f206ed519feb461c70ba3614b41/docs/plans/bug-invalid-region-connect-failure.plan.md)
+and
+[implementation summary](https://github.com/vhco-pro/ssm-connect/blob/eb4f0bc0b8f98f206ed519feb461c70ba3614b41/summaries/bug-invalid-region-connect-failure.md)
+record that process. Those files have been removed from the active tree, not
+from Git history. No pinned repository instruction entry point existed at the
+inspected main commit.
 
 [AGENTS.md](../../AGENTS.md) now pins vh-adlc conventions and declares
 `docs/specs/` as the feature root. This document contains the active spec and
-plan; historical plans and summaries remain evidence, not a second task store.
+plan; historical plans and summaries are not an alternative execution route.
+
+All remaining macOS worktrees were clean in the 2026-11-12 inventory. Their
+delivery heads match merged pull requests and are included in released main:
+[profile/auth work](https://github.com/vhco-pro/ssm-connect/pull/26),
+[distribution specifications](https://github.com/vhco-pro/ssm-connect/pull/27),
+[editor continuation](https://github.com/vhco-pro/ssm-connect/pull/28),
+[replacement/browser work](https://github.com/vhco-pro/ssm-connect/pull/31) and
+[recovery guidance](https://github.com/vhco-pro/ssm-connect/pull/34).
+Distribution signing remains specified, not implemented.
 
 Current macOS behavior is defined by the
 [client spec](ssm-connect.spec.md),
@@ -177,6 +192,21 @@ I/O, cancellation and owned-child cleanup. A dependency blocker stops that
 increment for an owner decision; it does not silently authorize another core
 language, duplicated workflow or CLI-based authentication fallback.
 
+The authorized, credential-free spike is reproducible through
+[swift-portability.yml](../../.github/workflows/swift-portability.yml) and
+[its runner](../../spikes/swift-portability/run.sh). It uses native
+`ubuntu-24.04` and `windows-2025` hosted runners as test environments, not a
+promised desktop support matrix. It compiles the existing region validator and
+AWS config parser unchanged, exercises a small Swift helper over private
+stdin/stdout pipes, then builds/loads the currently locked AWS SDK modules and
+YAML dependency in an isolated package.
+
+This is not a GUI, complete extracted workflow or production IPC protocol.
+Passing it does not prove SSO login/refresh, real SSM traffic, process
+containment, filesystem security or native browser/editor integration. The
+spike does not read AWS credentials or perform service calls. Q1 remains open
+while the helper approach is evaluated.
+
 ### Behavior, identity and local state
 
 Preserve all current supported capabilities, including single-user and
@@ -230,6 +260,14 @@ The current macOS source and tests remain the integration baseline. Historical
 evidence stays in Git, including the old spec and handoffs. Do not copy their
 completed criterion marks into this revision. Previous IDs AC-01 through AC-10
 remain historical; this scope starts at AC-11.
+
+Preservation merge `57a466ab723f444de27f1d20b5430f9075f54ece` also retains
+the original macOS feature histories, the older replacement draft and the
+replacement acceptance-note branch. The acceptance notes at `c9c38fb` were
+already ancestors of the released recovery head `7aa7d52`; they are not an
+unreleased application feature. This merge changed no active source.
+The older local safety snapshot `fc2edd8`, explicitly marked not for publication,
+remains local and was not added to the publishable branch.
 
 ### Migration, performance and release boundaries
 

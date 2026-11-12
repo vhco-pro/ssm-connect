@@ -16,8 +16,9 @@ Feature documents: docs/specs/
 
 Use vh-adlc for specification, acceptance, tasks, implementation, review and
 shipping. Each new or revised feature has one document containing its spec and
-plan. Keep historical documents in `docs/plans/` and `summaries/` as evidence;
-do not continue the old separate-plan/separate-summary flow for revised work.
+plan. The old separate plans and reviewer summaries are retained in Git history,
+not as an active workflow. Do not recreate `docs/plans/` or `summaries/` as a
+second task store.
 Migrate historical specs when they are actively revised, not in an unrelated
 repository-wide conversion.
 
