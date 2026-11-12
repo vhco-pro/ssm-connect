@@ -44,10 +44,13 @@ them over current macOS code. The preserved implementation is accessible through
 Git history, not included as a second active core. Extraction pointers appear
 below.
 
-Swift supports Windows and Linux, but this application's exact SDK, networking,
-filesystem and process dependencies have not been verified there. The GUI/core
-bridge, supported OS/CPU matrix, Linux interface and performance budgets remain
-owner decisions. Compilation alone will not establish native support.
+Native spikes now execute unchanged Swift model/parser code and a small helper
+on both Windows and Linux. The locked SDK/YAML probe passes on Linux, while the
+Windows AWS CRT dependency build fails with both tested build backends.
+Full workflows, authentication, transports and native adapters remain unverified.
+The GUI/core bridge, supported OS/CPU matrix, Linux interface, performance budgets
+and Windows dependency remedy remain owner decisions. These subset checks do not
+establish support for the complete application.
 
 This document is a draft and replaces the old two-core scope. Its historical
 acceptance and passing tests do not accept or verify this revision. The current
@@ -123,10 +126,23 @@ followed by inability to build `AwsCAuth`. This is a dependency/build
 compatibility observation, not evidence that Swift or the reused model/parser
 code cannot execute on Windows.
 
-The first run used Swift 6.4.2's default `swiftbuild` backend. A bounded follow-up
-compares it with SwiftPM's `native` backend on Windows without changing pinned
-dependencies. The CLI labels `native` deprecated, so a diagnostic success would
-not by itself select it as the production build strategy.
+The first run used Swift 6.4.2's default `swiftbuild` backend.
+[Follow-up run 43136183821](https://github.com/vhco-pro/ssm-connect/actions/runs/43136183821)
+tested commit `588666555e691b6e5432879e535d20fe61ef2334` without changing pinned
+dependencies:
+
+- Linux repeated both passing checks.
+- Windows repeated the passing model/helper checks with both backends.
+- Windows `swiftbuild` reproduced the AWS CRT module-header errors.
+- Windows `native` instead failed compiling
+  `aws-c-io/source/bsd/kqueue_event_loop.c` because `sys/event.h` is absent.
+  The pinned CRT manifest has Windows-specific exclusions but does not exclude
+  `source/bsd` in that branch. The native backend is also deprecated.
+
+Changing the backend alone therefore does not unblock the locked Windows
+dependency build. This identifies dependency packaging/build work to investigate
+before a production migration, rather than a reason to translate the Swift core.
+Q5 records that decision. No dependency patch or upgrade was applied.
 
 These are subset and dependency-loading checks. No full connection state
 machine, real SSO/refresh, SSM session, native GUI or desktop integration has
@@ -414,6 +430,20 @@ tolerances plus explicit Windows/Linux limits before accepting this spec.
 **Why this is yours:** Performance equivalence cannot be inferred from retaining
 Swift. This branch preparation ran no application benchmarks.
 
+### Q5: How should the Windows AWS dependency blocker be investigated next?
+
+**Recommendation:** A. Evaluate a bounded upstream SDK/CRT packaging fix or
+compatible release first, preserving the shared Swift AWS path where practical.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Investigate SDK/CRT Windows package support** | Maximum reuse of the current Swift AWS integration. | A separate native dependency spike, plus review of any required upstream change or upgrade. |
+| **B. Evaluate a platform-specific AWS adapter behind the Swift workflow ports** | A supported native SDK can provide Windows AWS operations without duplicating connection decisions. | More adapter/bridge work and explicit authentication/cache contract tests. |
+
+**Why this is yours:** Both tested build backends fail in the currently locked
+CRT dependency. The scope does not authorize maintaining a dependency fork,
+changing SDKs, or silently choosing a second implementation.
+
 ## Review Log
 
 | Date | Review | Kind | Commit | Model | Isolation | Outcome |
@@ -442,6 +472,9 @@ No independent review or acceptance has been recorded for this revision.
   development/deployment support includes Windows and Linux.
 - [AWS SDK for Swift setup](https://docs.aws.amazon.com/sdk-for-swift/latest/developer-guide/setting-up.html):
   SDK cross-platform/toolchain guidance; not native validation of this app.
+- [Pinned aws-crt-swift manifest](https://github.com/awslabs/aws-crt-swift/blob/d1678252cb3da2d34f70db43e402927360df4d8c/Package.swift):
+  its Windows `aws-c-io` exclusions omit `source/bsd`, consistent with the native
+  backend's observed attempt to compile the BSD kqueue source on Windows.
 - [Feature-document conventions](https://github.com/vhco-pro/docs/blob/d8f07c9dd69038375a535af8ad586086688f85ab/conventions/feature-documents.md)
   and [prose guide](https://github.com/vhco-pro/docs/blob/d8f07c9dd69038375a535af8ad586086688f85ab/guides/humanize-prose.md):
   the pinned format and authoring rules for this revision.
