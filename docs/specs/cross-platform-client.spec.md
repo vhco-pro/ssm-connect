@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Shared Swift core direction selected; native feasibility, integration and platform decisions, independent spec review and acceptance remain open."
+status_description: "Native Swift model/helper checks pass on Windows/Linux and the Linux dependency probe passes; Windows dependency build and the remaining design decisions are unresolved."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -103,6 +103,34 @@ imports Darwin and owns shutdown signals;
 `SSMConnectKit/Sources/SSMConnectKit/Auth/AWSAuthProvider.swift:1` imports AppKit
 and opens the browser. These are boundaries to refactor, not a reason to translate
 the working algorithms into another language.
+
+### Observed credential-free portability results
+
+[Run 43134523059](https://github.com/vhco-pro/ssm-connect/actions/runs/43134523059)
+tested commit `6c78b919ad64c36a0b5dcdc0cea78e698079dbff` with Swift 6.4.2.
+The isolated package retained AWS SDK for Swift 1.7.62, aws-crt-swift 0.64.1
+and Yams 6.2.2 from the application lockfile.
+
+| Native test environment | Unchanged region/config code and helper protocol | Locked SDK/YAML build and load |
+| --- | --- | --- |
+| Ubuntu 24.04 x86-64 | Passed all eight command/error/shutdown responses. | Passed; six SDK client types linked and YAML decoded to the expected version. |
+| Windows Server 2025 x86-64, build 26100 | Passed the same eight responses. | Failed while importing the AWS CRT C modules. YAML was not independently verified on Windows. |
+
+The Windows failure reaches `aws-c-common/include/aws/testing/aws_test_harness.h`
+through the generated `AwsCCommon` module includes. Diagnostics include
+undeclared `EXCEPTION_EXECUTE_HANDLER`, `GetConsoleMode` and `SetConsoleMode`,
+followed by inability to build `AwsCAuth`. This is a dependency/build
+compatibility observation, not evidence that Swift or the reused model/parser
+code cannot execute on Windows.
+
+The first run used Swift 6.4.2's default `swiftbuild` backend. A bounded follow-up
+compares it with SwiftPM's `native` backend on Windows without changing pinned
+dependencies. The CLI labels `native` deprecated, so a diagnostic success would
+not by itself select it as the production build strategy.
+
+These are subset and dependency-loading checks. No full connection state
+machine, real SSO/refresh, SSM session, native GUI or desktop integration has
+been verified. No product acceptance criterion is marked met by this spike.
 
 ## Scope
 
