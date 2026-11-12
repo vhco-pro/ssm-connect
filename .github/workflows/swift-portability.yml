@@ -16,10 +16,17 @@ permissions:
 
 jobs:
   portability:
+    name: portability (${{ matrix.os }}, ${{ matrix.build-system }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        include:
+          - os: ubuntu-24.04
+            build-system: swiftbuild
+          - os: windows-2025
+            build-system: swiftbuild
+          - os: windows-2025
+            build-system: native
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -39,12 +46,14 @@ jobs:
           swift-build: 6.4.2-RELEASE
       - name: Run credential-free portability checks
         shell: bash
+        env:
+          SPM_BUILD_SYSTEM: ${{ matrix.build-system }}
         run: bash spikes/swift-portability/run.sh "$RUNNER_TEMP/ssm-connect-spike"
       - name: Retain spike evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: swift-portability-${{ matrix.os }}
+          name: swift-portability-${{ matrix.os }}-${{ matrix.build-system }}
           path: ${{ runner.temp }}/ssm-connect-spike/
           if-no-files-found: warn
           retention-days: 7

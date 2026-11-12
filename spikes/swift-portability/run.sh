@@ -3,6 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT="${1:?Usage: bash spikes/swift-portability/run.sh OUTPUT_DIRECTORY}"
+BUILD_SYSTEM="${SPM_BUILD_SYSTEM:-swiftbuild}"
+case "$BUILD_SYSTEM" in
+    swiftbuild|native) ;;
+    *) printf 'Unsupported spike build system: %s\n' "$BUILD_SYSTEM" >&2; exit 2 ;;
+esac
 mkdir -p -- "$OUTPUT"
 OUTPUT="$(cd -- "$OUTPUT" && pwd)"
 WORK="$(mktemp -d)"
@@ -46,9 +51,10 @@ fi
 
 cp -R "$ROOT/spikes/swift-portability/SDKProbe" "$WORK/sdk"
 cp "$ROOT/SSMConnectKit/Package.resolved" "$WORK/sdk/Package.resolved"
-if swift build --package-path "$WORK/sdk" --force-resolved-versions --jobs 2 \
+if swift build --package-path "$WORK/sdk" --build-system "$BUILD_SYSTEM" \
+    --force-resolved-versions --jobs 2 \
     >"$OUTPUT/sdk-build.log" 2>&1; then
-    if swift run --package-path "$WORK/sdk" --skip-build SDKProbe \
+    if swift run --package-path "$WORK/sdk" --build-system "$BUILD_SYSTEM" --skip-build SDKProbe \
         >"$OUTPUT/sdk-runtime.log" 2>&1 &&
         grep -Fxq 'SDK modules linked: 6; YAML schemaVersion: 2' "$OUTPUT/sdk-runtime.log"; then
         SDK=passed
@@ -62,9 +68,10 @@ fi
 jq -n \
     --arg platform "$(uname -s)" \
     --arg commit "$(git -C "$ROOT" rev-parse HEAD)" \
+    --arg backend "$BUILD_SYSTEM" \
     --arg core "$CORE" \
     --arg sdk "$SDK" \
-    '{platform: $platform, commit: $commit, portableCoreAndHelper: $core, lockedSDKAndYAML: $sdk}' \
+    '{platform: $platform, commit: $commit, swiftBuildSystem: $backend, portableCoreAndHelper: $core, lockedSDKAndYAML: $sdk}' \
     | tee "$OUTPUT/result.json"
 
 [[ "$CORE" == passed && "$SDK" == passed ]]
