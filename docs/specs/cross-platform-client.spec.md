@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Owner decisions Q1-Q19 folded after R-5; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "R-6 found one blocking overstatement about Linux install failures, raised as Q20. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -526,7 +526,20 @@ criteria above are met.
 
 ## Open Questions
 
-None.
+### Q20: What does a failed Linux package install promise?
+
+**Recommendation:** A. RPM replaces files one at a time after unpacking and does
+not restore them when a later step fails (R-6 F-01), so "the previous version
+stays installed" would need recovery machinery the project would own. Using the
+package manager's normal repair removes that promise instead.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Repair with the package manager** | A failed MSI still rolls back. A failed `.rpm` or `.deb` install is repaired by installing the package again with dnf or apt, which the error output and install guide say. Profiles and other state live outside the package and are untouched either way. | After a rare failed Linux upgrade the app may not start until the user reruns the install. |
+| **B. Guarantee the previous version** | A failed Linux upgrade always leaves a working app. | A project-owned backup and restore step around every install, with tests for failure after each file is replaced. |
+
+**Why this is yours:** It decides what an install failure promises Linux users.
+R-6 F-01 raised it.
 
 ## Review Log
 
@@ -537,6 +550,7 @@ None.
 | 2026-11-17 | R-3 | spec | `4c4051c` | gpt-6.1-sol | procedural | One blocking (missing-Viewer conflict) and four should-fix |
 | 2026-11-17 | R-4 | spec | `70c8856` | gpt-6.1-sol | procedural | One blocking (Windows job cleanup on helper exit) and four should-fix |
 | 2026-11-17 | R-5 | spec | `4c1906f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix and one nit |
+| 2026-11-17 | R-6 | spec | `828865e` | gpt-6.1-sol | procedural | One blocking (rpm/deb failure recovery overstated) and one nit |
 
 ### R-1
 
@@ -722,6 +736,22 @@ SEVERITY: nit
 WHERE: Design / Integration and feasibility, cancellation rules at lines 270-299; Design / Behavior, identity and local state, independent actions; Test Plan / AC-27; Sources / Q16
 EVIDENCE: The command rules say cancelling one workflow never affects another. The new cancellation deadline addressing R-4 F-02 instead terminates the entire helper after an unconfirmed cancel, ending its other transports and editor leases. The escalation behavior is already specified, but the unconditional isolation wording overstates it.
 PROPOSAL: Qualify workflow isolation as applying to cooperative cancellation and state that timeout escalation ends every workflow owned by that helper.
+
+### R-6
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Design / Migration, performance and release boundaries, lines 471-475; Acceptance Criteria / AC-21; Test Plan / AC-21, line 511
+EVIDENCE: The revision addressing R-5 F-01 assumes that non-fatal maintainer scripts restrict failures to unpacking, which package managers undo. RPM has a separate file-commit phase after unpacking: [lib/fsm.cc:1061-1101](https://github.com/rpm-software-management/rpm/blob/rpm-6.0.0-release/lib/fsm.cc#L1061-L1101) replaces destinations sequentially and handles failure without restoring the previous payload. A later rename failure can therefore leave previously replaced application files missing. The specified unpacking failure test does not establish the promised previous-version recovery.
+PROPOSAL: Define recovery after partial file replacement and test failure after at least one destination has been replaced. Raise an owner Open Question if satisfying that guarantee requires an additional recovery mechanism or replacing it with explicit repair.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Context / Owner summary, lines 52-53; Design / Migration, performance and release boundaries, lines 460-469; Acceptance Criteria / AC-21; Test Plan / AC-21; Sources / Q18
+EVIDENCE: The summary says Linux installation and removal wait for the user to quit. Design and AC-21's proof instead allow package changes while the client remains running, with specific errors if its helper subsequently needs replacement. The detailed behavior is defined; the summary describes a different timing policy.
+PROPOSAL: Say that Linux leaves the running client active during upgrade or removal until the user quits, and mention the restart or quit requirement if its helper is lost.
 
 ## Sources
 
