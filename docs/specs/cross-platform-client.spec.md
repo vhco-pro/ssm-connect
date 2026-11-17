@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Owner decisions Q1-Q18 folded after R-4; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "R-5 found no blocking issues; two factual findings and owner decision Q19 on Linux supervision are pending. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -514,7 +514,19 @@ criteria above are met.
 
 ## Open Questions
 
-None.
+### Q19: On Linux, what ends a hung helper's processes if the shell then crashes?
+
+**Recommendation:** A. systemd does the cleanup itself, so it works when neither
+the helper nor the shell can act. KDE and GNOME already start each application in
+its own systemd scope, and the shell creates one when it was started outside one.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Bind the helper's unit to the shell's scope** | The helper's transient service is created with `BindsTo=` and `After=` on the shell's own systemd scope. When the shell's processes are gone, systemd stops the helper's unit and every process in it, however the helper is behaving. | The shell must find or create its scope at start-up, one more systemd call. |
+| **B. Clean up at the next launch** | The next start of SSM Connect stops any helper unit left from an earlier run before starting its own. | A hung helper and its plugin or SSH processes can keep running until the user starts the app again, which AC-18 does not allow. |
+
+**Why this is yours:** It adds a systemd dependency to how the shell starts.
+R-5 F-03 raised it.
 
 ## Review Log
 
@@ -524,6 +536,7 @@ None.
 | 2026-11-17 | R-2 | spec | `3040421` | gpt-6.1-sol | procedural | No blocking findings; six should-fix |
 | 2026-11-17 | R-3 | spec | `4c4051c` | gpt-6.1-sol | procedural | One blocking (missing-Viewer conflict) and four should-fix |
 | 2026-11-17 | R-4 | spec | `70c8856` | gpt-6.1-sol | procedural | One blocking (Windows job cleanup on helper exit) and four should-fix |
+| 2026-11-17 | R-5 | spec | `4c1906f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix and one nit |
 
 ### R-1
 
@@ -679,6 +692,36 @@ SEVERITY: should-fix
 WHERE: Design / Behavior, identity and local state, capability preflight; Acceptance Criteria / AC-25; Test Plan / AC-25
 EVIDENCE: The native AC-25 proof treats an empty recording endpoint under AWS_ENDPOINT_URL as evidence of zero AWS calls. That override does not cover every existing AWS request path. STSPresigner.swift:16 and 71 constructs a regional sts.amazonaws.com URL directly, and STSIdentityResolver.swift:15-25 and 42-46 sends it through URLSession without consulting the override. A native action that performs this request before refusing a missing capability can leave the recording endpoint empty. The fake-port check does not establish that the native composition uses only the observed transports.
 PROPOSAL: Observe outbound request attempts across all native HTTP paths and owned processes, or explicitly route every such path through the recording transport. Include a positive control demonstrating that a direct STS request before refusal makes the native proof fail.
+
+### R-5
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / Migration, performance and release boundaries, lines 455-462; Acceptance Criteria / AC-21; Test Plan / AC-21
+EVIDENCE: The revision addressing R-4 F-04 promises that a failed rpm or deb transaction leaves the previous version installed. The selected apt installation path does not supply that guarantee: [Debian Policy, section 6.7](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html#details-of-configuration) specifies that configuration failures leave the new package Half-Configured without unwinding. No additional recovery mechanism is defined. Forcing only one unspecified failure per format can pass through a pre-unpack failure while missing this case.
+PROPOSAL: Define recovery for failures before and after package replacement, with an owner question if automatic rollback is being replaced by explicit repair. Test a failure after unpacking and verify the selected package, application and persisted-state outcomes.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary, live installation policy; Design / Migration, performance and release boundaries, lines 455-461; Acceptance Criteria / AC-21; Test Plan / AC-21; Sources / Q18
+EVIDENCE: Design applies its non-interruption guarantee to installing, upgrading and removing a running client. AC-21 likewise includes a running prior version. Its proof tests active upgrades but performs uninstall only in the earlier ordinary package sequence. An uninstaller that terminates an active client without consent could pass every specified scenario. The changes addressing R-4 F-04 therefore leave active removal unverified.
+PROPOSAL: Add native uninstall scenarios with an active connection, including refusal of interruption and the selected Linux behavior while files are removed or retained. Verify process ownership, connection continuity and cleanup after the user finally quits.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper lifetime; Design / Integration and feasibility, lines 245-256 and 282-292; Acceptance Criteria / AC-18, AC-27; Test Plan / AC-18, AC-27; Sources / Q13, Q16
+EVIDENCE: Linux cleanup depends on the helper reading stdin closure and exiting, or on the surviving shell stopping its unit. Neither path works when the helper is unresponsive and the shell then crashes. A transient service has the service manager as its parent, and its default lifetime follows its main process, as documented by [systemd-run](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html#Description) and [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#ExitType=). Closing the shell's pipe does not itself stop that unit. The helper and active descendants can therefore survive without either specified cleanup actor.
+PROPOSAL: Define supervision that ends the Linux unit even when the helper cannot process EOF and the shell is gone. Add a native scenario that suspends the helper, kills the shell, starts no replacement and verifies bounded cleanup of owned processes.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Design / Integration and feasibility, cancellation rules at lines 270-299; Design / Behavior, identity and local state, independent actions; Test Plan / AC-27; Sources / Q16
+EVIDENCE: The command rules say cancelling one workflow never affects another. The new cancellation deadline addressing R-4 F-02 instead terminates the entire helper after an unconfirmed cancel, ending its other transports and editor leases. The escalation behavior is already specified, but the unconditional isolation wording overstates it.
+PROPOSAL: Qualify workflow isolation as applying to cooperative cancellation and state that timeout escalation ends every workflow owned by that helper.
 
 ## Sources
 
