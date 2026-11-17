@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "R-5 found no blocking issues; two factual findings and owner decision Q19 on Linux supervision are pending. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "Owner decisions Q1-Q19 folded after R-5; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -49,8 +49,8 @@ runs its own private Swift helper as a child process over pipes, ending with the
 shell; macOS keeps linking the core in-process. Nothing is replayed: if the
 helper stops, its processes and editor channels end with it, in-flight actions
 fail and one replacement starts before the app shows an error with Retry.
-Installing over a running app asks first on Windows and waits for a restart on
-Linux. Browser support
+Installing over or removing a running app asks first on Windows and waits for
+the user to quit on Linux. Browser support
 matches macOS on every platform. The DCV desktop becomes optional: the editor,
 web forwards and tunnels are the primary paths and work against targets with no
 desktop and on clients without Viewer. The first release targets macOS
@@ -248,9 +248,13 @@ process connected by anonymous stdin/stdout pipes; there is no named pipe,
 socket or other endpoint. Each helper runs in its own container: on Windows a
 job object created for that helper with kill-on-close, whose only handle the
 shell holds; on Linux a transient systemd user service whose main process is the
-helper. The helper exits when its stdin pipe closes. When the shell ends, the
-job handle closes or the helper exits, so Windows or systemd ends every process
-in the container, including plugin and SSH descendants. When a helper stops
+helper, created with `BindsTo=` and `After=` on the shell's own systemd scope.
+KDE and GNOME start each application in such a scope; a shell started outside
+one creates it at start-up. The helper also exits when its stdin pipe closes.
+When the shell ends, the job handle closes on Windows, and on Linux the shell's
+scope stops, so systemd stops the helper's unit. Either way the operating
+system ends every process in the container, including plugin and SSH
+descendants, even when the helper is hung. When a helper stops
 while the shell keeps running, the shell explicitly ends that helper's container
 (`TerminateJobObject` on Windows, stopping the unit on Linux) and waits until it
 reports no remaining processes before it starts any replacement. The shell is single-instance
@@ -273,7 +277,8 @@ Command delivery follows these rules:
   result: completed, failed with a typed error or cancelled. Generations stay
   internal to the core, per workflow, as `AuthorizationSession` keeps them today
   (`SSMConnectKit/Sources/SSMConnectKit/Auth/AuthorizationSession.swift:197-226`),
-  so cancelling one workflow never affects another.
+  so cancelling one workflow cooperatively never affects another. A cancel that
+  times out (below) replaces the helper and so ends every workflow it owns.
 - Pipes do not drop individual replies; a reply is lost only when the helper
   exits. The shell then fails every in-flight command with a "core stopped"
   result, ends the old helper's container as above, and then starts one
@@ -458,8 +463,15 @@ Connect; closing ends its connections cleanly, and declining ends the install
 with nothing changed. On Linux a running shell and helper keep their old files
 until the user quits. If such a shell needs a new helper after the upgrade, the
 handshake refuses the newer build and the shell shows "SSM Connect was updated;
-restart it" instead of the generic error. A failed MSI rolls back, and a failed
-rpm or deb transaction leaves the previous version installed. Do not resurrect old release workflows as if they publish the new
+restart it" instead of the generic error. Removal follows the same rules: the
+Windows uninstaller asks through Restart Manager, and on Linux a running client
+keeps working until the user quits; if it then needs a helper, it shows "SSM
+Connect was removed; quit it".
+
+A failed MSI rolls back. The `.rpm` and `.deb` packages carry no maintainer
+scripts that can fail after their files are unpacked: desktop and icon cache
+refreshes are non-fatal. A failure therefore happens before or during unpacking,
+which dnf and dpkg undo, and the previous version stays installed. Do not resurrect old release workflows as if they publish the new
 core, or change macOS signing claims through this refactor.
 
 ## Acceptance Criteria
@@ -493,10 +505,10 @@ core, or change macOS signing claims through this refactor.
 | AC-15 | Controlled clock/expiry tests and native expiry/revocation scenarios: silent renewal, rejected refresh, one explicit login, pending-action resume, profile change, Stop and cancellation. Healthy established transports retain their target/auth context. |
 | AC-16 | On each platform, for Chrome Separate Browser and Zen in both modes at that platform's pinned versions, run consent/setup/restore, policy/ownership refusal and transport-loss scenarios. Selected private suffixes must fail closed while unrelated public browsing remains unchanged. |
 | AC-17 | Native Remote-SSH scenarios cover concurrent windows, expired authorization/lease recovery, dirty buffers, app interruption and confirmed replacement. On Windows and Linux, kill the helper during active editing: the editor channels end, unsaved windows remain, and editor recovery reconnects them through the replacement helper. Reopen the original workspace authority and verify remote commands/editing without bypassing host-key checks. |
-| AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes keep running; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
+| AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
-| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps working, and killing its helper produces the "updated; restart it" message. Force one install failure per format and verify the previous version remains installed. Record exact OS/CPU/desktop and artifact hash. |
+| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps working, and killing its helper produces the "updated; restart it" message. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps working, killing its helper shows the "removed; quit it" message, and after the user quits no owned process or file remains. Force an install failure during unpacking for each format and verify the previous version remains installed and runs with its state intact. Inspect the `.rpm` and `.deb` and verify every post-unpack maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
 | AC-22 | First record the comparison hosts and then the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app on the baseline Mac and at most 1.5 times for Windows and Linux on their recorded hosts. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift/SDK/plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
 | AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. |
@@ -514,19 +526,7 @@ criteria above are met.
 
 ## Open Questions
 
-### Q19: On Linux, what ends a hung helper's processes if the shell then crashes?
-
-**Recommendation:** A. systemd does the cleanup itself, so it works when neither
-the helper nor the shell can act. KDE and GNOME already start each application in
-its own systemd scope, and the shell creates one when it was started outside one.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Bind the helper's unit to the shell's scope** | The helper's transient service is created with `BindsTo=` and `After=` on the shell's own systemd scope. When the shell's processes are gone, systemd stops the helper's unit and every process in it, however the helper is behaving. | The shell must find or create its scope at start-up, one more systemd call. |
-| **B. Clean up at the next launch** | The next start of SSM Connect stops any helper unit left from an earlier run before starting its own. | A hung helper and its plugin or SSH processes can keep running until the user starts the app again, which AC-18 does not allow. |
-
-**Why this is yours:** It adds a systemd dependency to how the shell starts.
-R-5 F-03 raised it.
+None.
 
 ## Review Log
 
@@ -742,7 +742,8 @@ PROPOSAL: Qualify workflow isolation as applying to cooperative cancellation and
   service on Linux (Q13); one automatic restart, then a visible error (Q14); fixed
   named comparison hosts (Q15); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
-  closing on Windows and running until quit on Linux during installs (Q18).
+  closing on Windows and running until quit on Linux during installs (Q18); the
+Linux helper unit bound to the shell's systemd scope (Q19).
 - [Current main baseline](https://github.com/vhco-pro/ssm-connect/commit/eb4f0bc0b8f98f206ed519feb461c70ba3614b41):
   application source and release behavior retained by this branch.
 - `git show 2aa079d:docs/specs/cross-platform-client.spec.md`: the original
