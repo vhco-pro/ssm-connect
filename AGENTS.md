@@ -26,9 +26,10 @@ The shared-core migration is specified in
 [cross-platform-client.spec.md](docs/specs/cross-platform-client.spec.md).
 Implement it only while it is accepted (`planned` or `in-progress`). Preserve
 existing macOS behavior and distinguish portable checks from native platform
-acceptance. The spec names two exceptions, both from its own AWS client: AWS
+acceptance. The spec names three exceptions, all from its own AWS client: AWS
 retry settings (environment variables and shared config) and configured AWS
-endpoints no longer affect SSM Connect.
+endpoints no longer affect SSM Connect, and the STS identity request uses the
+correct China endpoint instead of a hardcoded `amazonaws.com` host.
 
 ## Commands and constraints
 
