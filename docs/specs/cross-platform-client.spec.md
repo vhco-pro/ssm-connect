@@ -1,6 +1,6 @@
 ---
 status: planned
-status_description: "Accepted by the owner on 2026-11-17 after clean spec review R-8; next step is the task list. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "Accepted by the owner on 2026-11-17 after clean spec review R-8; tasks T1-T31 written; next step is implementation from T1. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -533,11 +533,41 @@ core, or change macOS signing claims through this refactor.
 
 ## Tasks
 
-None yet. The spec is accepted; generate
-one-commit tasks through vh-adlc. The first are the macOS performance baseline
-and the Windows/Linux helper and dependency increment. The branch preparation
-and historical snapshot are not implementation tasks or evidence that the
-criteria above are met.
+Increment 1 proves the baseline, the dependency stack and the helper natively
+before broad extraction, as Design requires. Tasks that need live AWS, a native
+host or an installed app run only under the owner's authority for that task.
+
+- [ ] T1 `scripts/perf/measure.sh`, `scripts/perf/README.md` - measurement harness implementing the Design method (app process set, one warm-up and ten runs, medians, five settled minutes, 60 one-second idle samples, host and OS build header) for macOS, Windows and Linux; done: a run on the baseline Mac prints all five metrics under the host header (AC-22)
+- [ ] T2 `docs/specs/cross-platform-client.spec.md` - record the named comparison hosts and the current macOS release baseline from T1 as an annotation under this task; done: the annotation names the Mac, Windows and Linux hosts with OS builds, the workload and every median (AC-22)
+- [ ] T3 `SSMConnectKit/Package.swift`, `SSMConnectKit/Package.resolved` - move to an aws-sdk-swift and aws-crt-swift release, or a released upstream fix, that builds on Windows; stop for an owner decision if none exists; done: the swift-portability workflow's Windows and Linux SDK steps pass and `swift test --package-path SSMConnectKit` passes on macOS (AC-23, AC-20)
+- [ ] T4 `spikes/helper-feasibility/` - minimal Swift helper built from the current SSO, SSM and plugin sources behind stub UI ports, speaking over stdin/stdout; done: it builds natively on Windows 11 x64 and Fedora 43 x86-64 (AC-23)
+- [ ] T5 `docs/specs/cross-platform-client.spec.md` - run T4 on Windows 11 x64 and Fedora 43 and record exact Swift, SDK and plugin versions, interactive SSO and refresh, an AWS response, usable SSM traffic, cancellation and owned-process cleanup as an annotation under this task; done: every item is recorded as observed (AC-23)
+- [ ] T6 `scripts/check-boundaries.sh` - check that SSMConnectDomain and SSMConnectWorkflow sources import none of AppKit, SwiftUI, Darwin, ServiceManagement, UserNotifications or an AWS SDK module; done: it fails because those targets do not exist yet (AC-11)
+- [ ] T7 `SSMConnectKit/Package.swift`, `SSMConnectKit/Sources/SSMConnectDomain/` - move models, validation, the profile codec and typed errors, re-exported by the umbrella; done: `swift test --package-path SSMConnectKit` and the Xcode app build pass, and T6 passes for Domain (AC-11, AC-20)
+- [ ] T8 `SSMConnectKit/Sources/SSMConnectWorkflow/` - move the connection, authorization and remote-development state machines and their retry and cancellation rules onto injected ports, moving Darwin signal handling and browser opening into macOS adapters; done: package tests pass and T6 passes (AC-11, AC-15, AC-20)
+- [ ] T9 `SSMConnectKit/Sources/SSMConnectAWS/` - move SDK clients, credential providers, STS presigning and error translation; done: package tests pass (AC-11)
+- [ ] T10 `SSMConnectKit/Sources/SSMConnectMacOS/`, `SSMConnectKit/Sources/SSMConnectUI/` - move AppKit adapters, persistence, DCV, browser and editor launchers and SwiftUI, keeping the composition root in the umbrella; done: the complete package suite passes and `scripts/release.sh` builds the app on a native macOS runner (AC-20, AC-24)
+- [ ] T11 `SSMConnectKit/Tests/SSMConnectKitTests/Services/PersistedStateCompatibilityTests.swift` - fixtures written by the current release are read, and written back by every writer (`ProfileStore`, `EditorRecoveryStore`, `BrowserBootstrap` records) in the current-release keys and versions; done: the tests pass (AC-26, AC-14)
+- [ ] T12 `SSMConnectKit/Tests/SSMConnectKitTests/StateMachine/CapabilityPreflightTests.swift` - failing tests: each missing hard requirement refuses with its name and no recorded AWS call, process launch or configuration write; a missing DCV Viewer keeps the tunnel with the current warning; done: they fail because preflight does not exist (AC-25)
+- [ ] T13 `SSMConnectKit/Sources/SSMConnectWorkflow/CapabilityPreflight.swift` - preflight before any effect; done: T12 and `ConnectionStateMachineTests` pass (AC-25, AC-13)
+- [ ] T14 `SSMConnectKit/Tests/SSMConnectHelperTests/ProtocolTests.swift` - failing protocol tests with fake ports: framing, refusal of a different build at handshake, one terminal result per admitted command, refusal before side effects, cooperative cancel isolation, heartbeat; done: they fail because the helper targets do not exist (AC-27)
+- [ ] T15 `SSMConnectKit/Sources/SSMConnectHelperProtocol/`, `SSMConnectKit/Sources/SSMConnectHelper/` - helper executable over stdin/stdout with diagnostics on stderr, exiting on stdin EOF; done: T14 passes on macOS, Ubuntu and Windows CI runners (AC-27, AC-11)
+- [ ] T16 `SSMConnectKit/Sources/SSMConnectWorkflow/LeaseOwner.swift`, `SSMConnectKit/Sources/SSMConnectProxy/` - lease owner identity behind a port (the app process on macOS, the helper's PID and start time on Windows and Linux), so the proxy ends channels when the owner is gone; done: new lease tests pass on all three platforms and existing Remote-SSH tests pass unchanged (AC-17)
+- [ ] T17 `SSMConnectKit/Sources/SSMConnectWindows/` - core-side Windows adapters: per-user ACL atomic files, key-value store, plugin and SSH process launch, VS Code, Chrome and Zen discovery with per-platform pinned versions; done: adapter tests pass on the windows-2025 runner (AC-19, AC-16, AC-17)
+- [ ] T18 `windows/tests/SSMConnect.App.Tests/HelperHostTests.cs` - failing tests for the helper host: a job object per helper, terminate and wait empty before a replacement, one automatic restart under the handshake, heartbeat and cancel limits with its re-arm, the error with Retry, single instance, user apps started outside the job, and the "updated; restart it" message on a build mismatch; done: they fail because the host does not exist (AC-18, AC-27, AC-21)
+- [ ] T19 `windows/src/SSMConnect.App/HelperHost.cs` - the helper host; done: T18 passes (AC-18, AC-27)
+- [ ] T20 `windows/src/SSMConnect.App/` - the WPF shell reapplied from `ce24cf2` without connection rules: settings, tray, profile files, clipboard, notifications, startup, and launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
+- [ ] T21 `packaging/windows/`, `.github/workflows/release-windows.yml` - per-user WiX MSI with the Restart Manager close prompt, WinGet manifest hashed from the built MSI, and notices; done: the workflow builds the MSI and validates the manifest, and the unpacked MSI holds the helper, runtime and notices (AC-21, AC-24)
+- [ ] T22 `SSMConnectKit/Sources/SSMConnectLinux/` - core-side Linux adapters: user-only atomic files, key-value store, plugin and SSH process launch, VS Code, Chrome and Zen discovery with per-platform pinned versions; done: adapter tests pass on Fedora 43 and Ubuntu 24.04 (AC-19, AC-16, AC-17)
+- [ ] T23 `linux/tests/helper_host_test.cpp` - failing tests for the helper host: a transient systemd user service bound to the shell's scope, creating that scope when missing, stop and wait empty before a replacement, the restart limits, single instance, and user apps in their own transient scopes; done: they fail because the host does not exist (AC-18, AC-27)
+- [ ] T24 `linux/src/helper_host.cpp` - the helper host; done: T23 passes (AC-18, AC-27)
+- [ ] T25 `linux/src/`, `linux/qml/` - the Qt 6 shell with a StatusNotifierItem tray, launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
+- [ ] T26 `packaging/linux/`, `.github/workflows/release-linux.yml` - `.rpm` and `.deb` whose maintainer scripts only run non-fatal cache refreshes, with notices; done: the workflow builds both and the package inspection in the AC-21 and AC-24 rows passes (AC-21, AC-24)
+- [ ] T27 `docs/specs/cross-platform-client.spec.md` - macOS native acceptance: the AC-20 flows, the AC-26 upgrade and rollback scenario, and the macOS parts of the AC-12 to AC-19 and AC-25 rows; done: an evidence line under each criterion exercised (AC-20, AC-26, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-25)
+- [ ] T28 `docs/specs/cross-platform-client.spec.md` - Windows 11 x64 native acceptance of the AC-12 to AC-19, AC-21, AC-23, AC-25 and AC-27 rows; done: an evidence line under each criterion exercised (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
+- [ ] T29 `docs/specs/cross-platform-client.spec.md` - Fedora 43 and Ubuntu 24.04 native acceptance of the same rows; done: an evidence line under each criterion exercised (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
+- [ ] T30 `docs/specs/cross-platform-client.spec.md` - measure the refactored macOS app and the Windows and Linux clients with T1 on the T2 hosts; done: every metric compared with its limit in an AC-22 evidence line (AC-22)
+- [ ] T31 `docs/specs/cross-platform-client.spec.md` - inspect each built dependency graph for duplicate production workflows and rebuild each platform's release path on its own; done: AC-11 and AC-24 evidence lines (AC-11, AC-24)
 
 ## Open Questions
 
