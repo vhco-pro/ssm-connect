@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "R-2 raised three owner decisions (Q8-Q10) on the helper process model, performance method and browser matrix; the Windows AWS CRT build remains the first increment's blocker."
+status_description: "Owner decisions Q1-Q10 folded after R-2; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -44,10 +44,11 @@ them over current macOS code. The preserved implementation is accessible through
 Git history, not included as a second active core. Extraction pointers appear
 below.
 
-The owner has decided the open design choices. Windows and Linux shells talk
-to a bundled, user-scoped Swift helper over private IPC; macOS keeps linking the
-core in-process. The bridge never replays a command with side effects: after a
-lost or late reply the shell reads fresh state. The first release targets macOS
+The owner has decided the open design choices. Each Windows and Linux shell
+runs its own private Swift helper as a child process over pipes, ending with the
+shell; macOS keeps linking the core in-process. Nothing is replayed: if the
+helper stops, in-flight actions fail and a fresh helper cleans up. Browser
+support matches macOS on every platform. The first release targets macOS
 14+ on Apple silicon, Windows 11 x64, Fedora 43 x86-64 with KDE Plasma 6 and
 Ubuntu 24.04 LTS x86-64. Linux gets a Qt 6 shell; Windows keeps WPF. Windows ships
 a per-user, unsigned WiX MSI through WinGet; Linux ships `.rpm` and `.deb` files
@@ -236,37 +237,38 @@ that every API used is portable.
 
 ### Integration and feasibility
 
-Windows and Linux shells drive the core through a bundled, user-scoped Swift
-helper over private IPC: a named pipe whose ACL admits only the signed-in user's
-SID on Windows, and a Unix domain socket in a user-only directory under
-`$XDG_RUNTIME_DIR` on Linux. The macOS app links the core in-process, as today.
+Windows and Linux shells drive the core through a private Swift helper. Each
+shell starts its own helper, bundled beside it in the same package, as a child
+process connected by anonymous stdin/stdout pipes; there is no named pipe,
+socket or other endpoint. The helper ends when its shell ends, through a job
+object on Windows and a parent-death signal on Linux. The shell is single-instance
+per user session: a second launch focuses the running one. The macOS app links
+the core in-process, as today. Nothing else needs the helper: the SSH proxy is a
+separate executable that reads a lease file (`SSMConnectKit/Package.swift:14`,
+`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:115`).
+
 The helper exposes high-level commands, ordered state/events, typed failures,
-cancellation and explicit shutdown, and UI updates stay responsive. Swift object
-layouts never cross a foreign-language boundary, and no embedded-library
-interface is kept as an alternative.
+cancellation and explicit shutdown, and UI updates stay responsive. The protocol
+defines framing and a start-up handshake that refuses a helper from a different
+build than its shell. Swift object layouts never cross a foreign-language
+boundary. Diagnostics go to stderr or a log, never into the protocol stream.
 
-The helper protocol defines framing, version negotiation, endpoint/process
-ownership, failure reporting and crash cleanup. It is not an unauthenticated
-localhost web service. SSH raw-stream proxy traffic remains separate from
-control messages; diagnostics must not corrupt its stdout.
+Command delivery follows these rules:
 
-Command delivery follows these rules on every shell:
-
-- Each command carries a shell-chosen correlation ID and the session generation
-  the shell last observed. The core processes commands in arrival order and
-  answers each with exactly one terminal result: completed, failed with a typed
-  error, cancelled or superseded.
-- A completion whose generation is older than the core's current one is
-  discarded and reported as superseded, extending the generation check that
-  `AuthorizationSession` applies today
-  (`SSMConnectKit/Sources/SSMConnectKit/Auth/AuthorizationSession.swift:197-226`)
-  to every command with side effects.
-- Neither the shell nor the helper resends a command with side effects, such as
-  starting an instance, an SSM session or desktop provisioning. When a reply is
-  lost or the connection drops, the shell reconnects, requests a state snapshot
-  and shows the result; the user decides whether to act again.
-- A helper crash ends its owned child processes and server-side sessions as
-  AC-18 requires, and the shell starts a fresh helper with a new generation.
+- Each command carries a shell-chosen ID. The core alone owns state: before any
+  side effect it admits the command or refuses it with a typed error against its
+  current state, and answers each admitted command with exactly one terminal
+  result: completed, failed with a typed error or cancelled. Generations stay
+  internal to the core, per workflow, as `AuthorizationSession` keeps them today
+  (`SSMConnectKit/Sources/SSMConnectKit/Auth/AuthorizationSession.swift:197-226`),
+  so cancelling one workflow never affects another.
+- Pipes do not drop individual replies; a reply is lost only when the helper
+  exits. The shell then fails every in-flight command with a "core stopped"
+  result and starts a fresh helper, whose start-up cleanup reaps leftover SSM
+  sessions and owned processes as AC-18 requires. Neither side ever resends a
+  command; the user starts the action again if they want it.
+- An AWS call whose response never arrives is handled inside the core exactly as
+  the in-process macOS app handles it today, with its stage timeouts and cleanup.
 
 Before broad extraction, the first accepted implementation increment must prove
 the helper and the exact Swift dependency stack on native Windows and Linux.
@@ -299,6 +301,14 @@ Preserve all current supported capabilities, including single-user and
 identity-only multi-user DCV, tunnel-only connections, web forwards, managed
 browser consent/restore, native VS Code, authorization recovery, rolling leases
 and explicitly confirmed workstation replacement.
+
+Windows and Linux support the same browser matrix as macOS
+(`SSMConnectKit/Sources/SSMConnectKit/Services/BrowserBootstrap.swift:33-38`):
+Chrome in Separate Browser mode and Zen in both Separate Browser and Use My
+Browser modes. As on macOS, each product and mode is pinned per platform to the
+exact version its native tests passed on, and other versions are unavailable.
+A required integration is never omitted; AC-25's refusal covers only a browser
+that is not installed or not at a supported version.
 
 Desktop, web and editor actions remain independent. Headless paths must not
 fetch a DCV password, provision a desktop or launch Viewer. Before any AWS call,
@@ -375,7 +385,16 @@ Language choice does not establish performance parity. The first implementation
 task measures the current macOS release on its native host: startup to ready,
 settled idle RSS and CPU, UI command response, and cold and warm connection
 time, each repeated under a recorded workload. Those results are recorded here
-as the baseline. The refactored macOS app must stay within 1.10 times the
+as the baseline.
+
+Every client is measured the same way. The measured processes are SSM
+Connect's own: the macOS app, or a shell and its helper, excluding Session
+Manager plugin, SSH, DCV Viewer, VS Code and browsers. Startup ends when the main
+window or tray accepts input; a connection ends at its ready state. Each timing
+is ten runs after one discarded warm-up, compared by median. Idle RSS is summed
+across the measured processes after five settled minutes, and idle CPU averages
+the next 60 seconds of one-second samples. Hardware and OS build are recorded
+with every result. The refactored macOS app must stay within 1.10 times the
 baseline on every metric; Windows and Linux clients within 1.5 times it.
 
 Retain the existing macOS release path through
@@ -407,7 +426,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-24: macOS, Windows and Linux artifacts remain independently buildable and releasable, with all selected core/helper assets and required notices present in their final packages.
 - [ ] AC-25: An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode.
 - [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
-- [ ] AC-27: Across the helper boundary, every command receives exactly one terminal result; completions from an older generation are discarded; and a lost, late or concurrent reply never repeats a command with side effects.
+- [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
 
 ## Test Plan
 
@@ -418,18 +437,18 @@ core, or change macOS signing claims through this refactor.
 | AC-13 | Run headless, web-only and editor-only flows with DCV unavailable; assert zero password/provision/Viewer operations and verify an owned working transport. Repeat with concurrent capabilities. |
 | AC-14 | Run current profile/codec/store tests with `swift test --package-path SSMConnectKit`; cross-import v1/v2 fixtures, change attached files externally, race Save, and verify identity, unknown fields, consent and original bytes on conflict. Repeat native file-permission/rename cases. |
 | AC-15 | Controlled clock/expiry tests and native expiry/revocation scenarios: silent renewal, rejected refresh, one explicit login, pending-action resume, profile change, Stop and cancellation. Healthy established transports retain their target/auth context. |
-| AC-16 | On each supported browser/OS combination, run consent/setup/restore, policy/ownership refusal and transport-loss scenarios. Selected private suffixes must fail closed while unrelated public browsing remains unchanged. |
+| AC-16 | On each platform, for Chrome Separate Browser and Zen in both modes at that platform's pinned versions, run consent/setup/restore, policy/ownership refusal and transport-loss scenarios. Selected private suffixes must fail closed while unrelated public browsing remains unchanged. |
 | AC-17 | Native Remote-SSH scenarios cover concurrent windows, expired authorization/lease recovery, dirty buffers, app interruption and confirmed replacement. Reopen the original workspace authority and verify remote commands/editing without bypassing host-key checks. |
 | AC-18 | Kill only the owned test client/process by PID, then check local child containment and server-session recovery; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
 | AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Record exact OS/CPU/desktop and artifact hash. |
-| AC-22 | First record the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure repeated startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app and at most 1.5 times for Windows and Linux. |
+| AC-22 | First record the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app and at most 1.5 times for Windows and Linux. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift/SDK/plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
 | AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. |
 | AC-25 | With fake ports recording every call, run each action with each required capability reported missing (DCV Viewer, Session Manager plugin, OpenSSH, VS Code, browser); assert the refusal names that capability and zero AWS calls, process launches and configuration writes were recorded. Repeat natively on each matrix target with one capability removed and `AWS_ENDPOINT_URL` pointed at a local recording endpoint: it receives no request, no child process starts and no configuration file changes. |
-| AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; make one change; reinstall the current release and verify it reads the state with the same identities, consent and restore. |
-| AC-27 | Helper protocol tests with a controllable transport: two concurrent commands each get one terminal result; a reply dropped after an SSM session starts leads to a state snapshot and exactly one recorded StartSession; a completion arriving after cancel or a generation bump is reported superseded and changes no state; a helper killed mid-command leaves no owned child process and the next helper reports a new generation. |
+| AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
+| AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper; killing the helper mid-StartSession fails that command with "core stopped", the fresh helper reaps the session, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. |
 
 ## Tasks
 
@@ -441,53 +460,7 @@ criteria above are met.
 
 ## Open Questions
 
-### Q8: Should each shell run its helper as a private child process over pipes?
-
-**Recommendation:** A. It removes the named endpoint, its permissions, start-up
-arbitration, mixed-version helpers and cross-boundary generations instead of
-specifying each one. The SSH proxy is already a separate executable that reads a
-lease file (`SSMConnectKit/Package.swift:14`,
-`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:115`), so
-nothing else needs to reach the helper.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. One child helper per shell, anonymous stdin/stdout pipes** | The shell starts the helper bundled beside it and the helper ends with the shell (Windows job object, Linux parent-death signal). A second launch focuses the running shell. Commands carry only an ID; the core alone admits or refuses each against its current state before any side effect, and keeps generations internal per workflow, as `AuthorizationSession` does now. Pipes lose a reply only when the helper exits: the shell then fails every in-flight command with "core stopped" and starts a new helper, whose start-up cleanup reaps leftover sessions and processes. | No sharing of one core between several windows or tools; a helper crash fails in-flight actions, which the user starts again. |
-| **B. A shared helper on a named pipe or socket** | Several shells or tools could attach to one long-lived core. | The spec must define generation scope, admission of obsolete commands, pending outcomes after reconnect, concurrent-start arbitration, shell loss and mixed-version helpers, each with native tests. |
-
-**Why this is yours:** It narrows the Q1 decision from "private IPC" to a
-specific process model and changes what the helper can be used for later. R-2
-F-01, F-02 and F-03 raised it.
-
-### Q9: How is performance measured for the baseline and the 1.10 and 1.5 times budgets?
-
-**Recommendation:** A. It counts all of SSM Connect's own work on every
-platform, so a client cannot pass by moving cost into the helper, and it keeps
-tools that are the same everywhere out of the comparison.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. App processes only, median of 10** | Measure the shell plus its helper (on macOS the app), excluding Session Manager plugin, SSH, DCV Viewer, VS Code and browsers. Startup ends when the main window or tray accepts input; connection ends at the ready state. Ten runs after one discarded warm-up, compared by median. Idle RSS summed across app processes after five settled minutes; idle CPU averaged over the next 60 seconds at one-second samples. Hardware and OS build recorded with each result. | External tool overhead is not budgeted. |
-| **B. Whole process tree** | Includes every child, plugins and viewers included. | Results depend on tool versions that differ by platform, so a budget can fail for reasons the client does not control. |
-
-**Why this is yours:** The method decides what the accepted ratios mean. R-2
-F-04 raised it.
-
-### Q10: Which browser products and modes must Windows and Linux support?
-
-**Recommendation:** A. It matches the current macOS matrix
-(`SSMConnectKit/Sources/SSMConnectKit/Services/BrowserBootstrap.swift:33-38`,
-`browser-bootstrap.spec.md` section 11), so the app behaves the same everywhere.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Same as macOS** | Chrome in Separate Browser mode and Zen in both modes on Windows and Linux, each pinned per platform to the version its native tests passed on, as macOS pins today. | Per-platform profile paths, launch flags, locks and restore for Zen's Use My Browser mode, with native routing and outage tests. |
-| **B. Separate Browser only on new platforms** | Chrome and Zen in Separate Browser mode; Use My Browser stays macOS-only for now. | Windows and Linux users cannot route their own browser profile; parity needs a later feature. |
-| **C. Chrome Separate Browser only** | The smallest first browser scope. | Zen users on Windows and Linux lose the integration. |
-
-**Why this is yours:** It decides how much browser work the first release
-carries. A missing browser is refused under AC-25; this decides which
-integrations must exist. R-2 F-05 raised it.
+None.
 
 ## Review Log
 
@@ -587,7 +560,9 @@ PROPOSAL: Require the refactored build to create or update representative state 
   x86-64 (Q2); a Qt 6 Linux shell (Q3); baseline-relative budgets of 1.10 and 1.5
   times (Q4); an upstream SDK/CRT fix first (Q5); no automatic replay (Q6); an
   unsigned per-user MSI through WinGet, `.rpm` and `.deb` on the GitHub Release,
-  with SignPath signing and pkg.vhco.pro repositories as later features (Q7).
+  with SignPath signing and pkg.vhco.pro repositories as later features (Q7);
+  a private child helper per shell over pipes (Q8); app-process measurement by
+  median of ten runs (Q9); the macOS browser matrix on every platform (Q10).
 - [Current main baseline](https://github.com/vhco-pro/ssm-connect/commit/eb4f0bc0b8f98f206ed519feb461c70ba3614b41):
   application source and release behavior retained by this branch.
 - `git show 2aa079d:docs/specs/cross-platform-client.spec.md`: the original
