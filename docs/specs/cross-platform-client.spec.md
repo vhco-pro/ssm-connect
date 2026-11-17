@@ -663,7 +663,44 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q31: How does a running Linux client decide that a launch is safe while its package is being replaced?
+
+**Recommendation:** A. RPM replaces files one at a time, so a build marker file
+can disagree with the executables beside it. Checking the executable that is
+about to start removes the window.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Check the target executable itself** | Each bundled executable carries its build ID, and the helper's build records the expected hash of the bundled plugin. Before starting the helper, the proxy or the plugin, the launcher reads that file's build ID or hash and refuses on any mismatch or unreadable file with the "updated; restart it" message. A half-replaced or interrupted install therefore refuses instead of starting a mixed build. | A hash and build-ID check before every launch. |
+| **B. Leave the marker check** | Nothing more to build. | During replacement or after an interrupted install, a launch can start a file from the other build. |
+
+**Why this is yours:** It decides how strict the Q29 rule is. R-16 F-01 raised it.
+
+### Q32: What does uninstalling remove?
+
+**Recommendation:** A. It matches how Windows installers and Linux packages
+normally treat user data, and the browser feature already keeps its routing and
+restore files after exit (`docs/specs/browser-bootstrap.spec.md:231-247`).
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Program files and transient artifacts only** | Uninstall removes installed program files and transient transport artifacts (helper units, leases, temporary files). Profiles, settings, browser profiles, routing and restore files stay, so a reinstall picks up where the user left off. | User data stays on disk after uninstall until the user deletes it. |
+| **B. Remove user data too** | Nothing is left behind. | Silently deletes profiles and browser data, against the browser feature's contract. |
+
+**Why this is yours:** It decides what users lose on uninstall. R-16 F-02 raised it.
+
+### Q33: How does Homebrew find the macOS build when a release is published without it, or out of order?
+
+**Recommendation:** A. Homebrew's sync reads the release GitHub marks latest
+(`vhco-pro/homebrew-tap` sync-cask). Marking latest only from the macOS job
+keeps that working without changing the tap.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Only the macOS job marks a release latest** | Releases are created without the latest mark. The macOS job sets it after uploading its ZIP, unless a newer release already has a macOS ZIP. A Windows/Linux-only release never becomes latest, and a late older macOS build never displaces a newer one. | GitHub's latest release can lag a newer Windows/Linux-only release. |
+| **B. Change the tap to pick the newest release with a ZIP** | Latest stays the newest version. | A change to the homebrew-tap repository and its own tests. |
+
+**Why this is yours:** It decides what "latest" means across platforms. R-16 F-03 raised it.
 
 ## Review Log
 
@@ -685,6 +722,7 @@ None.
 | 2026-11-17 | R-13 | spec | `d64f65e` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-17 | R-14 | spec | `f5f70ba` | gpt-6.1-sol | procedural | One blocking (STS endpoint in China) and two should-fix |
 | 2026-11-17 | R-15 | spec | `854a1ac` | gpt-6.1-sol | procedural | One blocking (AC-28 STS equality versus China) and two should-fix |
+| 2026-11-17 | R-16 | spec | `0cedaa8` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
 
 ### R-1
 
@@ -1046,6 +1084,36 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:52-54; Design / Migration, performance and release boundaries:554-559; Test Plan / AC-21; Tasks / T22, T29; Sources / Q29
 EVIDENCE: The owner summary says the running Linux app “keeps working until the user quits” and asks for restart or quit if its helper dies. The revision addressing R-14 F-03 instead preserves established connections while refusing every new action immediately after upgrade or removal, even when the helper remains healthy. Design:554-559, Test Plan:605 and Sources:1045-1046 state that narrower continuation guarantee. The summary omits the newly selected restriction and still describes helper loss as the trigger.
 PROPOSAL: Refresh the owner summary to distinguish continued established connections from refused new actions after Linux upgrade or removal, including when the helper remains healthy.
+
+### R-16
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary:52-56; Design / Migration, performance and release boundaries:552-573; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T16, T22, T26, T29; Sources / Q29, Q30
+EVIDENCE: The summary requires refusal from the moment the Linux package changes. Design specifies checking the installed build before launches, but does not define how that check establishes a consistent payload during replacement or after a failed replacement. RPM replaces destinations sequentially at [fsm.cc:1061-1087](https://github.com/rpm-software-management/rpm/blob/rpm-6.0.0-release/lib/fsm.cc#L1061), so an old build marker can coexist with replaced executables. AC-21 checks actions after upgrade or removal, and repairs a failed install before checking the client. It does not exercise a running client's actions during replacement or before repair. The restriction introduced for R-14 F-03 and extended for R-15 F-02 therefore leaves this concurrent path undefined.
+PROPOSAL: Define how action admission establishes package consistency during replacement and after an interrupted install, within the maintainer-script restriction. Add native scenarios that pause replacement after one file changes and attempt actions through both the running client and an existing VS Code window.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Scope / preservation of profile compatibility and consent; Design / Behavior, identity and local state; Design / Migration, performance and release boundaries, uninstall behavior; Acceptance Criteria / AC-16, AC-21; Test Plan / AC-21; Tasks / T26, T29
+EVIDENCE: AC-21's Linux uninstall proof requires that after quitting, “no owned process or file remains.” It does not distinguish package files and temporary access artifacts from retained profiles, browser data, routing files and restore journals. The preserved browser contract explicitly retains PAC/configuration artifacts after app exit and excludes silent deletion of managed browser data at docs/specs/browser-bootstrap.spec.md:231-247. A literal implementation of the uninstall proof would remove these artifacts; an implementation retaining them would fail that reading of the proof.
+PROPOSAL: Define the uninstall residue scope and which user data and routing artifacts remain. Raise the deletion policy as an Open Question, then make AC-21's proof distinguish removable package and transport residue from intentionally retained state.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Scope / independently releasable artifacts; Design / Migration, performance and release boundaries:534-550; Acceptance Criteria / AC-24; Test Plan / AC-24; Tasks / T21, T26, T31; Sources / Q26, Q28
+EVIDENCE: The release policy introduced for R-13 F-03 allows a published release without a macOS ZIP while retaining Homebrew distribution. The retained [sync-cask.yml](https://github.com/vhco-pro/homebrew-tap/blob/c2baa6738ba7e902fe0c3275ec24dbd06fa58497/.github/workflows/sync-cask.yml) selects only the latest release with `gh release view` and downloads that release's ZIP. A Windows/Linux-only latest release makes this sync fail. If an older release's macOS job later succeeds while the latest release still lacks its ZIP, that older macOS artifact is never selected. The document does not define this downstream outcome, and AC-24 does not test releases completing out of version order.
+PROPOSAL: Define how Homebrew selects and discovers available macOS artifacts under partial publication, including late completion of an older release. Name any affected downstream workflow and add an out-of-order publication scenario to AC-24.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:47-51; Design / Integration and feasibility, helper restart rules; Test Plan / AC-27; Tasks / T18, T23; Sources / Q14, Q16
+EVIDENCE: The owner summary says that if the helper stops, “one replacement starts before the app shows an error with Retry.” Design limits automatic replacements and explicitly includes first-helper failure among cases where no replacement starts. AC-27 also requires an initial handshake failure to show the error without an automatic restart. The summary promises recovery in cases where the detailed policy deliberately refuses it.
+PROPOSAL: State the bounded restart policy in the summary, including initial startup failure and an exhausted replacement allowance. Keep the already selected detailed policy unchanged.
 
 ## Sources
 
