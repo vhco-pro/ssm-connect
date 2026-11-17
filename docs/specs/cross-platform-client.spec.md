@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Owner decisions Q1-Q15 folded after R-3; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "R-4 raised one blocking and two factual findings plus owner decisions Q16-Q18; the Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -486,7 +486,48 @@ criteria above are met.
 
 ## Open Questions
 
-None.
+### Q16: How do the helper failure rules apply to the first helper, a stalled command, and later failures?
+
+**Recommendation:** A. One rule set for every helper, and a stalled command is
+ended by the user's Cancel, not by a new timeout that today's macOS app does not
+have (`ConnectionStateMachine.swift:419-430` awaits StartSession without one).
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Same rules for every helper; Cancel bounds a stall** | The 10-second handshake and 15-second heartbeat apply to the first helper too; a first helper that fails shows "SSM Connect core unavailable" with Retry, without an automatic restart. The single automatic restart becomes available again after a helper has run healthy for 10 minutes or the user presses Retry. Any pending command can be cancelled from the UI; if the core does not confirm the cancel within 10 seconds, the helper counts as unresponsive and is replaced under the same rules. | A command can wait as long as AWS takes until the user cancels it, as on macOS today. |
+| **B. Add a deadline to every command** | Stalled commands end without user action. | A new limit per command type, which differs from macOS behavior and can end a slow but healthy sign-in or start. |
+
+**Why this is yours:** The limits and the waiting experience are product
+choices. R-4 F-02 raised it.
+
+### Q17: Who owns editor leases on Windows and Linux, the shell or the helper?
+
+**Recommendation:** A. On macOS the lease belongs to the app process that runs
+the core (`SSMConnectKit/Sources/SSMConnectKit/StateMachine/RemoteDevelopmentStateMachine.swift:62-65`),
+and the SSH proxy stops when that owner is gone
+(`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:40-63`). Making
+the helper the owner keeps that meaning and needs no lease handover.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. The helper owns its leases** | A helper stop ends its editor channels exactly as a macOS app crash does today. VS Code keeps unsaved windows, and the existing editor recovery flow reconnects them through the replacement helper. | Editor channels drop briefly on every helper failure. |
+| **B. The shell owns the leases** | Editor channels survive a helper replacement. | The replacement helper must adopt and renew leases it did not create, a new hand-over path with its own failure cases and tests. |
+
+**Why this is yours:** It decides whether a helper failure interrupts editing.
+R-4 F-03 raised it.
+
+### Q18: What happens when SSM Connect is installed, upgraded or removed while it is running?
+
+**Recommendation:** A. Nothing is interrupted without the user agreeing, and
+each package format's own transaction handles a failed install.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Ask to close on Windows; run on until quit on Linux** | The MSI uses Windows Restart Manager to ask the user to close SSM Connect; closing ends its connections cleanly, and declining ends the install with nothing changed. On Linux the running shell and helper keep their old files until the user quits; if the old shell needs a new helper after the upgrade, the handshake refuses the newer build and the shell says "SSM Connect was updated; restart it". A failed MSI rolls back, and a failed rpm or deb transaction leaves the previous version installed. | The update takes effect only after the user restarts the app. |
+| **B. Stop the running app during install** | The new version runs right away. | Connections and editor channels end without warning. |
+
+**Why this is yours:** It trades update speed against interrupting live work.
+R-4 F-04 raised it.
 
 ## Review Log
 
@@ -495,6 +536,7 @@ None.
 | 2026-11-17 | R-1 | spec | `c2507b1` | gpt-6.1-sol | procedural | No blocking findings; four should-fix and one nit |
 | 2026-11-17 | R-2 | spec | `3040421` | gpt-6.1-sol | procedural | No blocking findings; six should-fix |
 | 2026-11-17 | R-3 | spec | `4c4051c` | gpt-6.1-sol | procedural | One blocking (missing-Viewer conflict) and four should-fix |
+| 2026-11-17 | R-4 | spec | `70c8856` | gpt-6.1-sol | procedural | One blocking (Windows job cleanup on helper exit) and four should-fix |
 
 ### R-1
 
@@ -613,6 +655,43 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary, performance budgets; Design / Migration, performance and release boundaries, measurement procedure; Acceptance Criteria / AC-22; Test Plan / AC-22; Tasks / performance baseline; Sources / Q4, Q9
 EVIDENCE: The revision addressing R-2 F-04 defines process accounting, sampling and timing statistics, but only requires recording hardware and OS build with each result. It does not require baseline and refactored macOS measurements on the same host or fix the Windows/Linux comparison hosts before measurement. A slower implementation measured on faster hardware could pass the ratios, while the same implementation on another permitted host could fail. Recording the difference afterwards does not make those verdicts comparable.
 PROPOSAL: Retain the accepted ratios and establish comparison conditions before collecting the baseline, including the same macOS host and fixed native comparison hosts, power settings and workload conditions. Record those conditions with the results and require a new baseline when they change.
+
+### R-4
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Context / Owner summary, helper recovery; Design / Integration and feasibility, Windows process containment and command-delivery rules; Acceptance Criteria / AC-18, AC-27; Test Plan / AC-18, AC-27
+EVIDENCE: Design specifies a Windows job that terminates its processes when the shell's handle closes, then says the job has already ended the old helper's processes when that helper exits. These are different events: the shell survives helper failure and still holds its handle. Microsoft's [Job Objects documentation](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) establishes that kill-on-close acts when the last job handle closes; helper termination alone does not trigger it. An active plugin or SSH descendant can therefore survive the stated recovery sequence. The AC-27 helper-kill scenario occurs mid-StartSession and does not require an existing descendant.
+PROPOSAL: Specify explicit termination and verified cleanup of the old Windows job before starting its replacement. Add a native scenario that kills the helper during an established transport while the shell remains running, and verifies descendant termination before replacement begins.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper recovery; Design / Integration and feasibility, handshake and command-delivery rules; Acceptance Criteria / AC-27; Test Plan / AC-27; Sources / Q14
+EVIDENCE: The revised rules addressing R-3 F-04 apply the 10-second handshake deadline and heartbeat failure handling only to a replacement. They leave an initial helper that never handshakes or stops responding without a defined transition. A helper that continues heartbeats while an admitted command stalls also escapes those checks. The claimed existing AWS stage-timeout protection does not establish that bound: ConnectionStateMachine.swift:419-427 awaits StartSession before entering the timeout at line 430, and withReauth at lines 680-710 adds no operation deadline. The restart budget is also unclear after a replacement survives 60 seconds: the general exit rule starts a replacement, while Q14 says one automatic restart, then an error.
+PROPOSAL: Raise the remaining recovery choices as an Open Question covering initial startup, stalled commands and when the restart allowance resets. Define observable deadlines and terminal outcomes, and test these cases while preserving the no-replay rule.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design / One implementation, several shells, lease ownership; Design / Integration and feasibility, separate SSH proxy and helper replacement; Design / Behavior, identity and local state, editor recovery and stable identities; Acceptance Criteria / AC-17, AC-18, AC-27; Test Plan / AC-17, AC-18, AC-27
+EVIDENCE: The SSH proxy is explicitly outside the shell-helper pipe connection. RemoteSSHBridge.swift:115 makes it a ProxyCommand launched through the editor's SSH connection; lines 127-185 show that it independently authorizes and starts its plugin. Its lifetime depends on the lease's owner identity and generation at lines 40-63 and 188-203. Current leases use the app identity, supplied by RemoteDevelopmentStateMachine.swift:62-65 and written at lines 318-321. The new design does not decide whether Windows/Linux leases belong to the surviving shell or the replaceable helper. Helper containment therefore does not establish what happens to these external channels or their reusable leases when only the helper dies.
+PROPOSAL: Decide lease ownership, invalidation and recovery across helper replacement, including treatment of existing editor channels and stale lease files. Add native helper-failure scenarios during active editor use that verify the chosen access policy and preserve unsaved windows.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Scope / compatibility and independently releasable artifacts; Design / Integration and feasibility, single-instance behavior and build handshake; Design / Migration, performance and release boundaries; Acceptance Criteria / AC-21, AC-24, AC-26, AC-27; Test Plan / AC-21, AC-24, AC-26, AC-27
+EVIDENCE: Design requires a second launch to focus the running shell and requires matching shell/helper builds, but does not define installation, upgrade, rollback or uninstall while that shell and its helper remain active. The package checks do not require an active prior instance, and the mismatched-helper check does not cover replacing package files beneath a running pair. Deferring installation, preserving the old pair until exit and stopping it before replacement produce different connection and editor behavior. R-2 F-03 already requested the active upgrade case; private helpers and handshake rejection do not settle it.
+PROPOSAL: Raise the live installation policy as an Open Question, including user consent for interruption and behavior after partial installation failure. Add native upgrade and rollback scenarios with an active prior shell/helper pair and verify the selected version, process ownership and connection outcome.
+
+FINDING: F-05
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / Behavior, identity and local state, capability preflight; Acceptance Criteria / AC-25; Test Plan / AC-25
+EVIDENCE: The native AC-25 proof treats an empty recording endpoint under AWS_ENDPOINT_URL as evidence of zero AWS calls. That override does not cover every existing AWS request path. STSPresigner.swift:16 and 71 constructs a regional sts.amazonaws.com URL directly, and STSIdentityResolver.swift:15-25 and 42-46 sends it through URLSession without consulting the override. A native action that performs this request before refusing a missing capability can leave the recording endpoint empty. The fake-port check does not establish that the native composition uses only the observed transports.
+PROPOSAL: Observe outbound request attempts across all native HTTP paths and owned processes, or explicitly route every such path through the recording transport. Include a positive control demonstrating that a direct STS request before refusal makes the native proof fail.
 
 ## Sources
 
