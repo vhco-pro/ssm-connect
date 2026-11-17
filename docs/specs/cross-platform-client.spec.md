@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Owner decisions Q1-Q7 folded after R-1; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "R-2 raised three owner decisions (Q8-Q10) on the helper process model, performance method and browser matrix; the Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -441,13 +441,60 @@ criteria above are met.
 
 ## Open Questions
 
-None.
+### Q8: Should each shell run its helper as a private child process over pipes?
+
+**Recommendation:** A. It removes the named endpoint, its permissions, start-up
+arbitration, mixed-version helpers and cross-boundary generations instead of
+specifying each one. The SSH proxy is already a separate executable that reads a
+lease file (`SSMConnectKit/Package.swift:14`,
+`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:115`), so
+nothing else needs to reach the helper.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. One child helper per shell, anonymous stdin/stdout pipes** | The shell starts the helper bundled beside it and the helper ends with the shell (Windows job object, Linux parent-death signal). A second launch focuses the running shell. Commands carry only an ID; the core alone admits or refuses each against its current state before any side effect, and keeps generations internal per workflow, as `AuthorizationSession` does now. Pipes lose a reply only when the helper exits: the shell then fails every in-flight command with "core stopped" and starts a new helper, whose start-up cleanup reaps leftover sessions and processes. | No sharing of one core between several windows or tools; a helper crash fails in-flight actions, which the user starts again. |
+| **B. A shared helper on a named pipe or socket** | Several shells or tools could attach to one long-lived core. | The spec must define generation scope, admission of obsolete commands, pending outcomes after reconnect, concurrent-start arbitration, shell loss and mixed-version helpers, each with native tests. |
+
+**Why this is yours:** It narrows the Q1 decision from "private IPC" to a
+specific process model and changes what the helper can be used for later. R-2
+F-01, F-02 and F-03 raised it.
+
+### Q9: How is performance measured for the baseline and the 1.10 and 1.5 times budgets?
+
+**Recommendation:** A. It counts all of SSM Connect's own work on every
+platform, so a client cannot pass by moving cost into the helper, and it keeps
+tools that are the same everywhere out of the comparison.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. App processes only, median of 10** | Measure the shell plus its helper (on macOS the app), excluding Session Manager plugin, SSH, DCV Viewer, VS Code and browsers. Startup ends when the main window or tray accepts input; connection ends at the ready state. Ten runs after one discarded warm-up, compared by median. Idle RSS summed across app processes after five settled minutes; idle CPU averaged over the next 60 seconds at one-second samples. Hardware and OS build recorded with each result. | External tool overhead is not budgeted. |
+| **B. Whole process tree** | Includes every child, plugins and viewers included. | Results depend on tool versions that differ by platform, so a budget can fail for reasons the client does not control. |
+
+**Why this is yours:** The method decides what the accepted ratios mean. R-2
+F-04 raised it.
+
+### Q10: Which browser products and modes must Windows and Linux support?
+
+**Recommendation:** A. It matches the current macOS matrix
+(`SSMConnectKit/Sources/SSMConnectKit/Services/BrowserBootstrap.swift:33-38`,
+`browser-bootstrap.spec.md` section 11), so the app behaves the same everywhere.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Same as macOS** | Chrome in Separate Browser mode and Zen in both modes on Windows and Linux, each pinned per platform to the version its native tests passed on, as macOS pins today. | Per-platform profile paths, launch flags, locks and restore for Zen's Use My Browser mode, with native routing and outage tests. |
+| **B. Separate Browser only on new platforms** | Chrome and Zen in Separate Browser mode; Use My Browser stays macOS-only for now. | Windows and Linux users cannot route their own browser profile; parity needs a later feature. |
+| **C. Chrome Separate Browser only** | The smallest first browser scope. | Zen users on Windows and Linux lose the integration. |
+
+**Why this is yours:** It decides how much browser work the first release
+carries. A missing browser is refused under AC-25; this decides which
+integrations must exist. R-2 F-05 raised it.
 
 ## Review Log
 
 | Date | Review | Kind | Commit | Model | Isolation | Outcome |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-17 | R-1 | spec | `c2507b1` | gpt-6.1-sol | procedural | No blocking findings; four should-fix and one nit |
+| 2026-11-17 | R-2 | spec | `3040421` | gpt-6.1-sol | procedural | No blocking findings; six should-fix |
 
 ### R-1
 
@@ -485,6 +532,50 @@ SEVERITY: nit
 WHERE: Design / Integration and feasibility, credential-free spike description
 EVIDENCE: The document says the spike exercises the helper over private stdin/stdout pipes. spikes/swift-portability/run.sh:29-31 instead redirects stdin from requests.jsonl and stdout/stderr into regular files. The observed check establishes batch command processing rather than interactive pipe behavior.
 PROPOSAL: Describe the spike as using redirected stdin/stdout files. Retain its existing limitation that production IPC remains unverified.
+
+### R-2
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design / Integration and feasibility, command-delivery rules; Design / Behavior, identity and local state, independent actions and stable identities; Acceptance Criteria / AC-13, AC-15, AC-27; Test Plan / AC-13, AC-15, AC-27
+EVIDENCE: Lines 255-263 attach a generation to commands but specify rejection only when a completion arrives. They do not define admission of an already obsolete command, generation changes during an outstanding AWS operation, or whether generations belong to individual workflows or the whole helper. An obsolete queued command could start an SSM session before its completion is discarded. Conversely, one global cancellation generation could invalidate an independent healthy workflow. The AC-27 proof checks discarded completions without checking obsolete commands before their effects. These gaps remain in the command-delivery rules addressing R-1 F-01.
+PROPOSAL: Define generation scope, invalidation triggers, rejection before side effects and cleanup of effects already underway. Add scenarios for an obsolete queued command and cancellation of one workflow while another remains active; raise unresolved policy choices as Open Questions.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, lost-reply recovery; Design / Integration and feasibility, terminal results, reconnection and helper crashes; Acceptance Criteria / AC-18, AC-27; Test Plan / AC-18, AC-27; Sources / Q6
+EVIDENCE: Lines 255-269 require exactly one terminal result per command, prohibit replay and recover lost replies through a state snapshot. They do not say whether snapshots retain command IDs and pending outcomes, who resolves a command when its helper dies, or what happens when AWS accepted an operation whose response was never received. A snapshot taken while StartSession is still pending cannot establish its final outcome. The AC-27 dropped-reply scenario checks the StartSession count but does not establish a terminal result for that command. This affects the new recovery policy addressing R-1 F-01.
+PROPOSAL: Define how pending and uncertain outcomes appear after reconnection or helper replacement, including terminal-result ownership and treatment of later replies. Test a dropped reply before completion and a crash after AWS accepts an operation but before its response reaches the helper.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design / Integration and feasibility, endpoint/process ownership, version negotiation and crash cleanup; Design / Migration, performance and release boundaries; Acceptance Criteria / AC-18, AC-21, AC-24, AC-27; Test Plan / AC-18, AC-21, AC-24, AC-27
+EVIDENCE: Lines 248-249 say the protocol defines ownership and version negotiation, but give no behavior for simultaneous shell launches, a shell crash while its helper survives, or an upgrade encountering an older live helper. The user SID ACL and socket-directory permissions restrict access but do not select the legitimate helper or prevent competing helpers. The tests cover killing a helper and upgrading packages separately, without checking these ownership and mixed-version cases. Implementers could choose materially different behavior, including duplicate active cores or replacement of a helper still serving another shell.
+PROPOSAL: Decide helper instance scope, concurrent-start arbitration, shell-loss behavior and incompatible-version handling during upgrade or rollback. Add native scenarios proving those decisions without taking over another live owner's processes or endpoint.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, performance budgets; Design / Migration, performance and release boundaries, baseline measurement; Acceptance Criteria / AC-22; Test Plan / AC-22; Tasks / first performance-baseline task; Sources / Q4
+EVIDENCE: Lines 374-379 and the AC-22 row specify ratios and repeated measurements, but leave process accounting, measurement intervals and the statistic used for comparison undefined. Windows and Linux divide the client between a shell and a Swift helper, while macOS runs the core in-process. Measuring only shell RSS or CPU could satisfy the budget while excluding most core resource use. Different sample summaries and hardware selections could also produce different verdicts under the same stated workload.
+PROPOSAL: Retain the accepted ratios and define the measured process set, hardware conditions, readiness boundaries, sampling intervals, repetition count and comparison statistic before collecting the baseline. Apply the same accounting to every client and record these conditions with the results.
+
+FINDING: F-05
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, same application on each platform; Scope / retained macOS behavior and Windows/Linux interfaces; Design / Behavior, identity and local state, browser preservation and unavailable capabilities; Acceptance Criteria / AC-16, AC-23, AC-25; Test Plan / AC-16, AC-23, AC-25
+EVIDENCE: The desktop matrix is explicit, but the required Windows/Linux browser product-by-mode matrix is not. AC-16 tests only combinations declared supported, while AC-25 permits refusal of unavailable capabilities. Consequently, those proofs do not distinguish a missing browser installation from an omitted browser adapter. The current implementation explicitly supports Chrome Separate Browser and both Zen modes at Services/BrowserBootstrap.swift:33-38; browser-bootstrap.spec.md:334-338 records that matrix. Two implementers could preserve different subsets on the new platforms and both run every declared combination.
+PROPOSAL: Specify the minimum browser modes and products required on each new platform, with a version-selection rule and native proof for each required combination. Keep prerequisite refusal distinct from a scope decision to omit a required integration.
+
+FINDING: F-06
+KIND: factual
+SEVERITY: should-fix
+WHERE: Scope / macOS upgrade and rollback; Design / Migration, performance and release boundaries, persisted-state compatibility; Acceptance Criteria / AC-26; Test Plan / AC-26
+EVIDENCE: AC-26 covers profiles, attachments, editor recovery intent and integration metadata through rollback. Its new proof addressing R-1 F-02 seeds all these from the old release but requires only one unspecified change before reinstalling it. That can verify old-state reading while leaving refactored writers untested. Editor recovery has its own writer at Services/EditorRecoveryStore.swift:50-59 and 74-77; browser routing and ownership records are written separately at Services/BrowserBootstrap.swift:230-256. An incompatible writer in either path could escape a scenario whose one change updates a profile.
+PROPOSAL: Require the refactored build to create or update representative state through every persisted-state writer covered by AC-26 before rollback. Verify that the previous release can consume each resulting artifact with the required identity, consent, conflict and restore behavior.
 
 ## Sources
 
