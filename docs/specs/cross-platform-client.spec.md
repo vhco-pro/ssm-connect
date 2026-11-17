@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 findings applied. Needs a fresh review and re-acceptance."
+status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-11 applied. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -66,9 +66,11 @@ metric, Windows and Linux within 1.5 times.
 
 AWS's Swift SDK and its C runtime do not support Windows, and AWS treats
 Windows as a backlog feature request. The core therefore reaches AWS through
-its own small client for the 11 operations it uses, on every platform. The app
-already runs SSO and its credential cache itself and passes the SDK fixed
-credentials, so the SDK only signs, sends and parses those calls. The client is
+its own small client on every platform, for the 12 AWS requests it makes: 11
+through the SDK today and its direct STS identity request. The app already runs
+SSO and its credential cache itself and passes the SDK fixed credentials, so the
+SDK only signs, sends and parses those calls. The client retries with one fixed
+policy equal to the SDK's defaults. The client is
 proven on Linux and Windows first; macOS switches to it last, once its full
 suite and native flows pass, and the SDK and its C runtime then leave every
 build. Native spikes execute unchanged Swift model/parser code and a small
@@ -340,8 +342,10 @@ Command delivery follows these rules:
 
 The core reaches AWS through one SSM Connect AWS client on every platform,
 written in Swift on Foundation's `URLSession` (FoundationNetworking on Linux and
-Windows) and an XML parser for EC2 responses. It implements exactly the
-operations the app uses today:
+Windows) and an XML parser for EC2 and STS responses. It implements exactly the
+AWS requests the app makes today, including the STS identity request that
+currently bypasses the SDK
+(`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-25`):
 
 | Service | Operations | Protocol |
 | --- | --- | --- |
@@ -351,15 +355,17 @@ operations the app uses today:
 | Systems Manager | DescribeInstanceInformation, StartSession | AWS JSON 1.1, Signature Version 4 |
 | Secrets Manager | GetSecretValue | AWS JSON 1.1, Signature Version 4 |
 | EC2 Instance Connect | SendSSHPublicKey | AWS JSON 1.1, Signature Version 4 |
+| STS | GetCallerIdentity, sent directly and as the presigned token the agent receives | AWS Query, Signature Version 4 |
 
 It reproduces what the current SDK configuration does for these calls: the
 production endpoint the SDK's resolver selects for each region and partition
-(standard, China and GovCloud); its retry behavior, including the retry settings
-the SDK reads from `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE` and the shared AWS config
-with the same precedence and the same error for an invalid value; and the error
-results the app's existing translation receives, so the typed errors and
-messages users see stay the same. Signature Version 4 signing is implemented
-once and shared with the existing STS presign. Credentials and tokens never
+(standard, China and GovCloud); the SDK's retry behavior with nothing configured,
+which becomes the client's one fixed policy (attempts, backoff, retryable errors
+and retry-after handling), so retry environment variables and shared-config retry
+settings no longer affect SSM Connect; and the error results the app's existing
+translation receives, so the typed errors and messages users see stay the same.
+The STS identity request takes the same fixed policy and error handling. Signature Version 4 signing is implemented
+once and also produces the presigned STS token. Credentials and tokens never
 appear in logs or errors. The client adds no operation the app does not use,
 and the project does not fork aws-sdk-swift or aws-crt-swift.
 
@@ -553,7 +559,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-25: An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode.
 - [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
 - [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
-- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app.
+- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path and follows the client's retry policy.
 
 ## Test Plan
 
@@ -576,7 +582,7 @@ core, or change macOS signing claims through this refactor.
 | AC-25 | With fake ports recording every call, run each action with each required capability reported missing (Session Manager plugin for every action, OpenSSH and VS Code for editor actions, browser for managed browsing); assert the refusal names that capability and zero AWS calls, process launches and configuration writes were recorded. With DCV Viewer reported missing, a desktop connection keeps its tunnel up with the current warning, as `ConnectionStateMachineTests` requires today. Repeat natively on each matrix target with one capability removed, with every outbound connection from the client's process tree blocked and logged at the operating system (a network namespace whose only route is a logging proxy on Linux, an audited outbound firewall rule on Windows): no connection attempt is logged, no child process starts and no configuration file changes. A positive control build that sends the direct STS identity request (`STSIdentityResolver`) before refusing must make this check fail. |
 | AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
 | AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper and all its descendants; killing only the helper during an established transport, with the shell running, ends every descendant before the replacement helper starts; killing the helper mid-StartSession fails that command with "core stopped", one replacement starts, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. A replacement that exits at once, never completes its handshake, or stops answering heartbeats leads, within the stated limits, to "SSM Connect core unavailable" with Retry and no further automatic restart; a first helper that never handshakes leads there without any automatic restart; after ten healthy minutes one automatic restart is available again; a pending command whose cancel is not confirmed within 10 seconds leads to helper replacement. |
-| AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message. Under a controlled clock, the delays between attempts match the pinned SDK's retry strategy options; closed connections, HTTP timeouts and transient transport failures are retried as the SDK's retry classifier retries them; and cancelling during a backoff wait ends the call without another attempt; the existing error-translation tests pass on the client. Separately, without an endpoint override, the SDK's endpoint resolver and the client's give the same production endpoint for every service in standard, China and GovCloud regions. Retry settings from `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE` and the shared AWS config, alone and combined, and an invalid value of each, give the same attempts, mode and error as the SDK. Each of the 11 operations succeeds once against AWS natively on every matrix target. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. |
+| AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 SDK operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message. Under a controlled clock, with no retry settings configured, the delays between attempts match the pinned SDK's retry strategy options; closed connections, HTTP timeouts and transient transport failures are retried as the SDK's retry classifier retries them; and cancelling during a backoff wait ends the call without another attempt; the existing error-translation tests pass on the client. Separately, without an endpoint override, the SDK's endpoint resolver and the client's give the same production endpoint for every service in standard, China and GovCloud regions. With `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, `AWS_NEW_RETRIES_2026` or a shared-config retry setting present, the client's attempts and delays are unchanged. The STS identity request recorded from today's direct path matches the client's request byte for byte after signing with the same time. Each of the 12 requests succeeds once against AWS natively on every matrix target. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. |
 
 ## Tasks
 
@@ -590,8 +596,8 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T2 `docs/specs/cross-platform-client.spec.md` - record the named comparison hosts and the current macOS release baseline from T1 as an annotation under this task; done: the annotation names the Mac, Windows and Linux hosts with OS builds, the workload and every median (AC-22)
 - [ ] T32 `SSMConnectKit/Tests/SSMConnectAWSClientTests/SigV4Tests.swift` - failing tests built from the published Signature Version 4 test suite and the existing STS presign cases; done: they fail because the signer does not exist (AC-28)
 - [ ] T33 `SSMConnectKit/Sources/SSMConnectAWSClient/SigV4.swift` - the signer, used by the STS presign as well; done: T32 and the existing STS tests pass on macOS, Linux and Windows CI runners (AC-28)
-- [ ] T34 `SSMConnectKit/Tools/FixtureRecorder/`, `SSMConnectKit/Tests/SSMConnectAWSClientTests/` - record, from the current SDK-based code through a local endpoint, the request, a success, a throttling response and each translated service error for all 11 operations, and write failing parity tests for requests, retry counts, resolver-level endpoints in standard, China and GovCloud regions without an override, retry settings from the environment and shared config with their precedence and invalid values, controlled-clock backoff delays, transport failures, cancellation during backoff and the resulting typed errors; done: the tests fail because the client does not exist (AC-28)
-- [ ] T35 `SSMConnectKit/Sources/SSMConnectAWSClient/` - the client: REST JSON, EC2 Query and AWS JSON 1.1 encoding, endpoint resolution, retry settings, retries and error results for the 11 operations; done: T34 passes on macOS, Linux and Windows CI runners (AC-28)
+- [ ] T34 `SSMConnectKit/Tools/FixtureRecorder/`, `SSMConnectKit/Tests/SSMConnectAWSClientTests/` - record, from the current SDK-based code through a local endpoint, the request, a success, a throttling response and each translated service error for all 11 SDK operations and the STS identity request from today's direct path, and write failing parity tests for requests, retry counts, resolver-level endpoints in standard, China and GovCloud regions without an override, the fixed retry policy unaffected by retry environment variables and shared config, controlled-clock backoff delays, transport failures, cancellation during backoff and the resulting typed errors; done: the tests fail because the client does not exist (AC-28)
+- [ ] T35 `SSMConnectKit/Sources/SSMConnectAWSClient/` - the client: REST JSON, EC2 Query, AWS Query and AWS JSON 1.1 encoding, endpoint resolution, the fixed retry policy and error results for the 12 requests, with `STSIdentityResolver` moved onto it; done: T34 passes on macOS, Linux and Windows CI runners (AC-28)
 - [ ] T4 `spikes/helper-feasibility/` - minimal Swift helper built from the current SSO, SSM and plugin sources and the T35 AWS client behind stub UI ports, speaking over stdin/stdout; done: it builds natively on Windows 11 x64 and Fedora 43 x86-64 (AC-23, AC-28)
 - [ ] T5 `docs/specs/cross-platform-client.spec.md` - run T4 on Windows 11 x64 and Fedora 43 and record exact Swift, AWS client commit and plugin versions, interactive SSO and refresh, an AWS response, usable SSM traffic, cancellation and owned-process cleanup as an annotation under this task; done: every item is recorded as observed (AC-23)
 - [ ] T6 `scripts/check-boundaries.sh` - check that SSMConnectDomain and SSMConnectWorkflow sources import none of AppKit, SwiftUI, Darwin, ServiceManagement, UserNotifications or an AWS SDK module; done: it fails because those targets do not exist yet (AC-11)
@@ -616,44 +622,15 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T25 `linux/src/`, `linux/qml/` - the Qt 6 shell with a StatusNotifierItem tray, launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
 - [ ] T26 `packaging/linux/`, `.github/workflows/release-linux.yml` - `.rpm` and `.deb` whose maintainer scripts only run non-fatal cache refreshes, with notices; done: the workflow builds both and the package inspection in the AC-21 and AC-24 rows passes (AC-21, AC-24)
 - [ ] T36 `SSMConnectKit/Package.swift`, `SSMConnectKit/Package.resolved`, `SSMConnectKit/Sources/SSMConnectAWS/` - switch macOS to the client and remove aws-sdk-swift and aws-crt-swift from the package; done: the complete macOS package suite and `scripts/release.sh` pass, the documented macOS flows run natively on the client, and the resolved package graph has no aws-sdk-swift, aws-crt-swift or Smithy module (AC-28, AC-20)
-- [ ] T27 `docs/specs/cross-platform-client.spec.md` - macOS native acceptance: the AC-20 flows, the AC-26 upgrade and rollback scenario, and the macOS parts of the AC-12 to AC-19 and AC-25 rows, and each of the 11 AWS operations once against AWS on macOS; done: an evidence line under each criterion exercised (AC-28, AC-20, AC-26, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-25)
-- [ ] T28 `docs/specs/cross-platform-client.spec.md` - Windows 11 x64 native acceptance of the AC-12 to AC-19, AC-21, AC-23, AC-25 and AC-27 rows, and each of the 11 AWS operations once against AWS on Windows 11 x64; done: an evidence line under each criterion exercised (AC-28, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
-- [ ] T29 `docs/specs/cross-platform-client.spec.md` - Fedora 43 and Ubuntu 24.04 native acceptance of the same rows, and each of the 11 AWS operations once against AWS on Fedora 43 and Ubuntu 24.04; done: an evidence line under each criterion exercised (AC-28, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
+- [ ] T27 `docs/specs/cross-platform-client.spec.md` - macOS native acceptance: the AC-20 flows, the AC-26 upgrade and rollback scenario, and the macOS parts of the AC-12 to AC-19 and AC-25 rows, and each of the 12 AWS requests once against AWS on macOS; done: an evidence line under each criterion exercised (AC-28, AC-20, AC-26, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-25)
+- [ ] T28 `docs/specs/cross-platform-client.spec.md` - Windows 11 x64 native acceptance of the AC-12 to AC-19, AC-21, AC-23, AC-25 and AC-27 rows, and each of the 12 AWS requests once against AWS on Windows 11 x64; done: an evidence line under each criterion exercised (AC-28, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
+- [ ] T29 `docs/specs/cross-platform-client.spec.md` - Fedora 43 and Ubuntu 24.04 native acceptance of the same rows, and each of the 12 AWS requests once against AWS on Fedora 43 and Ubuntu 24.04; done: an evidence line under each criterion exercised (AC-28, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
 - [ ] T30 `docs/specs/cross-platform-client.spec.md` - measure the refactored macOS app and the Windows and Linux clients with T1 on the T2 hosts; done: every metric compared with its limit in an AC-22 evidence line (AC-22)
 - [ ] T31 `docs/specs/cross-platform-client.spec.md` - inspect each built dependency graph and artifact for duplicate production workflows and for any aws-sdk-swift, aws-crt-swift or Smithy module, and rebuild each platform's release path on its own; done: AC-11 and AC-24 evidence lines, and an AC-28 evidence line combining the T34 parity results, the T27-T29 native operation results and these inspections (AC-11, AC-24, AC-28)
 
 ## Open Questions
 
-### Q21: Should the AWS client keep the SDK's configurable retry settings?
-
-**Recommendation:** A. Each review keeps finding another SDK retry setting to
-copy (`AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, shared config, now
-`AWS_NEW_RETRIES_2026`). SSM Connect sets none of them
-(`SSMConnectKit/Sources/SSMConnectKit/Services/EC2Clients.swift:33-36`), so a
-fixed policy equal to the SDK's defaults keeps what users get today and removes
-the settings mechanism.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. One fixed policy, the SDK's defaults** | The client always retries as the SDK does with nothing configured: the same attempts, backoff, retryable errors and retry-after handling, proven by the parity tests. Retry environment variables and shared-config retry settings no longer change SSM Connect. | A user who tuned AWS retries through those settings loses that effect in SSM Connect. |
-| **B. Copy every SDK retry setting** | Configured users keep their settings. | The client must track each SDK retry setting and feature flag, with parity tests for every combination, and follow new ones as AWS adds them. |
-
-**Why this is yours:** It removes existing, if unlikely, behavior. R-11 F-01 raised it.
-
-### Q22: Does the direct STS identity request move into the AWS client?
-
-**Recommendation:** A. It is an AWS request like the others, and one client for
-every request is what AC-28 promises. Today it bypasses the SDK
-(`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-25`) and
-serves the editor, web forwards and multi-user desktop paths.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Move it into the client as a twelfth operation** | GetCallerIdentity uses the client's signing, endpoints, retries and error results; the presign stays a client function the agent token uses. One AWS boundary with no exception. | Its retry and error behavior changes from today's direct request to the client's; the parity tests record the old behavior first. |
-| **B. Keep it as an explicit exception** | No change to that request. | A second AWS request path outside the client, named as an exception in AC-28. |
-
-**Why this is yours:** It decides whether one request keeps its current
-behavior or joins the common client. R-11 F-02 raised it.
+None.
 
 ## Review Log
 
@@ -959,7 +936,9 @@ PROPOSAL: Define whether the direct STS request moves into the common client or 
   orphaned SSM sessions left to the idle timeout (Q12); a transient systemd user
   service on Linux (Q13); one automatic restart, then a visible error (Q14); fixed
   named comparison hosts (Q15); after T3 found no Windows support upstream, one
-  SSM Connect AWS client on every platform, macOS switched last (replacing Q5); the same failure rules for every helper with
+  SSM Connect AWS client on every platform, macOS switched last (replacing Q5);
+  a fixed SDK-default retry policy (Q21); the STS identity request moved into
+  the client (Q22); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
   closing on Windows and running until quit on Linux during installs (Q18); the
 Linux helper unit bound to the shell's systemd scope (Q19); a failed Linux
