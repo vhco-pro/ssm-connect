@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Accepted by the owner on 2026-11-17 after clean spec review R-8; tasks T1-T31 written; next step is implementation from T1. The Windows AWS CRT build remains the first increment's blocker."
+status: in-progress
+status_description: "Implementation started on feat/shared-swift-core at T1. Windows tasks wait for SSH on the w11-sandbox VM; the Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
