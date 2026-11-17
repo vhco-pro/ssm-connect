@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Owner decisions Q1-Q10 folded after R-2; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "R-3 raised one blocking and four should-fix findings, turned into owner decisions Q11-Q15; the Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -460,7 +460,72 @@ criteria above are met.
 
 ## Open Questions
 
-None.
+### Q11: Which missing capabilities refuse an action before it starts?
+
+**Recommendation:** A. It keeps today's macOS behavior, which `AGENTS.md`
+requires: a missing DCV Viewer leaves the tunnel up with a warning
+(`SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:489-502`,
+`ssm-connect.spec.md:335`). R-1's fix wrongly listed Viewer as required.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Only capabilities the action cannot work without** | The Session Manager plugin for every action, OpenSSH and VS Code for editor actions, and a supported browser for managed browsing refuse up front. A missing DCV Viewer keeps the current warning after the tunnel is up. | A desktop connection can still start AWS work for a user who has no Viewer. |
+| **B. Refuse a desktop connection without Viewer** | No AWS work for a desktop the user cannot open. | Changes current macOS behavior and its tests, against the repository instruction. |
+
+**Why this is yours:** It decides whether macOS behavior changes. R-3 F-01 raised it.
+
+### Q12: What happens to an SSM session AWS started when the helper died before it learned the session ID?
+
+**Recommendation:** A. It is what the macOS app does today after a crash: the
+app has no server-side session cleanup (`SSMConnectKit/Sources/SSMConnectKit/Services/SSMClients.swift:7-10`),
+and the earlier draft's claim that the new helper reaps such sessions was wrong.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Leave it to Session Manager's idle timeout** | No new AWS permissions and no risk of ending another client's session. The fresh helper cleans only local owned processes. | An orphaned server-side session lingers until the account's idle timeout (20 minutes by default). |
+| **B. Find and terminate it** | Orphans end promptly. | `ssm:DescribeSessions` and `ssm:TerminateSession` permissions, a reliable way to tell this client's sessions from the same user's other clients, and handling when cleanup fails. |
+
+**Why this is yours:** It trades a lingering session against new permissions and
+the risk of ending someone's live session. R-3 F-02 raised it.
+
+### Q13: How does Linux end every owned process when the shell is killed?
+
+**Recommendation:** A. A parent-death signal reaches only the helper, not the
+plugin or SSH processes it starts (R-3 F-03 measured this). A systemd unit is
+Linux's equivalent of the Windows job object, and both matrix distributions run
+a systemd user session.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Run the helper as a transient systemd user service** | The helper is the unit's main process and exits when its stdin pipe closes; when it exits or is killed, systemd stops every process in the unit. Nothing survives the shell. | Requires a systemd user session, which rules out non-systemd distributions. |
+| **B. Parent-death signal on every owned child too** | No systemd dependency. | Covers only direct children, so a process started by SSH or the plugin can still survive; needs a custom spawn path, because Foundation's `Process` cannot set it. |
+
+**Why this is yours:** It adds a platform dependency for Linux support. R-3 F-03 raised it.
+
+### Q14: What does the shell do when its helper keeps failing or stops answering?
+
+**Recommendation:** A. It gives a bounded, visible failure instead of endless
+restarts or silent waiting.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. One automatic restart, then a visible error** | After a helper stop the shell starts one replacement. If that one fails its handshake within 10 seconds, exits within 60 seconds, or misses a 15-second heartbeat, the shell kills it and shows "SSM Connect core unavailable" with Retry. Admitted commands fail with "core stopped"; nothing is resent. | A short outage needs one click to recover. |
+| **B. Keep restarting with backoff** | Recovers by itself from transient failures. | Can loop indefinitely and hide a broken install. |
+
+**Why this is yours:** The limits and the failure experience are product
+choices. R-3 F-04 raised it.
+
+### Q15: On which hosts are the performance comparisons made?
+
+**Recommendation:** A. A ratio only means something when both sides ran on
+fixed, known machines.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Fixed, named hosts** | The macOS baseline and the refactored macOS app run on the same Mac and OS build, on mains power with Low Power Mode off and no other user apps open. Windows and Linux use named hosts recorded before the baseline. Changing any host or OS build means measuring the baseline again. | Measurements wait for those machines. |
+| **B. Any matrix host, recorded** | Measure wherever is convenient. | A slow build on fast hardware can pass, so verdicts are not comparable. |
+
+**Why this is yours:** It decides what the budgets prove. R-3 F-05 raised it.
 
 ## Review Log
 
@@ -468,6 +533,7 @@ None.
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-17 | R-1 | spec | `c2507b1` | gpt-6.1-sol | procedural | No blocking findings; four should-fix and one nit |
 | 2026-11-17 | R-2 | spec | `3040421` | gpt-6.1-sol | procedural | No blocking findings; six should-fix |
+| 2026-11-17 | R-3 | spec | `4c4051c` | gpt-6.1-sol | procedural | One blocking (missing-Viewer conflict) and four should-fix |
 
 ### R-1
 
@@ -549,6 +615,43 @@ SEVERITY: should-fix
 WHERE: Scope / macOS upgrade and rollback; Design / Migration, performance and release boundaries, persisted-state compatibility; Acceptance Criteria / AC-26; Test Plan / AC-26
 EVIDENCE: AC-26 covers profiles, attachments, editor recovery intent and integration metadata through rollback. Its new proof addressing R-1 F-02 seeds all these from the old release but requires only one unspecified change before reinstalling it. That can verify old-state reading while leaving refactored writers untested. Editor recovery has its own writer at Services/EditorRecoveryStore.swift:50-59 and 74-77; browser routing and ownership records are written separately at Services/BrowserBootstrap.swift:230-256. An incompatible writer in either path could escape a scenario whose one change updates a profile.
 PROPOSAL: Require the refactored build to create or update representative state through every persisted-state writer covered by AC-26 before rollback. Verify that the previous release can consume each resulting artifact with the required identity, consent, conflict and restore behavior.
+
+### R-3
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: blocking
+WHERE: Context / Owner summary and Existing workflow and baseline; Scope / preserved macOS behavior; Design / Behavior, identity and local state, capability preflight; Acceptance Criteria / AC-20, AC-25; Test Plan / AC-20, AC-25
+EVIDENCE: AGENTS.md:27-28 requires preserving existing macOS behavior. ConnectionStateMachine.swift:489-502 treats missing DCV Viewer as a warning after establishing the tunnel. ConnectionStateMachineTests.swift:342-352 explicitly requires that connection to remain connected, and ssm-connect.spec.md:335 documents the same behavior. AC-25 and its proof instead require refusal before any AWS call when DCV Viewer is missing. Preserving the current suite under AC-20 and applying AC-25 to that case require incompatible outcomes.
+PROPOSAL: Distinguish required capabilities from optional integrations so the preflight rule preserves the existing missing-Viewer behavior. If changing that behavior is intended, raise an owner Open Question covering the behavioral change and the conflicting repository instruction before revising either.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper recovery; Design / Integration and feasibility, command-delivery rules; Acceptance Criteria / AC-18, AC-27; Test Plan / AC-18, AC-27; Sources / Q6, Q8
+EVIDENCE: The revision addressing R-2 F-02 replaces snapshot recovery with a fresh helper that reaps leftover SSM sessions. It still gives no recovery path when AWS accepts StartSession but the helper dies before receiving its response. SSMService.swift:60-84 obtains the session ID only from that response; SSMClients.swift:7-10 exposes no session reconciliation or termination operation. ConnectionStateMachine.swift:728-735 only terminates a known local handle. The cited macOS behavior therefore supplies no recovery mechanism for this case. AWS also requires a session ID for [TerminateSession](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_TerminateSession.html).
+PROPOSAL: Raise the uncertain-session recovery policy as an Open Question, including ownership identification, required permissions and cleanup failure. Define and test recovery after AWS acceptance but before receipt of the session ID, without replaying StartSession or affecting another live client's sessions.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper lifetime; Design / Integration and feasibility, process containment and startup cleanup; Acceptance Criteria / AC-18, AC-27; Test Plan / AC-18, AC-27; Sources / Q8
+EVIDENCE: The R-2 revision specifies a Linux parent-death signal for ending the helper with its shell. That does not contain the helper's descendants. An isolated native prctl check in this review reported signal 15 in the helper and 0 in its forked descendant, matching the [Linux manual](https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html). If the shell is killed, both shell and helper can disappear while an owned plugin or SSH process survives. Startup cleanup cannot resolve that path until another launch, and the document defines no containment mechanism that remains effective without a restart.
+PROPOSAL: Define Linux containment for owned descendants when the shell and helper cannot execute cleanup. Add a native scenario that kills the shell during active transport, starts no replacement client, and verifies that unintended owned descendants terminate while unrelated processes remain untouched.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper failure recovery; Design / Integration and feasibility, handshake and command-delivery rules; Acceptance Criteria / AC-27; Test Plan / AC-27
+EVIDENCE: The R-2 revision requires starting a fresh helper whenever the helper exits, but defines no outcome when the replacement repeatedly exits, refuses its handshake or remains alive without completing the handshake or an admitted command. An implementation could restart indefinitely; another could stop after one failure; another could leave commands pending indefinitely. AC-27 tests one successful replacement and a mismatched-build refusal, without establishing the resulting shell state or bounding recovery.
+PROPOSAL: Decide bounded restart and unresponsive-helper behavior, including the visible failure state and how the user retries. Add scenarios for repeated startup failure, handshake timeout and a stalled admitted command, preserving the no-replay rule.
+
+FINDING: F-05
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, performance budgets; Design / Migration, performance and release boundaries, measurement procedure; Acceptance Criteria / AC-22; Test Plan / AC-22; Tasks / performance baseline; Sources / Q4, Q9
+EVIDENCE: The revision addressing R-2 F-04 defines process accounting, sampling and timing statistics, but only requires recording hardware and OS build with each result. It does not require baseline and refactored macOS measurements on the same host or fix the Windows/Linux comparison hosts before measurement. A slower implementation measured on faster hardware could pass the ratios, while the same implementation on another permitted host could fail. Recording the difference afterwards does not make those verdicts comparable.
+PROPOSAL: Retain the accepted ratios and establish comparison conditions before collecting the baseline, including the same macOS host and fixed native comparison hosts, power settings and workload conditions. Record those conditions with the results and require a new baseline when they change.
 
 ## Sources
 
