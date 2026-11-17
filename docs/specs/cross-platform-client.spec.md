@@ -657,7 +657,18 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q30: What happens when an open VS Code window asks for a new editor channel after a Linux upgrade or removal?
+
+**Recommendation:** A. It applies Q29's rule to the one launch path that does not
+pass through the shell or helper: VS Code starts the editor proxy itself
+(`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:115`).
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. The proxy refuses too** | The lease records its owner's build. A proxy whose installed build differs from that refuses the new channel before any AWS call and prints "SSM Connect was updated; restart it", which VS Code shows. After removal the proxy is gone, so VS Code's SSH reports that it cannot start the connection. Established channels continue. | VS Code shows an SSH connection error after removal rather than an SSM Connect message. |
+| **B. Keep the old proxy usable** | Open windows keep opening channels until the user quits. | The old proxy and plugin must stay on disk through upgrade and removal, the versioned install Q29 rejected. |
+
+**Why this is yours:** It extends the Q29 decision to VS Code. R-15 F-02 raised it.
 
 ## Review Log
 
@@ -678,6 +689,7 @@ None.
 | 2026-11-17 | R-12 | spec | `a3da4a4` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-17 | R-13 | spec | `d64f65e` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-17 | R-14 | spec | `f5f70ba` | gpt-6.1-sol | procedural | One blocking (STS endpoint in China) and two should-fix |
+| 2026-11-17 | R-15 | spec | `854a1ac` | gpt-6.1-sol | procedural | One blocking (AC-28 STS equality versus China) and two should-fix |
 
 ### R-1
 
@@ -1016,6 +1028,29 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary, Linux installation behavior; Design / Migration, performance and release boundaries, lines 543-558; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T22, T26, T29; Sources / Q18
 EVIDENCE: Linux installation and removal promise that the running client keeps working until quit, but define recovery only when its helper dies. A surviving helper still launches executables later: BundledPluginTunnel.swift:56-65 checks the plugin pathname before launch, and RemoteSSHBridge.swift:115 and 174-184 uses separate proxy/plugin paths. An isolated Linux executable-unlink probe observed that the running helper survived removal while a subsequent child launch failed with status 127. The document does not define retention of these files or the outcome of later actions; AC-21 exercises existing connection continuity and helper death only.
 PROPOSAL: Define how later plugin and editor-channel launches work after Linux upgrade or removal, raising an Open Question for any narrower continuation guarantee. Extend AC-21 to request those actions while the original helper remains alive after each package operation.
+
+### R-15
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: AGENTS.md:28-32; Context / Owner summary:73-76; Design / AWS client:376-385; Acceptance Criteria / AC-20, AC-28; Test Plan / AC-28; Tasks / T34, T35; Sources / Q27
+EVIDENCE: The revision addressing R-14 F-01 adds the China endpoint exception to the repository instruction, Design, AC-20 and AC-28's proof, but AC-28 still requires the STS identity request to send “the same request as today's direct path” without that exception. STSPresigner.swift:16 and 71 constructs the original request with an amazonaws.com host. Design:379-382 and Test Plan:612 require an amazonaws.com.cn host in China. Both requests cannot satisfy AC-28's unconditional equality requirement.
+PROPOSAL: Qualify AC-28's STS request-preservation clause with the already selected China endpoint exception. Apply that qualification consistently to the fixture and parity-test task descriptions.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design / Integration and feasibility:294-296, 331-340; Design / Migration, performance and release boundaries:551-559; Acceptance Criteria / AC-17, AC-21; Test Plan / AC-17, AC-21; Tasks / T16, T22, T29; Sources / Q29
+EVIDENCE: The revision addressing R-14 F-03 requires the shell and helper to check the installed build before launching executables and refuse every new action after Linux upgrade or removal. The editor proxy has an independent entry point: RemoteSSHBridge.swift:115 installs it as VS Code's SSH ProxyCommand, and lines 134-146 authorize a new channel through AWS before lines 174-184 launch its plugin. Neither launch requires a command through the shell or helper. The document does not define how this path enforces the new restriction, including when an upgraded proxy reads a surviving old helper's lease or removal deletes the configured proxy pathname. AC-21 exercises new connections and VS Code actions through the running client, without explicitly exercising a new channel requested by an existing VS Code window.
+PROPOSAL: Define how VS Code-originated channel requests behave after upgrade and removal, including validation against the lease owner's build and treatment of missing executables. Add native scenarios using an existing VS Code window while the original helper remains alive.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:52-54; Design / Migration, performance and release boundaries:554-559; Test Plan / AC-21; Tasks / T22, T29; Sources / Q29
+EVIDENCE: The owner summary says the running Linux app “keeps working until the user quits” and asks for restart or quit if its helper dies. The revision addressing R-14 F-03 instead preserves established connections while refusing every new action immediately after upgrade or removal, even when the helper remains healthy. Design:554-559, Test Plan:605 and Sources:1045-1046 state that narrower continuation guarantee. The summary omits the newly selected restriction and still describes helper loss as the trigger.
+PROPOSAL: Refresh the owner summary to distinguish continued established connections from refused new actions after Linux upgrade or removal, including when the helper remains healthy.
 
 ## Sources
 
