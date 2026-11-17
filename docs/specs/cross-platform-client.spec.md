@@ -648,7 +648,46 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q27: Which endpoint does the STS identity request use in China regions?
+
+**Recommendation:** A. Today it hardcodes `sts.<region>.amazonaws.com`
+(`SSMConnectKit/Sources/SSMConnectKit/Auth/STSPresigner.swift:16`), which is the
+wrong host in China, where the SDK resolves `amazonaws.com.cn`. Using the
+client's resolver fixes that and leaves standard and GovCloud regions unchanged.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Use the client's endpoint resolver** | The STS request reaches the correct host in every partition; it is byte for byte unchanged outside China. `AGENTS.md` and AC-20 record the China correction as a third exception. | A third exception line. |
+| **B. Keep today's hardcoded host** | No change anywhere. | The STS identity request keeps failing in China regions, and the resolver parity check excludes STS. |
+
+**Why this is yours:** It changes existing behavior, if only to correct it.
+R-14 F-01 raised it.
+
+### Q28: Can a rerun replace a release asset that is already published?
+
+**Recommendation:** A. Homebrew and WinGet record checksums of the first upload
+(`vhco-pro/homebrew-tap` sync-cask exits when the version already matches), so a
+replaced asset breaks installs. Immutable assets remove the coordination.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Published assets never change** | A rerun uploads only assets that are missing and never replaces one; a bad asset is fixed by releasing a new version. | A broken build needs a new version number. |
+| **B. Replace and re-sync checksums** | A rerun can fix an asset in place. | Release automation must update the Homebrew cask and WinGet manifest for a changed asset, with tests for both. |
+
+**Why this is yours:** It decides how release mistakes are corrected. R-14 F-02 raised it.
+
+### Q29: What can a running Linux client still do after its package is upgraded or removed?
+
+**Recommendation:** A. Established connections keep working, and new actions
+refuse clearly instead of failing on a missing file (a running helper cannot
+launch an executable the package replaced or removed).
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Keep what runs; refuse new actions** | Before launching the plugin, proxy or helper, the shell and helper check that the installed build matches their own. After an upgrade they refuse new actions with "SSM Connect was updated; restart it", after removal with "SSM Connect was removed; quit it". Established connections continue until the user quits. | New connections need a restart after an upgrade. |
+| **B. Keep the old files until quit** | New actions keep working on the old version until the user quits. | Versioned install directories and package scripts that keep an old version's files while it runs. |
+
+**Why this is yours:** It decides the experience after a Linux update. R-14 F-03 raised it.
 
 ## Review Log
 
@@ -668,6 +707,7 @@ None.
 | 2026-11-17 | R-11 | spec | `5d97336` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-17 | R-12 | spec | `a3da4a4` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-17 | R-13 | spec | `d64f65e` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
+| 2026-11-17 | R-14 | spec | `f5f70ba` | gpt-6.1-sol | procedural | One blocking (STS endpoint in China) and two should-fix |
 
 ### R-1
 
@@ -983,6 +1023,29 @@ SEVERITY: should-fix
 WHERE: Scope / independently releasable artifacts and distribution; Design / Migration, performance and release boundaries; Acceptance Criteria / AC-24; Test Plan / AC-24; Tasks / T21, T26, T31
 EVIDENCE: Design retains release.yml while adding Windows and Linux publication workflows. The existing workflow computes and creates the version tag at .github/workflows/release.yml:34-39, then creates the GitHub Release only after the macOS build succeeds at lines 68-88. AC-24's proof requires publishing one platform without publishing another. The document does not define how Windows or Linux obtains a release when macOS fails or does not run, who owns release creation across concurrent workflows, or what happens when macOS later encounters an existing release. The pinned delivery convention requires one version authority and one release publication owner.
 PROPOSAL: Raise an Open Question selecting the release coordination policy, then name its version authority, release owner and retry behavior. Extend AC-24's proof to cover Windows or Linux publication without a macOS artifact, concurrent completion and retry after partial publication.
+
+### R-14
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: AGENTS.md / macOS preservation exceptions; Context / Owner summary, AWS client; Scope / macOS behavior preservation; Design / AWS client; Acceptance Criteria / AC-20, AC-28; Test Plan / AC-28; Tasks / T34, T35, T36; Sources / Q22-Q24
+EVIDENCE: STSPresigner.swift:16 hardcodes sts.<region>.amazonaws.com, and STSIdentityResolver.swift:43-45 sends that URL. For cn-north-1, the pinned SDK's [STS resolver](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Services/AWSSTS/Sources/AWSSTS/Endpoints.swift) instead uses the [China partition suffix](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSSDKDynamic/Sources/AWSSDKDynamic/Partitions.swift), amazonaws.com.cn. AC-28's proof requires resolver parity for every service in China and byte-for-byte preservation of today's direct STS request. Both cannot hold there. The previous revision restores explicit STS request preservation while retaining the broader partition requirement.
+PROPOSAL: Raise an Open Question deciding the STS endpoint policy for China. Reconcile the preservation contract, endpoint requirements and fixtures with that decision.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Scope / independently releasable artifacts and distribution; Design / Migration, performance and release boundaries, lines 527-539; Acceptance Criteria / AC-20, AC-24; Test Plan / AC-24; Tasks / T21, T26, T31; Sources / Q26
+EVIDENCE: The release policy added for R-13 F-03 permits replacing an asset when its platform job is rerun. The retained [Homebrew sync at c2baa6738ba7e902fe0c3275ec24dbd06fa58497](https://github.com/vhco-pro/homebrew-tap/blob/c2baa6738ba7e902fe0c3275ec24dbd06fa58497/.github/workflows/sync-cask.yml#L26) exits when the release version already matches the cask. Replacing that version's ZIP with different bytes therefore leaves its recorded checksum stale. AC-24 checks replacement isolation and the WinGet checksum, but never verifies Homebrew installation after replacement.
+PROPOSAL: Raise an Open Question choosing immutable published assets on retry or coordinated replacement of downstream checksums. Add a release retry scenario that verifies installation through the retained distribution paths after their manifests have already consumed the original assets.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, Linux installation behavior; Design / Migration, performance and release boundaries, lines 543-558; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T22, T26, T29; Sources / Q18
+EVIDENCE: Linux installation and removal promise that the running client keeps working until quit, but define recovery only when its helper dies. A surviving helper still launches executables later: BundledPluginTunnel.swift:56-65 checks the plugin pathname before launch, and RemoteSSHBridge.swift:115 and 174-184 uses separate proxy/plugin paths. An isolated Linux executable-unlink probe observed that the running helper survived removal while a subsequent child launch failed with status 127. The document does not define retention of these files or the outcome of later actions; AC-21 exercises existing connection continuity and helper death only.
+PROPOSAL: Define how later plugin and editor-channel launches work after Linux upgrade or removal, raising an Open Question for any narrower continuation guarantee. Extend AC-21 to request those actions while the original helper remains alive after each package operation.
 
 ## Sources
 
