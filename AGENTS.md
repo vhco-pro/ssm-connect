@@ -24,8 +24,11 @@ repository-wide conversion.
 
 The shared-core migration is specified in
 [cross-platform-client.spec.md](docs/specs/cross-platform-client.spec.md).
-Its draft status is not permission to implement. Preserve existing macOS
-behavior and distinguish portable checks from native platform acceptance.
+Implement it only while it is accepted (`planned` or `in-progress`). Preserve
+existing macOS behavior and distinguish portable checks from native platform
+acceptance. The spec names two exceptions, both from its own AWS client: AWS
+retry settings (environment variables and shared config) and configured AWS
+endpoints no longer affect SSM Connect.
 
 ## Commands and constraints
 
