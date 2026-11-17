@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Blocked at T3: aws-sdk-swift and aws-crt-swift do not support Windows, so the Windows AWS path needs an owner decision and a spec revision. T1 awaits a baseline-Mac run."
+status: draft
+status_description: "Revising Design after T3: the owner chose one SSM Connect AWS client on every platform because aws-sdk-swift does not support Windows. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
