@@ -48,8 +48,9 @@ Native spikes now execute unchanged Swift model/parser code and a small helper
 on both Windows and Linux. The locked SDK/YAML probe passes on Linux, while the
 Windows AWS CRT dependency build fails with both tested build backends.
 Full workflows, authentication, transports and native adapters remain unverified.
-The GUI/core bridge, supported OS/CPU matrix, Linux interface, performance budgets
-and Windows dependency remedy remain owner decisions. These subset checks do not
+The GUI/core bridge and its command recovery rules, supported OS/CPU matrix,
+Linux interface, performance budgets, Windows dependency remedy and Windows/Linux
+distribution remain owner decisions. These subset checks do not
 establish support for the complete application.
 
 This document is a draft and replaces the old two-core scope. Its historical
@@ -444,12 +445,77 @@ compatible release first, preserving the shared Swift AWS path where practical.
 CRT dependency. The scope does not authorize maintaining a dependency fork,
 changing SDKs, or silently choosing a second implementation.
 
+### Q6: What must the core guarantee when a command's reply is lost, late or concurrent?
+
+**Recommendation:** A. Never replay a command that has side effects; after an uncertain result
+the shell reads the core's current state and the user decides. This reuses the generation check
+`AuthorizationSession` already applies and adds no deduplication store.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Correlated commands, stale-result rejection, no automatic replay** | Each command carries an ID and the core's session generation; the core drops completions from an older generation and answers a lost reply with a fresh state snapshot. No duplicate SSM session or provisioning from a retry. | After a lost reply the user may have to repeat an action the snapshot shows did not happen. |
+| **B. Idempotency keys with safe replay** | The shell can resend after reconnecting and the core removes duplicates by key, so recovery is automatic. | A key store with a lifetime, its own crash and restart rules, and tests that prove every side-effecting command honours it. |
+
+**Why this is yours:** It fixes the contract every shell and both Q1 options are built against,
+and it decides whether a recovered action can be repeated without the user. R-1 F-01 raised it.
+
+### Q7: How are the Windows and Linux clients packaged and distributed?
+
+**Recommendation:** A. Keep the August Windows decision and choose the Linux format with Q2 and Q3,
+so the earlier delivery work and its install, upgrade and uninstall lessons stay usable.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Per-user unsigned WiX MSI through WinGet; Linux format chosen with Q2/Q3** | The channel the earlier Windows client was built and tested for (`VHCo.SSMConnect`), with no elevation and no certificate cost. | SmartScreen shows no publisher name and Smart App Control may block the binary until signing is adopted. A WinGet manifest and submission path to rebuild. |
+| **B. GitHub Release artifacts only for the first release** | A smaller first delivery: an installer and a Linux archive attached to each release. | No package-manager install or upgrade; WinGet and Linux repositories become a later feature. |
+| **C. Signed artifacts from the first release** | A publisher identity in SmartScreen and fewer blocked launches. | A certificate or SignPath enrolment, signing in release automation and a manifest re-hash after signing. |
+
+**Why this is yours:** This revision dropped the August requirements for a Windows installer and
+WinGet without replacing them. The choice decides which artifacts AC-21 and AC-24 test and which
+publication paths release automation needs. R-1 F-04 raised it.
+
 ## Review Log
 
 | Date | Review | Kind | Commit | Model | Isolation | Outcome |
 | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-17 | R-1 | spec | `c2507b1` | gpt-6.1-sol | procedural | No blocking findings; four should-fix and one nit |
 
-No independent review or acceptance has been recorded for this revision.
+### R-1
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design / One implementation, several shells; Design / Integration and feasibility; Design / Behavior, identity and local state; Acceptance Criteria / AC-11, AC-15, AC-18; Test Plan / AC-11, AC-15, AC-18, AC-23; Open Questions / Q1
+EVIDENCE: The new bridge promises ordered events, cancellation and shutdown, but defines no outcome for concurrent commands, late completion after cancellation, or retry after an uncertain result. For the helper option, an SSM session could start before the reply is lost; replay could then create another session. Existing authorization code rejects stale completions using a generation counter at SSMConnectKit/Sources/SSMConnectKit/Auth/AuthorizationSession.swift:197-226, but the document does not extend that protection across the new boundary. Q1 chooses the integration mechanism without deciding these semantics.
+PROPOSAL: Extend Q1 with the command correlation, cancellation and recovery policy for the selected bridge, including replay and obsolete-session rejection where applicable. Add tests for concurrent commands, lost replies and late completions with explicit expected effects.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Scope / profile compatibility and recovery; Design / Behavior, identity and local state; Design / Migration, performance and release boundaries; Acceptance Criteria / AC-14, AC-16, AC-17, AC-20; Test Plan / AC-14, AC-16, AC-17, AC-20, AC-21
+EVIDENCE: Design requires preserving profiles and local integration metadata with a working macOS rollback point. AC-14 tests portable fixtures and current stores; AC-20 tests the current suite and native flows; the only explicit upgrade test, AC-21, covers Windows/Linux candidates. None establishes macOS persisted-state compatibility through upgrade and rollback. Existing state includes separate profile, attachment and document keys at SSMConnectKit/Sources/SSMConnectKit/Services/ProfileStore.swift:21-25 and versioned editor recovery intent at Services/EditorRecoveryStore.swift:35-39. Portable-profile round trips do not establish compatibility for those stores.
+PROPOSAL: Add an isolated previous-release to refactored-release to recorded-rollback scenario using representative persisted profiles, attachments and integration metadata. State the expected identity, consent, restore and conflict behavior at each step.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / Behavior, identity and local state, unsupported-capability refusal; Acceptance Criteria / AC-12, AC-13, AC-16, AC-17, AC-21, AC-23; Test Plan / corresponding rows
+EVIDENCE: Design requires unsupported required capabilities to refuse before AWS or local setup effects and prohibits silently changing connection mode. No criterion explicitly establishes this cross-platform preflight invariant. AC-13 checks unwanted DCV operations during working headless flows, while AC-16 checks policy and ownership refusal without asserting that AWS calls, process launches and configuration writes remained absent. A client could start EC2 or write integration state before reporting an unsupported adapter and still satisfy those checks.
+PROPOSAL: Add a criterion and negative native scenarios for unavailable or unsupported required capabilities. Assert actionable refusal, unchanged connection mode and zero AWS or local setup effects before refusal.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, retained Windows installer work; Scope / independently releasable artifacts; Design / Preservation and selective reuse, packaging row; Design / Migration, performance and release boundaries; Acceptance Criteria / AC-21, AC-24; Test Plan / AC-21, AC-24; Open Questions / Q2
+EVIDENCE: Windows/Linux delivery is described only as needing native build/test/package paths. Artifact formats, installation scope, signing requirements and publication channels remain unspecified, and Q2 asks about OS/CPU/desktop coverage. The cited two-core predecessor at 2aa079d explicitly required a signed Windows installer and WinGet publication; this revision removes those requirements without identifying their replacement as an owner decision. The pinned conventions/delivery.md / Feature delivery requires naming affected artifacts and their build and publication paths.
+PROPOSAL: Raise an owner question covering Windows/Linux packaging and distribution, explicitly deciding whether the earlier Windows delivery requirements remain. Fold the answers into named artifacts, build/publication paths and installation checks before acceptance.
+
+FINDING: F-05
+KIND: factual
+SEVERITY: nit
+WHERE: Design / Integration and feasibility, credential-free spike description
+EVIDENCE: The document says the spike exercises the helper over private stdin/stdout pipes. spikes/swift-portability/run.sh:29-31 instead redirects stdin from requests.jsonl and stdout/stderr into regular files. The observed check establishes batch command processing rather than interactive pipe behavior.
+PROPOSAL: Describe the spike as using redirected stdin/stdout files. Retain its existing limitation that production IPC remains unverified.
 
 ## Sources
 
