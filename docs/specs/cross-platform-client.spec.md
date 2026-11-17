@@ -555,6 +555,7 @@ None.
 | 2026-11-17 | R-6 | spec | `828865e` | gpt-6.1-sol | procedural | One blocking (rpm/deb failure recovery overstated) and one nit |
 | 2026-11-17 | R-7 | spec | `3b57fd0` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 | 2026-11-17 | R-8 | spec | `0936c83` | gpt-6.1-sol | procedural | NO FINDINGS |
+| 2026-11-17 | R-8 | spec | `0936c83` | n/a | n/a | accepted by owner |
 
 ### R-1
 
