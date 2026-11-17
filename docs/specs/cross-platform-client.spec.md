@@ -637,6 +637,7 @@ None.
 | 2026-11-17 | R-8 | spec | `0936c83` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-17 | R-8 | spec | `0936c83` | n/a | n/a | accepted by owner |
 | 2026-11-17 | R-9 | spec | `457a178` | gpt-6.1-sol | procedural | One blocking (task list still targets the SDK) and one should-fix |
+| 2026-11-17 | R-10 | spec | `a08d414` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 
 ### R-1
 
@@ -867,6 +868,29 @@ SEVERITY: should-fix
 WHERE: Design / One implementation, several shells, AWS boundary; Design / AWS client, lines 355-359; Acceptance Criteria / AC-28; Test Plan / AC-28
 EVIDENCE: The new AC-28 proof compares retry counts for recorded responses but never checks retry delays or transport failures. The pinned SDK supplies [backoff configuration](https://github.com/smithy-lang/smithy-swift/blob/31336dfea2e448523630ea1fe4d83ddc1156de3c/Sources/SmithyRetriesAPI/RetryStrategyOptions.swift), and its [retry classifier](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/Retry/AWSRetryErrorInfoProvider.swift) handles closed connections and HTTP timeout and transient failures. A replacement that retries immediately and never retries a closed connection could pass the stated response-count comparisons and native success scenarios while violating the promised retry parity. This gap comes from the AWS-client replacement introduced in this revision.
 PROPOSAL: Extend AC-28's proof with controlled-clock backoff checks and transport-failure scenarios against the pinned SDK behavior. Include cancellation during backoff and verify that it prevents another attempt.
+
+### R-10
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, lines 355-358; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35
+EVIDENCE: AC-28 and T34 use a local recording endpoint to establish endpoint parity. The pinned SDK's [EC2 endpoint resolver](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Services/AWSEC2/Sources/AWSEC2/Endpoints.swift) returns the supplied custom endpoint before evaluating its regional and partition rules. Comparing requests sent to that recorder therefore does not establish the promised production endpoint selection. A client with incorrect regional resolution could pass those comparisons and the native success check in one region. The new T34 carries this gap into the task sequence added for R-9 F-01.
+PROPOSAL: Capture the SDK's resolved production endpoint before transport redirection, or compare resolver outputs separately without an endpoint override. Cover the regional and partition cases the replacement must preserve.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, lines 355-358; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35
+EVIDENCE: The retry checks added for R-9 F-02 cover delays, transport failures and cancellation, but do not check configuration resolution. The application leaves retry options unset in Services/EC2Clients.swift:33-36 and Services/SSMClients.swift:29-32. The pinned SDK's [AWSRetryConfig.swift](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/Retry/AWSRetryConfig.swift) resolves AWS_MAX_ATTEMPTS, AWS_RETRY_MODE and shared-config values, including invalid-mode errors. A replacement that always uses three attempts and the default mode could pass every specified parity scenario while changing the current application's behavior for configured users.
+PROPOSAL: Add parity cases for retry settings from the environment and shared AWS config, including precedence and invalid settings. Any intended removal of that existing behavior needs an owner decision.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T5, T27, T28, T29, T31, T36
+EVIDENCE: AC-28 requires each of the 11 operations to succeed against AWS natively on every platform. The revised tasks addressing R-9 F-01 do not schedule that complete check. T5 records one AWS response on Windows and Fedora. T27-T29 list the native acceptance rows to execute but omit AC-28. T36 requires documented macOS flows, while T31 names AC-28 evidence after dependency inspection and release rebuilds. Those checks do not establish all 11 native operation successes, particularly on Windows and Ubuntu.
+PROPOSAL: Add AC-28's operation checks to the native acceptance tasks for every matrix target. Require the final AC-28 evidence to include those executed results alongside the parity tests and artifact inspections.
 
 ## Sources
 
