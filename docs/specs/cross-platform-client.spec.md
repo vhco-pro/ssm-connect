@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Owner decisions Q1-Q20 folded after R-6; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status_description: "R-7 fix applied: user-facing apps start outside the helper's container. Awaiting a fresh independent spec review and owner acceptance; the Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -259,7 +259,19 @@ system ends every process in the container, including plugin and SSH
 descendants, even when the helper is hung. When a helper stops
 while the shell keeps running, the shell explicitly ends that helper's container
 (`TerminateJobObject` on Windows, stopping the unit on Linux) and waits until it
-reports no remaining processes before it starts any replacement. The shell is single-instance
+reports no remaining processes before it starts any replacement.
+
+Only access channels live in that container: the Session Manager plugin, SSH
+tunnels and other processes that carry a connection. Applications that hold the
+user's work, VS Code, DCV Viewer and browsers, are never started inside it,
+because Windows job membership and a systemd unit are inherited by every child,
+including the app the `code` CLI hands off to
+(`SSMConnectKit/Sources/SSMConnectKit/StateMachine/RemoteDevelopmentStateMachine.swift:637-643`).
+The helper asks its shell to start them instead: on Windows the shell starts them
+from its own process, which is outside every job; on Linux it starts each in its
+own transient systemd user scope. They therefore survive a helper or shell
+failure, as they survive an app crash on macOS today, while the channels they use
+end with the helper. The shell is single-instance
 per user session: a second launch focuses the running one. The macOS app links
 the core in-process, as today. Nothing else needs the helper: the SSH proxy is a
 separate executable that reads a lease file (`SSMConnectKit/Package.swift:14`,
@@ -507,8 +519,8 @@ core, or change macOS signing claims through this refactor.
 | AC-14 | Run current profile/codec/store tests with `swift test --package-path SSMConnectKit`; cross-import v1/v2 fixtures, change attached files externally, race Save, and verify identity, unknown fields, consent and original bytes on conflict. Repeat native file-permission/rename cases. |
 | AC-15 | Controlled clock/expiry tests and native expiry/revocation scenarios: silent renewal, rejected refresh, one explicit login, pending-action resume, profile change, Stop and cancellation. Healthy established transports retain their target/auth context. |
 | AC-16 | On each platform, for Chrome Separate Browser and Zen in both modes at that platform's pinned versions, run consent/setup/restore, policy/ownership refusal and transport-loss scenarios. Selected private suffixes must fail closed while unrelated public browsing remains unchanged. |
-| AC-17 | Native Remote-SSH scenarios cover concurrent windows, expired authorization/lease recovery, dirty buffers, app interruption and confirmed replacement. On Windows and Linux, kill the helper during active editing: the editor channels end, unsaved windows remain, and editor recovery reconnects them through the replacement helper. Reopen the original workspace authority and verify remote commands/editing without bypassing host-key checks. |
-| AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
+| AC-17 | Native Remote-SSH scenarios cover concurrent windows, expired authorization/lease recovery, dirty buffers, app interruption and confirmed replacement. On Windows and Linux, start with VS Code closed, open a workspace through SSM Connect so it launches VS Code, create unsaved content, then kill the helper: VS Code keeps running with the unsaved content, its channels end, and editor recovery reconnects them through the replacement helper. Verify VS Code is outside the helper's job object or systemd unit. Reopen the original workspace authority and verify remote commands/editing without bypassing host-key checks. |
+| AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes, and VS Code, DCV Viewer and browser windows SSM Connect launched, keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
 | AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps working, and killing its helper produces the "updated; restart it" message. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps working, killing its helper shows the "removed; quit it" message, and after the user quits no owned process or file remains. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
