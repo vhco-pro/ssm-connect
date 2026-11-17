@@ -624,7 +624,36 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q21: Should the AWS client keep the SDK's configurable retry settings?
+
+**Recommendation:** A. Each review keeps finding another SDK retry setting to
+copy (`AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, shared config, now
+`AWS_NEW_RETRIES_2026`). SSM Connect sets none of them
+(`SSMConnectKit/Sources/SSMConnectKit/Services/EC2Clients.swift:33-36`), so a
+fixed policy equal to the SDK's defaults keeps what users get today and removes
+the settings mechanism.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. One fixed policy, the SDK's defaults** | The client always retries as the SDK does with nothing configured: the same attempts, backoff, retryable errors and retry-after handling, proven by the parity tests. Retry environment variables and shared-config retry settings no longer change SSM Connect. | A user who tuned AWS retries through those settings loses that effect in SSM Connect. |
+| **B. Copy every SDK retry setting** | Configured users keep their settings. | The client must track each SDK retry setting and feature flag, with parity tests for every combination, and follow new ones as AWS adds them. |
+
+**Why this is yours:** It removes existing, if unlikely, behavior. R-11 F-01 raised it.
+
+### Q22: Does the direct STS identity request move into the AWS client?
+
+**Recommendation:** A. It is an AWS request like the others, and one client for
+every request is what AC-28 promises. Today it bypasses the SDK
+(`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-25`) and
+serves the editor, web forwards and multi-user desktop paths.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Move it into the client as a twelfth operation** | GetCallerIdentity uses the client's signing, endpoints, retries and error results; the presign stays a client function the agent token uses. One AWS boundary with no exception. | Its retry and error behavior changes from today's direct request to the client's; the parity tests record the old behavior first. |
+| **B. Keep it as an explicit exception** | No change to that request. | A second AWS request path outside the client, named as an exception in AC-28. |
+
+**Why this is yours:** It decides whether one request keeps its current
+behavior or joins the common client. R-11 F-02 raised it.
 
 ## Review Log
 
@@ -641,6 +670,7 @@ None.
 | 2026-11-17 | R-8 | spec | `0936c83` | n/a | n/a | accepted by owner |
 | 2026-11-17 | R-9 | spec | `457a178` | gpt-6.1-sol | procedural | One blocking (task list still targets the SDK) and one should-fix |
 | 2026-11-17 | R-10 | spec | `a08d414` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
+| 2026-11-17 | R-11 | spec | `5d97336` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 
 ### R-1
 
@@ -894,6 +924,22 @@ SEVERITY: should-fix
 WHERE: Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T5, T27, T28, T29, T31, T36
 EVIDENCE: AC-28 requires each of the 11 operations to succeed against AWS natively on every platform. The revised tasks addressing R-9 F-01 do not schedule that complete check. T5 records one AWS response on Windows and Fedora. T27-T29 list the native acceptance rows to execute but omit AC-28. T36 requires documented macOS flows, while T31 names AC-28 evidence after dependency inspection and release rebuilds. Those checks do not establish all 11 native operation successes, particularly on Windows and Ubuntu.
 PROPOSAL: Add AC-28's operation checks to the native acceptance tasks for every matrix target. Require the final AC-28 evidence to include those executed results alongside the parity tests and artifact inspections.
+
+### R-11
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, lines 355-359; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35
+EVIDENCE: The configuration checks added for R-10 F-02 cover AWS_MAX_ATTEMPTS, AWS_RETRY_MODE and shared configuration, but omit AWS_NEW_RETRIES_2026. The pinned SDK reads that flag in [AWSRetryFeatures.swift](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/Retry/AWSRetryFeatures.swift). Its [configuration provider](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/AWSClientConfigDefaultsProvider.swift#L148-L159) passes the flag into retry strategy options. The pinned Smithy implementation changes backoff and retry quotas when it is enabled. A replacement that ignores this setting could pass the listed configuration cases while violating AC-28's retry-parity requirement.
+PROPOSAL: Extend T34 and AC-28's proof to cover the flag enabled, disabled and unset, including its effects on backoff, retry-after handling and quotas. Preserve the SDK's behavior unless the owner explicitly decides otherwise.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, AWS client description; Design / AWS client, lines 341-364; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35, T27-T29, T31
+EVIDENCE: The eleven-operation inventory covers SDK calls, but it does not cover every AWS request the application makes. Auth/STSIdentityResolver.swift:16-25 and 42-46 sends GetCallerIdentity directly through URLSession. ConnectionStateMachine.swift:529, WebForwardsStateMachine.swift:50 and RemoteDevelopmentStateMachine.swift:293 and 603 use that path. Design shares the STS signer but does not specify ownership of this HTTP request under the promise that every client reaches AWS through one client. The new AWS-client design and its eleven-operation proofs could therefore leave this existing request outside the required boundary.
+PROPOSAL: Define whether the direct STS request moves into the common client or remains an explicit exception with its existing semantics. Add a check establishing the selected boundary for editor, web and multi-user desktop identity requests.
 
 ## Sources
 
