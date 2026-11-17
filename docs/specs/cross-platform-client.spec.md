@@ -630,7 +630,22 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q23: Does the AWS client also ignore configured endpoints, and are its differences an explicit exception to macOS preservation?
+
+**Recommendation:** A. It applies the Q21 reasoning to endpoints: SSM Connect
+configures neither (`SSMConnectKit/Sources/SSMConnectKit/Services/InstanceConnectProviding.swift:15-17`),
+and copying the SDK's endpoint configuration (service and global environment
+variables, shared config and the ignore flag) is another mechanism to track.
+`AGENTS.md` requires preserving macOS behavior, so both differences are written
+there as named exceptions.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Ignore configured endpoints too; record both exceptions** | The client always uses the endpoint the SDK's resolver selects for the region. `AGENTS.md` and AC-20 name two exceptions to macOS preservation: retry settings and configured endpoints no longer affect SSM Connect. | Someone pointing AWS tools at a custom or local endpoint through those settings cannot redirect SSM Connect. |
+| **B. Honor configured endpoints; record only the retry exception** | Configured endpoints keep working as today. | The client copies the SDK's endpoint configuration and precedence, with parity tests for each source and the ignore flag. |
+
+**Why this is yours:** It removes existing behavior and changes a repository
+instruction. R-12 F-01 and F-02 raised it.
 
 ## Review Log
 
@@ -648,6 +663,7 @@ None.
 | 2026-11-17 | R-9 | spec | `457a178` | gpt-6.1-sol | procedural | One blocking (task list still targets the SDK) and one should-fix |
 | 2026-11-17 | R-10 | spec | `a08d414` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-17 | R-11 | spec | `5d97336` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
+| 2026-11-17 | R-12 | spec | `a3da4a4` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 
 ### R-1
 
@@ -917,6 +933,29 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary, AWS client description; Design / AWS client, lines 341-364; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35, T27-T29, T31
 EVIDENCE: The eleven-operation inventory covers SDK calls, but it does not cover every AWS request the application makes. Auth/STSIdentityResolver.swift:16-25 and 42-46 sends GetCallerIdentity directly through URLSession. ConnectionStateMachine.swift:529, WebForwardsStateMachine.swift:50 and RemoteDevelopmentStateMachine.swift:293 and 603 use that path. Design shares the STS signer but does not specify ownership of this HTTP request under the promise that every client reaches AWS through one client. The new AWS-client design and its eleven-operation proofs could therefore leave this existing request outside the required boundary.
 PROPOSAL: Define whether the direct STS request moves into the common client or remains an explicit exception with its existing semantics. Add a check establishing the selected boundary for editor, web and multi-user desktop identity requests.
+
+### R-12
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: AGENTS.md:27-28; Context / Owner summary; Scope / retained macOS behavior; Design / AWS client; Acceptance Criteria / AC-20, AC-28; Test Plan / AC-20, AC-28; Tasks / T34, T35, T36; Sources / Q21
+EVIDENCE: AGENTS.md requires preserving existing macOS behavior. The fixed-policy revision addressing R-11 F-01 deliberately removes behavior controlled by retry environment variables and shared configuration. Services/EC2Clients.swift:33-36 leaves retry configuration unset, and the pinned SDK's [AWSRetryConfig.swift](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/Retry/AWSRetryConfig.swift) resolves those settings. Q21 records the owner's policy choice, but the repository instruction and unconditional preservation requirements retain the conflicting contract.
+PROPOSAL: Raise an Open Question to authorize an explicit exception to the macOS preservation instruction for the selected retry-policy change. Fold the answer into the repository instruction and the affected preservation requirements without reopening the settled policy choice.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, endpoint preservation; Acceptance Criteria / AC-20, AC-28; Test Plan / AC-28; Tasks / T34, T35, T36
+EVIDENCE: The current SDK also selects endpoints from configuration. Services/InstanceConnectProviding.swift:15-17 supplies no endpoint override or ignore flag; the pinned SDK client invokes configuredEndpoint before resolving its endpoint. Its [AWSEndpointConfig.swift](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/Endpoints/AWSEndpointConfig.swift) resolves service-specific and global environment endpoints, shared-config endpoints and the ignore setting. The regional comparisons explicitly run without an override, while recorder comparisons supply their own endpoint. A replacement that ignores configured endpoints can pass both checks while changing the current application's request destination.
+PROPOSAL: Define and test configured-endpoint behavior, including precedence and the ignore setting, alongside regional resolution. Removing this existing behavior instead requires an owner decision and an explicit compatibility exception.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, STS retry policy; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35
+EVIDENCE: The revision addressing R-11 F-02 adds the STS identity request to the shared client and requires it to follow the client's retry policy. The proof assigns response and retry comparisons to the 11 SDK operations; its explicit STS checks establish request bytes and one successful native call. Existing Auth/STSIdentityResolverTests.swift:16-28 replaces fetch with closures, so it cannot establish HTTP retry behavior. T34 calls the checks parity tests without distinguishing this newly required STS policy from today's direct path, which performs one fetch at Auth/STSIdentityResolver.swift:16-22 and 45.
+PROPOSAL: Add explicit STS failure scenarios establishing the selected shared policy, including retryable responses, terminal rejection, backoff and cancellation. State that these expectations come from the new policy rather than retry parity with the old direct request.
 
 ## Sources
 
