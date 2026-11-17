@@ -632,6 +632,7 @@ None.
 | 2026-11-17 | R-7 | spec | `3b57fd0` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 | 2026-11-17 | R-8 | spec | `0936c83` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-17 | R-8 | spec | `0936c83` | n/a | n/a | accepted by owner |
+| 2026-11-17 | R-9 | spec | `457a178` | gpt-6.1-sol | procedural | One blocking (task list still targets the SDK) and one should-fix |
 
 ### R-1
 
@@ -846,6 +847,22 @@ PROPOSAL: Specify that editor UI survives outside the helper's teardown containe
 ### R-8
 
 NO FINDINGS
+
+### R-9
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Context / Owner summary, lines 67-74; Scope / AWS exclusions; Design / AWS client and First increment; Acceptance Criteria / AC-28; Test Plan / AC-23, AC-28; Tasks / T3-T5, T9
+EVIDENCE: The revision replaces the SDK with an application-owned client, requires Windows/Linux to use it first, and removes the SDK from shipped artifacts. The active task sequence still requires finding a Windows-compatible SDK release in T3, records the owner decision as pending, requests SDK versions in T5, and moves SDK clients in T9. No task implements or verifies AC-28. Under the pinned feature-document rules, this populated task list makes a planned feature proceed to implementation without requiring replanning. Following it therefore returns to the dependency blocker this revision resolves.
+PROPOSAL: Replan the unchecked task sequence around the selected AWS client, with failing parity tests first, native feasibility before extraction, and macOS cutover and dependency removal last. Preserve T3's investigation as historical evidence while removing its superseded requirement from the executable plan.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / One implementation, several shells, AWS boundary; Design / AWS client, lines 355-359; Acceptance Criteria / AC-28; Test Plan / AC-28
+EVIDENCE: The new AC-28 proof compares retry counts for recorded responses but never checks retry delays or transport failures. The pinned SDK supplies [backoff configuration](https://github.com/smithy-lang/smithy-swift/blob/31336dfea2e448523630ea1fe4d83ddc1156de3c/Sources/SmithyRetriesAPI/RetryStrategyOptions.swift), and its [retry classifier](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/Retry/AWSRetryErrorInfoProvider.swift) handles closed connections and HTTP timeout and transient failures. A replacement that retries immediately and never retries a closed connection could pass the stated response-count comparisons and native success scenarios while violating the promised retry parity. This gap comes from the AWS-client replacement introduced in this revision.
+PROPOSAL: Extend AC-28's proof with controlled-clock backoff checks and transport-failure scenarios against the pinned SDK behavior. Include cancellation during backoff and verify that it prevents another attempt.
 
 ## Sources
 
