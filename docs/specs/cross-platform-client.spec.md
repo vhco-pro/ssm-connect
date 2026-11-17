@@ -638,7 +638,46 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q24: Does the STS identity request keep its single attempt?
+
+**Recommendation:** A. Today it makes one attempt and fails on any non-success
+response (`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-22`).
+Keeping that inside the client preserves macOS behavior and needs no third
+exception or new failure scenarios.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Keep one attempt inside the client** | The request moves into the client (signing, endpoint, errors) but is never retried, exactly as today. | A transient STS error still fails the action, as it does now. |
+| **B. Retry it under the fixed policy** | Transient STS errors recover. | A third named exception to macOS preservation, with its own failure tests. |
+
+**Why this is yours:** It decides whether a behavior change is allowed. R-13 F-01 raised it.
+
+### Q25: What cleans up an editor proxy's plugin when the proxy itself is suspended?
+
+**Recommendation:** A. The editor proxy runs under VS Code's SSH, outside the
+helper's container, as on macOS today, and ends its plugin when its lease checks
+fail (`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:174-203`).
+A suspended proxy is the same gap macOS has now; supervising it is new
+machinery for a contrived case.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Keep today's proxy behavior** | The proxy ends its plugin when the lease owner is gone or VS Code's SSH closes; Design states that a suspended proxy is outside the cleanup guarantee, as on macOS. | A deliberately suspended proxy can leave its plugin running until it resumes or VS Code closes the SSH connection. |
+| **B. Contain the proxy's plugin separately** | The plugin ends even while the proxy is suspended. | A per-proxy job object or systemd unit plus a supervisor that runs without the proxy, on every platform, with native tests. |
+
+**Why this is yours:** It decides how far the cleanup guarantee reaches. R-13 F-02 raised it.
+
+### Q26: How do the three platforms share one release?
+
+**Recommendation:** A. It keeps one version authority and one release owner,
+as the delivery convention requires, while each platform publishes on its own.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. One workflow creates tag and release first; platforms attach assets** | `release.yml` computes the version, creates the tag and the GitHub Release before any build, then macOS, Windows and Linux jobs build and upload their own assets. A failed platform leaves its asset missing; rerunning that job uploads or replaces only its asset. WinGet submission runs after the Windows asset uploads. | The release can exist briefly with only some assets. |
+| **B. Separate tags and releases per platform** | Fully independent platform releases. | Three version streams and release pages to keep aligned. |
+
+**Why this is yours:** It shapes every release. R-13 F-03 raised it.
 
 ## Review Log
 
@@ -657,6 +696,7 @@ None.
 | 2026-11-17 | R-10 | spec | `a08d414` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-17 | R-11 | spec | `5d97336` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-17 | R-12 | spec | `a3da4a4` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
+| 2026-11-17 | R-13 | spec | `d64f65e` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 
 ### R-1
 
@@ -949,6 +989,29 @@ SEVERITY: should-fix
 WHERE: Design / AWS client, STS retry policy; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T34, T35
 EVIDENCE: The revision addressing R-11 F-02 adds the STS identity request to the shared client and requires it to follow the client's retry policy. The proof assigns response and retry comparisons to the 11 SDK operations; its explicit STS checks establish request bytes and one successful native call. Existing Auth/STSIdentityResolverTests.swift:16-28 replaces fetch with closures, so it cannot establish HTTP retry behavior. T34 calls the checks parity tests without distinguishing this newly required STS policy from today's direct path, which performs one fetch at Auth/STSIdentityResolver.swift:16-22 and 45.
 PROPOSAL: Add explicit STS failure scenarios establishing the selected shared policy, including retryable responses, terminal rejection, backoff and cancellation. State that these expectations come from the new policy rather than retry parity with the old direct request.
+
+### R-13
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: AGENTS.md:27-31; Context / Owner summary; Scope / macOS preservation; Design / Behavior, identity and local state; Design / AWS client; Acceptance Criteria / AC-20, AC-28; Test Plan / AC-20, AC-28; Tasks / T35, T36; Sources / Q21, Q22, Q23
+EVIDENCE: STSIdentityResolver.swift:16-22 and 45 makes one HTTP request and rejects a non-success response. Design:371-375 explicitly introduces retries for that request, but then names ignoring retry settings and configured endpoints as the only intended differences. AGENTS.md and AC-20 name only those two exceptions. A 503 followed by 200 fails under the existing implementation and succeeds under AC-28's new STS policy, even with no settings configured. The STS failure checks added in response to R-12 F-03 make this additional behavior change explicit without reconciling the preservation contract.
+PROPOSAL: Raise an Open Question authorizing the STS retry behavior as an additional compatibility exception, or deciding how to preserve the existing behavior. Apply the answer consistently to the repository instructions, summary, preservation requirements and proofs.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper failure; Design / Integration and feasibility, process containment and editor leases; Acceptance Criteria / AC-17, AC-18, AC-27; Test Plan / AC-17, AC-18, AC-27; Tasks / T16, T18, T19, T23, T24
+EVIDENCE: Design:283-295 places VS Code outside the helper's container and preserves its separate SSH proxy. RemoteSSHBridge.swift:115 and 174-185 shows that the editor's ProxyCommand starts its own Session Manager plugin. Those processes therefore do not inherit the helper's job or systemd unit. Their cleanup instead depends on the proxy executing its polling loop at lines 188-203. Suspending that proxy before killing the shell leaves its plugin outside the container being terminated, with no specified independent cleanup actor. T16 changes lease ownership but does not settle this failure path, and the native containment checks primarily inspect helper descendants.
+PROPOSAL: Define containment or independent supervision for editor proxy channels when the proxy cannot execute lease cleanup. Add a native scenario that suspends the proxy, terminates the shell or helper, and verifies bounded channel cleanup while VS Code and its unsaved content survive.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Scope / independently releasable artifacts and distribution; Design / Migration, performance and release boundaries; Acceptance Criteria / AC-24; Test Plan / AC-24; Tasks / T21, T26, T31
+EVIDENCE: Design retains release.yml while adding Windows and Linux publication workflows. The existing workflow computes and creates the version tag at .github/workflows/release.yml:34-39, then creates the GitHub Release only after the macOS build succeeds at lines 68-88. AC-24's proof requires publishing one platform without publishing another. The document does not define how Windows or Linux obtains a release when macOS fails or does not run, who owns release creation across concurrent workflows, or what happens when macOS later encounters an existing release. The pinned delivery convention requires one version authority and one release publication owner.
+PROPOSAL: Raise an Open Question selecting the release coordination policy, then name its version authority, release owner and retry behavior. Extend AC-24's proof to cover Windows or Linux publication without a macOS artifact, concurrent completion and retry after partial publication.
 
 ## Sources
 
