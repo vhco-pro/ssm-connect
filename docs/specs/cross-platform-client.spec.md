@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-15 applied. Needs a fresh review and re-acceptance."
+status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-16 applied. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -47,8 +47,9 @@ below.
 The owner has decided the open design choices. Each Windows and Linux shell
 runs its own private Swift helper as a child process over pipes, ending with the
 shell; macOS keeps linking the core in-process. Nothing is replayed: if the
-helper stops, its processes and editor channels end with it, in-flight actions
-fail and one replacement starts before the app shows an error with Retry.
+helper stops, its processes and editor channels end with it and in-flight
+actions fail. The app starts at most one automatic replacement, and none when
+the first helper fails at startup; otherwise it shows an error with Retry.
 Installing over or removing a running app asks first on Windows. On Linux the
 running app keeps its established connections, but from the moment the package
 changes it refuses every new action, including new editor channels from open VS
@@ -537,7 +538,10 @@ creates the tag and the GitHub Release before any platform builds; today it
 creates the release only after the macOS build
 (`.github/workflows/release.yml:34-88`). Separate macOS, Windows and Linux jobs
 then each build and upload only their own assets. A failed platform job leaves
-its asset missing without blocking the others. Published assets never change:
+its asset missing without blocking the others. Releases are created without GitHub's latest mark. The macOS job sets it after
+uploading its ZIP, unless a newer release already has a macOS ZIP, so
+Homebrew's sync, which reads the latest release, always finds a ZIP and a late
+older macOS build never displaces a newer one. Published assets never change:
 rerunning a job uploads only assets that are still missing, and a bad asset is
 fixed by releasing a new version, so Homebrew and WinGet checksums stay valid.
 The macOS job keeps
@@ -554,17 +558,26 @@ user agreeing. The Windows MSI uses Restart Manager to ask the user to close SSM
 Connect; closing ends its connections cleanly, and declining ends the install
 with nothing changed. On Linux a package upgrade or removal does not stop a
 running client: its established connections keep working until the user quits.
-Before launching the helper, the plugin or the editor proxy, the shell and helper
-check that the installed build matches their own. After an upgrade they refuse
+Before launching the helper, the plugin or the editor proxy, the launcher checks
+the exact file it is about to start: each bundled executable carries its build
+ID, and each build records the expected hash of its bundled plugin. A mismatched
+or unreadable file is refused, so a half-replaced or interrupted install never
+starts a mixed build. After an upgrade they refuse
 every new action with "SSM Connect was updated; restart it", and after removal
 with "SSM Connect was removed; quit it", instead of failing on a replaced or
 missing file. The editor proxy, which VS Code starts without the shell or helper,
 applies the same rule: each lease records its owner's build, and a proxy whose
-installed build differs refuses a new channel before any AWS call and prints the
+own build or plugin hash differs refuses a new channel before any AWS call and prints the
 "updated; restart it" message for VS Code to show. After removal the proxy is
 gone, so VS Code's SSH reports that it cannot start the connection. Established
 channels continue. The Windows uninstaller asks through Restart Manager, like the
 installer.
+
+Uninstalling removes the installed program files and transient transport
+artifacts (helper units, leases and temporary files). Profiles, settings,
+browser profiles, routing and restore files stay, as the browser feature
+requires after exit (`docs/specs/browser-bootstrap.spec.md:231-247`), so a
+reinstall continues where the user left off.
 
 A failed MSI rolls back. A failed `.rpm` or `.deb` install is repaired by
 installing the package again with dnf or apt; the install guide says so, and
@@ -608,10 +621,10 @@ core, or change macOS signing claims through this refactor.
 | AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes, and VS Code, DCV Viewer and browser windows SSM Connect launched, keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
-| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection, and starting a new connection, opening VS Code, requesting a new channel from an already open VS Code window, and killing the helper each produce the "updated; restart it" message without launching anything or calling AWS. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, a new channel from an open VS Code window fails with VS Code's SSH connection error and no AWS call, and after the user quits no owned process or file remains. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
+| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection, and starting a new connection, opening VS Code, requesting a new channel from an already open VS Code window, and killing the helper each produce the "updated; restart it" message without launching anything or calling AWS. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, a new channel from an open VS Code window fails with VS Code's SSH connection error and no AWS call, and after the user quits no program file or transient artifact (helper unit, lease, temporary file) remains while profiles, settings, browser profiles and routing and restore files are still present. Pause an `.rpm` and a `.deb` upgrade after one bundled file is replaced and verify that new actions from the running client and from an open VS Code window are refused with the "updated; restart it" message and nothing mixed starts. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
 | AC-22 | First record the comparison hosts and then the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app on the baseline Mac and at most 1.5 times for Windows and Linux on their recorded hosts. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift, AWS client commit and plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
-| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. With the macOS job failing, the Windows and Linux jobs still publish their assets to the release; rerunning a platform job after its assets were published uploads nothing and leaves every published asset byte-identical, and Homebrew and WinGet installs still verify; platform jobs finishing at the same time leave one release holding every asset. |
+| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. With the macOS job failing, the Windows and Linux jobs still publish their assets to the release; rerunning a platform job after its assets were published uploads nothing and leaves every published asset byte-identical, and Homebrew and WinGet installs still verify; platform jobs finishing at the same time leave one release holding every asset. A Windows/Linux-only release is not marked latest; a macOS ZIP uploaded to an older release after a newer one already has its ZIP leaves the newer release latest; the Homebrew sync then installs the latest macOS ZIP. |
 | AC-25 | With fake ports recording every call, run each action with each required capability reported missing (Session Manager plugin for every action, OpenSSH and VS Code for editor actions, browser for managed browsing); assert the refusal names that capability and zero AWS calls, process launches and configuration writes were recorded. With DCV Viewer reported missing, a desktop connection keeps its tunnel up with the current warning, as `ConnectionStateMachineTests` requires today. Repeat natively on each matrix target with one capability removed, with every outbound connection from the client's process tree blocked and logged at the operating system (a network namespace whose only route is a logging proxy on Linux, an audited outbound firewall rule on Windows): no connection attempt is logged, no child process starts and no configuration file changes. A positive control build that sends the direct STS identity request (`STSIdentityResolver`) before refusing must make this check fail. |
 | AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
 | AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper and all its descendants; killing only the helper during an established transport, with the shell running, ends every descendant before the replacement helper starts; killing the helper mid-StartSession fails that command with "core stopped", one replacement starts, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. A replacement that exits at once, never completes its handshake, or stops answering heartbeats leads, within the stated limits, to "SSM Connect core unavailable" with Retry and no further automatic restart; a first helper that never handshakes leads there without any automatic restart; after ten healthy minutes one automatic restart is available again; a pending command whose cancel is not confirmed within 10 seconds leads to helper replacement. |
@@ -648,8 +661,8 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T18 `windows/tests/SSMConnect.App.Tests/HelperHostTests.cs` - failing tests for the helper host: a job object per helper, terminate and wait empty before a replacement, one automatic restart under the handshake, heartbeat and cancel limits with its re-arm, the error with Retry, single instance, user apps started outside the job, and the "updated; restart it" message on a build mismatch; done: they fail because the host does not exist (AC-18, AC-27, AC-21)
 - [ ] T19 `windows/src/SSMConnect.App/HelperHost.cs` - the helper host; done: T18 passes (AC-18, AC-27)
 - [ ] T20 `windows/src/SSMConnect.App/` - the WPF shell reapplied from `ce24cf2` without connection rules: settings, tray, profile files, clipboard, notifications, startup, and launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
-- [ ] T21 `packaging/windows/`, `.github/workflows/release.yml` - restructure the release workflow to create the tag and GitHub Release before platform jobs, with the macOS job uploading its existing assets, and add the Windows job: a per-user WiX MSI with the Restart Manager close prompt, WinGet manifest hashed from the built MSI, and notices; done: a dispatched run on a test tag creates the release first, the macOS and Windows jobs upload independently, a rerun of a job uploads only missing assets and changes no published one, the manifest validates, and the unpacked MSI holds the helper, runtime and notices (AC-21, AC-24)
-- [ ] T22 `SSMConnectKit/Sources/SSMConnectLinux/` - core-side Linux adapters: user-only atomic files, key-value store, plugin and SSH process launch, VS Code, Chrome and Zen discovery with per-platform pinned versions, and the installed-build check before every launch; done: adapter tests pass on Fedora 43 and Ubuntu 24.04 (AC-19, AC-16, AC-17)
+- [ ] T21 `packaging/windows/`, `.github/workflows/release.yml` - restructure the release workflow to create the tag and GitHub Release before platform jobs, with the macOS job uploading its existing assets, and add the Windows job: a per-user WiX MSI with the Restart Manager close prompt, WinGet manifest hashed from the built MSI, and notices; done: a dispatched run on a test tag creates the release first without the latest mark, the macOS job marks it latest after its ZIP unless a newer release has one, the macOS and Windows jobs upload independently, a rerun of a job uploads only missing assets and changes no published one, the manifest validates, and the unpacked MSI holds the helper, runtime and notices (AC-21, AC-24)
+- [ ] T22 `SSMConnectKit/Sources/SSMConnectLinux/` - core-side Linux adapters: user-only atomic files, key-value store, plugin and SSH process launch, VS Code, Chrome and Zen discovery with per-platform pinned versions, and the build-ID and plugin-hash check of the exact file before every launch; done: adapter tests pass on Fedora 43 and Ubuntu 24.04 (AC-19, AC-16, AC-17)
 - [ ] T23 `linux/tests/helper_host_test.cpp` - failing tests for the helper host: a transient systemd user service bound to the shell's scope, creating that scope when missing, stop and wait empty before a replacement, the restart limits, single instance, and user apps in their own transient scopes; done: they fail because the host does not exist (AC-18, AC-27)
 - [ ] T24 `linux/src/helper_host.cpp` - the helper host; done: T23 passes (AC-18, AC-27)
 - [ ] T25 `linux/src/`, `linux/qml/` - the Qt 6 shell with a StatusNotifierItem tray, launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
@@ -663,44 +676,7 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-### Q31: How does a running Linux client decide that a launch is safe while its package is being replaced?
-
-**Recommendation:** A. RPM replaces files one at a time, so a build marker file
-can disagree with the executables beside it. Checking the executable that is
-about to start removes the window.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Check the target executable itself** | Each bundled executable carries its build ID, and the helper's build records the expected hash of the bundled plugin. Before starting the helper, the proxy or the plugin, the launcher reads that file's build ID or hash and refuses on any mismatch or unreadable file with the "updated; restart it" message. A half-replaced or interrupted install therefore refuses instead of starting a mixed build. | A hash and build-ID check before every launch. |
-| **B. Leave the marker check** | Nothing more to build. | During replacement or after an interrupted install, a launch can start a file from the other build. |
-
-**Why this is yours:** It decides how strict the Q29 rule is. R-16 F-01 raised it.
-
-### Q32: What does uninstalling remove?
-
-**Recommendation:** A. It matches how Windows installers and Linux packages
-normally treat user data, and the browser feature already keeps its routing and
-restore files after exit (`docs/specs/browser-bootstrap.spec.md:231-247`).
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Program files and transient artifacts only** | Uninstall removes installed program files and transient transport artifacts (helper units, leases, temporary files). Profiles, settings, browser profiles, routing and restore files stay, so a reinstall picks up where the user left off. | User data stays on disk after uninstall until the user deletes it. |
-| **B. Remove user data too** | Nothing is left behind. | Silently deletes profiles and browser data, against the browser feature's contract. |
-
-**Why this is yours:** It decides what users lose on uninstall. R-16 F-02 raised it.
-
-### Q33: How does Homebrew find the macOS build when a release is published without it, or out of order?
-
-**Recommendation:** A. Homebrew's sync reads the release GitHub marks latest
-(`vhco-pro/homebrew-tap` sync-cask). Marking latest only from the macOS job
-keeps that working without changing the tap.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Only the macOS job marks a release latest** | Releases are created without the latest mark. The macOS job sets it after uploading its ZIP, unless a newer release already has a macOS ZIP. A Windows/Linux-only release never becomes latest, and a late older macOS build never displaces a newer one. | GitHub's latest release can lag a newer Windows/Linux-only release. |
-| **B. Change the tap to pick the newest release with a ZIP** | Latest stays the newest version. | A change to the homebrew-tap repository and its own tests. |
-
-**Why this is yours:** It decides what "latest" means across platforms. R-16 F-03 raised it.
+None.
 
 ## Review Log
 
@@ -1142,7 +1118,9 @@ PROPOSAL: State the bounded restart policy in the summary, including initial sta
   resolver with the China correction as a third exception (Q27); published
   assets never change (Q28); a running Linux client keeps its connections but
   refuses new actions after an upgrade or removal (Q29); the editor proxy refuses
-  new channels the same way (Q30); the same failure rules for every helper with
+  new channels the same way (Q30); launches check the exact executable's build
+  (Q31); uninstall keeps user data (Q32); only the macOS job marks a release
+  latest (Q33); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
   closing on Windows and running until quit on Linux during installs (Q18); the
 Linux helper unit bound to the shell's systemd scope (Q19); a failed Linux
