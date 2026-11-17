@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Native Swift model/helper checks pass on Windows/Linux and the Linux dependency probe passes; Windows dependency build and the remaining design decisions are unresolved."
+status_description: "Owner decisions Q1-Q7 folded after R-1; awaiting a fresh independent spec review and owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -44,25 +44,31 @@ them over current macOS code. The preserved implementation is accessible through
 Git history, not included as a second active core. Extraction pointers appear
 below.
 
-Native spikes now execute unchanged Swift model/parser code and a small helper
-on both Windows and Linux. The locked SDK/YAML probe passes on Linux, while the
-Windows AWS CRT dependency build fails with both tested build backends.
-Full workflows, authentication, transports and native adapters remain unverified.
-The GUI/core bridge and its command recovery rules, supported OS/CPU matrix,
-Linux interface, performance budgets, Windows dependency remedy and Windows/Linux
-distribution remain owner decisions. These subset checks do not
-establish support for the complete application.
+The owner has decided the open design choices. Windows and Linux shells talk
+to a bundled, user-scoped Swift helper over private IPC; macOS keeps linking the
+core in-process. The bridge never replays a command with side effects: after a
+lost or late reply the shell reads fresh state. The first release targets macOS
+14+ on Apple silicon, Windows 11 x64, Fedora 43 x86-64 with KDE Plasma 6 and
+Ubuntu 24.04 LTS x86-64. Linux gets a Qt 6 shell; Windows keeps WPF. Windows ships
+a per-user, unsigned WiX MSI through WinGet; Linux ships `.rpm` and `.deb` files
+on the GitHub Release. Code signing (SignPath Foundation) and apt/dnf
+repositories on pkg.vhco.pro are later features. Performance is held to the
+current macOS release: the refactored macOS app within 10% of it on every
+metric, Windows and Linux within 1.5 times.
 
-This document is a draft and replaces the old two-core scope. Its historical
-acceptance and passing tests do not accept or verify this revision. The current
-request authorizes branch preparation, preservation and specification work,
-not the application rewrite, installation, live AWS access or release. The owner
-requested branch-first preparation for this revision; main remains unchanged.
-Further work uses vh-adlc review, acceptance, tasks and implementation gates.
-The owner's subsequent request authorizes publishing this consolidation branch,
-retiring the old SDD flow and running bounded, credential-free portability and
-integration spikes. It does not authorize the production rewrite or live AWS,
-browser, editor or workstation operations.
+Native spikes execute unchanged Swift model/parser code and a small helper on
+Windows and Linux. The locked SDK/YAML probe passes on Linux; the Windows AWS CRT
+build fails with both build backends. The first implementation increment fixes
+that through an upstream packaging fix or a compatible release, without a fork.
+Full workflows, authentication, transports and native adapters are unverified,
+and no criterion is met by these subset checks.
+
+This draft replaces the old two-core scope; its historical acceptance and
+passing tests do not carry over. The owner has authorized branch preparation,
+preservation, specification and bounded credential-free spikes, not the
+production rewrite, installation, live AWS, browser, editor or workstation
+operations, or a release. Further work goes through vh-adlc review, acceptance,
+tasks and implementation gates.
 
 ### Existing workflow and baseline
 
@@ -143,7 +149,7 @@ dependencies:
 Changing the backend alone therefore does not unblock the locked Windows
 dependency build. This identifies dependency packaging/build work to investigate
 before a production migration, rather than a reason to translate the Swift core.
-Q5 records that decision. No dependency patch or upgrade was applied.
+The owner chose an upstream packaging fix or compatible release first (see Design). No dependency patch or upgrade was applied.
 
 These are subset and dependency-loading checks. No full connection state
 machine, real SSO/refresh, SSM session, native GUI or desktop integration has
@@ -162,7 +168,14 @@ Included:
 - Reuse historical Swift separation, Windows UI/adapters, fixtures and packaging
   work selectively, with current regression tests.
 - Preserve profile compatibility, consent, target identity, recovery and
-  independently releasable platform artifacts.
+  independently releasable platform artifacts, including macOS upgrade from and
+  rollback to the current release.
+- Support this first-release matrix: macOS 14 or later on Apple silicon (the
+  current release baseline), Windows 11 x64, Fedora 43 x86-64 with KDE Plasma 6,
+  and Ubuntu 24.04 LTS x86-64 with its default desktop.
+- Ship a per-user WiX MSI for Windows, attached to the GitHub Release and
+  published through WinGet as `VHCo.SSMConnect`, and `.rpm` (Fedora) and `.deb`
+  (Ubuntu) packages attached to the GitHub Release.
 
 Not included:
 
@@ -172,9 +185,12 @@ Not included:
 - Replacing Session Manager plugin, OpenSSH, Amazon DCV or their wire protocols.
 - Changes to remote workstation infrastructure, SSH policy, browser policy or
   the companion session agent merely to make a client test pass.
-- Claiming every OS, Linux distribution, desktop, browser or CPU is supported.
-  Initial targets are the owner's macOS, Windows and Linux hosts; the exact
-  supported matrix is Q2.
+- Any OS, distribution, desktop or CPU outside the matrix above, including
+  Windows on ARM64. A target is added later only with dependency and native proof.
+- Code signing for Windows or Linux artifacts. Windows signing through SignPath
+  Foundation is a later feature; the MSI ships unsigned.
+- Hosted apt or dnf repositories. Signed repositories on pkg.vhco.pro are a later
+  feature.
 - Automatically including unfinished features from related specifications.
 
 ## Design
@@ -197,8 +213,9 @@ packaged for its OS/architecture. Native adapters remain necessary beyond the UI
 
 The presentation layer renders snapshots and sends commands. It must not
 reimplement AWS sequencing, retry rules, profile validation or target/lease
-ownership. C# may remain the language of a Windows shell and adapter; that does
-not justify retaining the separate C# core.
+ownership. The Windows shell stays C#/WPF and the Linux shell is Qt 6, with its
+tray icon through StatusNotifierItem. Neither justifies retaining the separate
+C# core.
 
 Use the historical target split as prior art:
 
@@ -219,38 +236,62 @@ that every API used is portable.
 
 ### Integration and feasibility
 
-Q1 selects an embedded library interface or a bundled user-scoped helper with
-private IPC. Both expose high-level commands, ordered state/events, typed
-failures, cancellation and explicit shutdown. UI updates must remain responsive.
-Do not pass Swift object layouts directly across a foreign-language boundary.
-Do not implement both integration mechanisms as permanent alternatives.
+Windows and Linux shells drive the core through a bundled, user-scoped Swift
+helper over private IPC: a named pipe whose ACL admits only the signed-in user's
+SID on Windows, and a Unix domain socket in a user-only directory under
+`$XDG_RUNTIME_DIR` on Linux. The macOS app links the core in-process, as today.
+The helper exposes high-level commands, ordered state/events, typed failures,
+cancellation and explicit shutdown, and UI updates stay responsive. Swift object
+layouts never cross a foreign-language boundary, and no embedded-library
+interface is kept as an alternative.
 
-If a helper is chosen, define framing, version negotiation, endpoint/process
+The helper protocol defines framing, version negotiation, endpoint/process
 ownership, failure reporting and crash cleanup. It is not an unauthenticated
 localhost web service. SSH raw-stream proxy traffic remains separate from
 control messages; diagnostics must not corrupt its stdout.
 
+Command delivery follows these rules on every shell:
+
+- Each command carries a shell-chosen correlation ID and the session generation
+  the shell last observed. The core processes commands in arrival order and
+  answers each with exactly one terminal result: completed, failed with a typed
+  error, cancelled or superseded.
+- A completion whose generation is older than the core's current one is
+  discarded and reported as superseded, extending the generation check that
+  `AuthorizationSession` applies today
+  (`SSMConnectKit/Sources/SSMConnectKit/Auth/AuthorizationSession.swift:197-226`)
+  to every command with side effects.
+- Neither the shell nor the helper resends a command with side effects, such as
+  starting an instance, an SSM session or desktop provisioning. When a reply is
+  lost or the connection drops, the shell reconnects, requests a state snapshot
+  and shows the result; the user decides whether to act again.
+- A helper crash ends its owned child processes and server-side sessions as
+  AC-18 requires, and the shell starts a fresh helper with a new generation.
+
 Before broad extraction, the first accepted implementation increment must prove
-the selected bridge and exact Swift dependency stack on native Windows and
-Linux. Exercise SSO authorization/refresh, an AWS service call, real SSM/plugin
-I/O, cancellation and owned-child cleanup. A dependency blocker stops that
-increment for an owner decision; it does not silently authorize another core
-language, duplicated workflow or CLI-based authentication fallback.
+the helper and the exact Swift dependency stack on native Windows and Linux.
+Exercise SSO authorization/refresh, an AWS service call, real SSM/plugin I/O,
+cancellation and owned-child cleanup. On Windows it first removes the AWS CRT
+build failure through an upstream aws-crt-swift packaging fix or a compatible
+SDK/CRT release; the project does not maintain a fork. If neither is available
+within that increment, it stops for an owner decision. A blocker never silently
+authorizes another core language, a platform-specific AWS adapter, a duplicated
+workflow or a CLI-based authentication fallback.
 
 The authorized, credential-free spike is reproducible through
 [swift-portability.yml](../../.github/workflows/swift-portability.yml) and
 [its runner](../../spikes/swift-portability/run.sh). It uses native
 `ubuntu-24.04` and `windows-2025` hosted runners as test environments, not a
 promised desktop support matrix. It compiles the existing region validator and
-AWS config parser unchanged, exercises a small Swift helper over private
-stdin/stdout pipes, then builds/loads the currently locked AWS SDK modules and
+AWS config parser unchanged, runs a small Swift helper with stdin redirected
+from a request file and stdout/stderr redirected to files
+(`spikes/swift-portability/run.sh:29-31`), then builds/loads the currently locked AWS SDK modules and
 YAML dependency in an isolated package.
 
 This is not a GUI, complete extracted workflow or production IPC protocol.
 Passing it does not prove SSO login/refresh, real SSM traffic, process
-containment, filesystem security or native browser/editor integration. The
-spike does not read AWS credentials or perform service calls. Q1 remains open
-while the helper approach is evaluated.
+containment, filesystem security or native browser/editor integration. It proves batch command processing, not interactive IPC. The spike does not
+read AWS credentials or perform service calls.
 
 ### Behavior, identity and local state
 
@@ -260,9 +301,12 @@ browser consent/restore, native VS Code, authorization recovery, rolling leases
 and explicitly confirmed workstation replacement.
 
 Desktop, web and editor actions remain independent. Headless paths must not
-fetch a DCV password, provision a desktop or launch Viewer. Unsupported required
-capabilities produce an actionable refusal before AWS or local setup effects;
-they never silently downgrade to a different connection mode.
+fetch a DCV password, provision a desktop or launch Viewer. Before any AWS call,
+process launch or configuration write, the core checks that every capability the
+requested action needs is available on this platform, such as DCV Viewer, the
+Session Manager plugin, OpenSSH, VS Code or a supported browser. A missing one
+produces an actionable refusal naming it; the action never silently downgrades
+to a different connection mode.
 
 Keep stable local profile and editor authority identities. Do not copy lease
 ownership, browser paths or user consent from one machine to another. Preserve
@@ -318,19 +362,31 @@ remains local and was not added to the publishable branch.
 
 Refactor in reviewed increments with a working macOS rollback point. Preserve
 profiles and local integration metadata; do not perform irreversible migrations
-or redirect healthy connections during extraction.
+or redirect healthy connections during extraction. The macOS stores keep their
+keys and versions: `ssmconnect.profiles.v1`, `ssmconnect.attachments.v1`,
+`ssmconnect.portableDocuments.v1` and the related settings keys
+(`SSMConnectKit/Sources/SSMConnectKit/Services/ProfileStore.swift:21-25`), and the
+version 1 editor recovery document
+(`SSMConnectKit/Sources/SSMConnectKit/Services/EditorRecoveryStore.swift:35-39`).
+State written by the refactored app stays readable by the current release, so
+reinstalling it is a working rollback.
 
-Measure startup, idle memory/CPU, UI responsiveness and connection latency.
-Language choice does not establish performance parity. Q4 sets numeric budgets
-and a reproducible baseline before this draft can be accepted.
+Language choice does not establish performance parity. The first implementation
+task measures the current macOS release on its native host: startup to ready,
+settled idle RSS and CPU, UI command response, and cold and warm connection
+time, each repeated under a recorded workload. Those results are recorded here
+as the baseline. The refactored macOS app must stay within 1.10 times the
+baseline on every metric; Windows and Linux clients within 1.5 times it.
 
 Retain the existing macOS release path through
 [release.yml](../../.github/workflows/release.yml),
 [release.sh](../../scripts/release.sh), the GitHub release ZIP and the Homebrew
 cask. New helper/framework artifacts, if selected, must be bundled, licensed and
-signed with the application. Windows and Linux need native build/test/package
-paths, prerequisite checks and install/upgrade/uninstall verification for the
-chosen matrix. Do not resurrect old release workflows as if they publish the new
+signed with the application. Windows builds a per-user WiX MSI on a native
+runner, attaches it to the GitHub Release and submits a WinGet manifest for
+`VHCo.SSMConnect` whose SHA-256 matches that MSI. Linux builds `.rpm` and `.deb`
+packages for the matrix and attaches them to the GitHub Release. Each needs
+prerequisite checks and install/upgrade/uninstall verification on its target. Do not resurrect old release workflows as if they publish the new
 core, or change macOS signing claims through this refactor.
 
 ## Acceptance Criteria
@@ -346,15 +402,18 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-19: Profiles, ordinary state/events, diagnostics and temporary artifacts do not expose credentials or tokens; local caches and integration artifacts enforce the target OS's ownership and permission rules.
 - [ ] AC-20: The macOS application retains its current native interaction and documented desktop, browser, editor and recovery behavior while using the extracted core.
 - [ ] AC-21: Every declared Windows/Linux artifact installs, starts with its required dependencies, upgrades and uninstalls correctly on its declared native OS/CPU/desktop matrix.
-- [ ] AC-22: Each declared client meets the owner-approved numeric startup, idle-resource, responsiveness and connection-latency budgets established under Q4.
+- [ ] AC-22: Each declared client meets the startup, idle-resource, responsiveness and connection-latency budgets in Design against the recorded macOS baseline: 1.10 times for the refactored macOS app and 1.5 times for Windows and Linux.
 - [ ] AC-23: Supported Windows and Linux clients complete real SSO/refresh, AWS/SSM/plugin and native-integration scenarios; cross-compilation is not their sole support evidence.
 - [ ] AC-24: macOS, Windows and Linux artifacts remain independently buildable and releasable, with all selected core/helper assets and required notices present in their final packages.
+- [ ] AC-25: An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode.
+- [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
+- [ ] AC-27: Across the helper boundary, every command receives exactly one terminal result; completions from an older generation are discarded; and a lost, late or concurrent reply never repeats a command with side effects.
 
 ## Test Plan
 
 | Criterion | Proof |
 | --- | --- |
-| AC-11 | Boundary checks and common-core tests on each OS, plus a native UI command/event drive-through proving all clients invoke the same Swift implementation. Inspect the built dependency graph for duplicate production workflows. |
+| AC-11 | Boundary checks and common-core tests on each OS, plus a native UI command/event drive-through proving the macOS app (in-process) and the Windows and Linux shells (through the helper) invoke the same Swift implementation. Inspect the built dependency graph for duplicate production workflows. |
 | AC-12 | On each supported native DCV target, connect in both modes, exercise readiness failure/retry and agent rejection, and verify authenticated Viewer access plus cleanup. Rejection must not fall back to a shared identity. |
 | AC-13 | Run headless, web-only and editor-only flows with DCV unavailable; assert zero password/provision/Viewer operations and verify an owned working transport. Repeat with concurrent capabilities. |
 | AC-14 | Run current profile/codec/store tests with `swift test --package-path SSMConnectKit`; cross-import v1/v2 fixtures, change attached files externally, race Save, and verify identity, unknown fields, consent and original bytes on conflict. Repeat native file-permission/rename cases. |
@@ -364,115 +423,25 @@ core, or change macOS signing claims through this refactor.
 | AC-18 | Kill only the owned test client/process by PID, then check local child containment and server-session recovery; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
-| AC-21 | Install the final packaged payload on a clean native target, verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Record exact OS/CPU/desktop and artifact hash. |
-| AC-22 | Before acceptance, record numeric limits in this document. On matched native targets measure repeated startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the recorded workload; compare every metric to its approved limit. |
+| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Record exact OS/CPU/desktop and artifact hash. |
+| AC-22 | First record the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure repeated startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app and at most 1.5 times for Windows and Linux. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift/SDK/plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
-| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Verify one platform's release does not require publishing another's. |
+| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. |
+| AC-25 | With fake ports recording every call, run each action with each required capability reported missing (DCV Viewer, Session Manager plugin, OpenSSH, VS Code, browser); assert the refusal names that capability and zero AWS calls, process launches and configuration writes were recorded. Repeat natively on each matrix target with one capability removed and `AWS_ENDPOINT_URL` pointed at a local recording endpoint: it receives no request, no child process starts and no configuration file changes. |
+| AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; make one change; reinstall the current release and verify it reads the state with the same identities, consent and restore. |
+| AC-27 | Helper protocol tests with a controllable transport: two concurrent commands each get one terminal result; a reply dropped after an SSM session starts leads to a state snapshot and exactly one recorded StartSession; a completion arriving after cancel or a generation bump is reported superseded and changes no state; a helper killed mid-command leaves no owned child process and the next helper reports a new generation. |
 
 ## Tasks
 
-None yet. Resolve the questions, review the exact spec commit independently and
-obtain owner acceptance before generating one-commit tasks through vh-adlc.
-The branch preparation and historical snapshot are not implementation tasks or
-evidence that the criteria above are met.
+None yet. After a clean independent review and owner acceptance, generate
+one-commit tasks through vh-adlc. The first are the macOS performance baseline
+and the Windows/Linux helper and dependency increment. The branch preparation
+and historical snapshot are not implementation tasks or evidence that the
+criteria above are met.
 
 ## Open Questions
 
-### Q1: How should non-Swift native interfaces call the shared core?
-
-**Recommendation:** A. Evaluate a bundled user-scoped helper first, preserving
-Swift core ownership while avoiding foreign-language object and async ABI coupling.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Bundled helper with private IPC** | One command/event interface usable by different native UI languages. | Another owned process, protocol/versioning, secure IPC and lifecycle packaging. |
-| **B. Embedded library with a small C-compatible interface** | In-process calls without a separate core process. | Per-language bindings, async callback/cancellation and memory ownership work. |
-
-**Why this is yours:** This changes deployment, debugging and the integration
-contract. Neither option has been proven for this app on Windows/Linux.
-
-### Q2: Which OS versions, CPUs and Linux desktops are required for the first supported release?
-
-**Recommendation:** A. Name the owner's actual Windows/Linux targets and retain
-the current macOS baseline; add other targets only with dependency and native proof.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. An explicit initial host matrix** | Bounded native acceptance and packaging. | Other distributions, desktops and architectures remain unsupported until added. |
-| **B. A broader declared matrix immediately** | More initial supported environments. | Additional toolchains, dependency/Viewer checks, native runners and packaging. |
-
-**Why this is yours:** Swift availability alone does not establish SDK, plugin,
-browser, DCV or desktop integration support. No Fedora/Ubuntu or CPU choice has
-been inferred from an unrelated tagged file.
-
-### Q3: Which native interface should Linux use?
-
-**Recommendation:** A. Select a desktop-native toolkit after Q2, while retaining
-the existing macOS UI and evaluating reuse of the Windows WPF shell.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. A Linux-native shell over the shared core** | Native desktop integration without changing the existing macOS interface. | A separate presentation layer and its toolkit bindings. |
-| **B. A shared Windows/Linux presentation toolkit** | More shared UI code. | Changes to the existing WPF shell and a separate native-integration assessment. |
-
-**Why this is yours:** Core reuse does not decide the desktop toolkit or tray,
-accessibility and Wayland/X11 experience.
-
-### Q4: What measured performance budgets must the migration preserve?
-
-**Recommendation:** A. Measure the current macOS app and approve numeric
-tolerances plus explicit Windows/Linux limits before accepting this spec.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Baseline-relative macOS limits and explicit new-platform budgets** | Evidence-based parity with the working app. | Native baseline collection and an owner budget decision before implementation. |
-| **B. Fixed absolute limits for all platforms** | One initial pass/fail target independent of the old app. | Choosing limits without current measurements may exclude usable hosts or miss regressions. |
-
-**Why this is yours:** Performance equivalence cannot be inferred from retaining
-Swift. This branch preparation ran no application benchmarks.
-
-### Q5: How should the Windows AWS dependency blocker be investigated next?
-
-**Recommendation:** A. Evaluate a bounded upstream SDK/CRT packaging fix or
-compatible release first, preserving the shared Swift AWS path where practical.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Investigate SDK/CRT Windows package support** | Maximum reuse of the current Swift AWS integration. | A separate native dependency spike, plus review of any required upstream change or upgrade. |
-| **B. Evaluate a platform-specific AWS adapter behind the Swift workflow ports** | A supported native SDK can provide Windows AWS operations without duplicating connection decisions. | More adapter/bridge work and explicit authentication/cache contract tests. |
-
-**Why this is yours:** Both tested build backends fail in the currently locked
-CRT dependency. The scope does not authorize maintaining a dependency fork,
-changing SDKs, or silently choosing a second implementation.
-
-### Q6: What must the core guarantee when a command's reply is lost, late or concurrent?
-
-**Recommendation:** A. Never replay a command that has side effects; after an uncertain result
-the shell reads the core's current state and the user decides. This reuses the generation check
-`AuthorizationSession` already applies and adds no deduplication store.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Correlated commands, stale-result rejection, no automatic replay** | Each command carries an ID and the core's session generation; the core drops completions from an older generation and answers a lost reply with a fresh state snapshot. No duplicate SSM session or provisioning from a retry. | After a lost reply the user may have to repeat an action the snapshot shows did not happen. |
-| **B. Idempotency keys with safe replay** | The shell can resend after reconnecting and the core removes duplicates by key, so recovery is automatic. | A key store with a lifetime, its own crash and restart rules, and tests that prove every side-effecting command honours it. |
-
-**Why this is yours:** It fixes the contract every shell and both Q1 options are built against,
-and it decides whether a recovered action can be repeated without the user. R-1 F-01 raised it.
-
-### Q7: How are the Windows and Linux clients packaged and distributed?
-
-**Recommendation:** A. Keep the August Windows decision and choose the Linux format with Q2 and Q3,
-so the earlier delivery work and its install, upgrade and uninstall lessons stay usable.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Per-user unsigned WiX MSI through WinGet; Linux format chosen with Q2/Q3** | The channel the earlier Windows client was built and tested for (`VHCo.SSMConnect`), with no elevation and no certificate cost. | SmartScreen shows no publisher name and Smart App Control may block the binary until signing is adopted. A WinGet manifest and submission path to rebuild. |
-| **B. GitHub Release artifacts only for the first release** | A smaller first delivery: an installer and a Linux archive attached to each release. | No package-manager install or upgrade; WinGet and Linux repositories become a later feature. |
-| **C. Signed artifacts from the first release** | A publisher identity in SmartScreen and fewer blocked launches. | A certificate or SignPath enrolment, signing in release automation and a manifest re-hash after signing. |
-
-**Why this is yours:** This revision dropped the August requirements for a Windows installer and
-WinGet without replacing them. The choice decides which artifacts AC-21 and AC-24 test and which
-publication paths release automation needs. R-1 F-04 raised it.
+None.
 
 ## Review Log
 
@@ -522,6 +491,12 @@ PROPOSAL: Describe the spike as using redirected stdin/stdout files. Retain its 
 - Owner direction on 2026-11-12: preserve working Swift, share its core across
   macOS/Windows/Linux, permit component redesign, adopt vh-adlc and prepare a
   clean consolidation branch before implementation.
+- Owner decisions on 2026-11-17 in session: a bundled helper (Q1); the
+  matrix of Windows 11 x64, Fedora 43 x86-64 KDE Plasma 6 and Ubuntu 24.04 LTS
+  x86-64 (Q2); a Qt 6 Linux shell (Q3); baseline-relative budgets of 1.10 and 1.5
+  times (Q4); an upstream SDK/CRT fix first (Q5); no automatic replay (Q6); an
+  unsigned per-user MSI through WinGet, `.rpm` and `.deb` on the GitHub Release,
+  with SignPath signing and pkg.vhco.pro repositories as later features (Q7).
 - [Current main baseline](https://github.com/vhco-pro/ssm-connect/commit/eb4f0bc0b8f98f206ed519feb461c70ba3614b41):
   application source and release behavior retained by this branch.
 - `git show 2aa079d:docs/specs/cross-platform-client.spec.md`: the original
