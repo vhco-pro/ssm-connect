@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-12 applied. Needs a fresh review and re-acceptance."
+status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-13 applied. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -333,6 +333,10 @@ Command delivery follows these rules:
   channels (`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:40-63`)
   just as a macOS app crash ends them. VS Code keeps unsaved windows, and the
   existing editor recovery flow reconnects them through the replacement helper.
+  The proxy and the plugin it starts run under VS Code's SSH, outside the
+  helper's container, as on macOS today; they end when the lease owner is gone
+  or VS Code closes the SSH connection. A proxy that is itself suspended is
+  outside this cleanup guarantee, as on macOS today.
 - An AWS call whose response never arrives is handled inside the core exactly as
   the in-process macOS app handles it today. The client
   has no server-side session cleanup today
@@ -368,9 +372,9 @@ which becomes the client's one fixed policy (attempts, backoff, retryable errors
 and retry-after handling), so retry environment variables and shared-config retry
 settings no longer affect SSM Connect; and the error results the app's existing
 translation receives, so the typed errors and messages users see stay the same.
-The STS identity request takes the same fixed policy and error handling; that
-is a new behavior for it, since today's direct path makes one attempt
-(`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-22`).
+The STS identity request keeps its current single attempt inside the client:
+it is never retried and fails on any non-success response, as today's direct
+path does (`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-22`).
 Ignoring retry settings and configured endpoints are the only intended
 differences from the current macOS app, recorded as exceptions in `AGENTS.md`. Signature Version 4 signing is implemented
 once and also produces the presigned STS token. Credentials and tokens never
@@ -520,14 +524,20 @@ baseline is taken. Changing any of those hosts or OS builds means measuring the
 baseline again. The refactored macOS app must stay within 1.10 times the
 baseline on every metric; Windows and Linux clients within 1.5 times it.
 
-Retain the existing macOS release path through
-[release.yml](../../.github/workflows/release.yml),
-[release.sh](../../scripts/release.sh), the GitHub release ZIP and the Homebrew
-cask. New helper/framework artifacts, if selected, must be bundled, licensed and
-signed with the application. Windows builds a per-user WiX MSI on a native
-runner, attaches it to the GitHub Release and submits a WinGet manifest for
-`VHCo.SSMConnect` whose SHA-256 matches that MSI. Linux builds `.rpm` and `.deb`
-packages for the matrix and attaches them to the GitHub Release. Each needs
+[release.yml](../../.github/workflows/release.yml) stays the one version
+authority and release owner. It computes the version with GitVersion, then
+creates the tag and the GitHub Release before any platform builds; today it
+creates the release only after the macOS build
+(`.github/workflows/release.yml:34-88`). Separate macOS, Windows and Linux jobs
+then each build and upload only their own assets. A failed platform job leaves
+its asset missing without blocking the others, and rerunning that job uploads
+or replaces only its asset. The macOS job keeps
+[release.sh](../../scripts/release.sh), the ZIP and the Homebrew cask. New
+helper/framework artifacts must be bundled, licensed and signed with the
+application. The Windows job builds a per-user WiX MSI on a native runner,
+uploads it, and then submits a WinGet manifest for `VHCo.SSMConnect` whose
+SHA-256 matches that MSI. The Linux job builds `.rpm` and `.deb` packages for
+the matrix and uploads them. Each needs
 prerequisite checks and install/upgrade/uninstall verification on its target.
 
 Installing, upgrading or removing never interrupts a running client without the
@@ -567,7 +577,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-25: An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode.
 - [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
 - [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
-- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path and follows the client's retry policy.
+- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path and keeps its single attempt.
 
 ## Test Plan
 
@@ -586,11 +596,11 @@ core, or change macOS signing claims through this refactor.
 | AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps working, and killing its helper produces the "updated; restart it" message. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps working, killing its helper shows the "removed; quit it" message, and after the user quits no owned process or file remains. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
 | AC-22 | First record the comparison hosts and then the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app on the baseline Mac and at most 1.5 times for Windows and Linux on their recorded hosts. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift, AWS client commit and plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
-| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. |
+| AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. With the macOS job failing, the Windows and Linux jobs still publish their assets to the release; rerunning one platform job replaces only its assets; platform jobs finishing at the same time leave one release holding every asset. |
 | AC-25 | With fake ports recording every call, run each action with each required capability reported missing (Session Manager plugin for every action, OpenSSH and VS Code for editor actions, browser for managed browsing); assert the refusal names that capability and zero AWS calls, process launches and configuration writes were recorded. With DCV Viewer reported missing, a desktop connection keeps its tunnel up with the current warning, as `ConnectionStateMachineTests` requires today. Repeat natively on each matrix target with one capability removed, with every outbound connection from the client's process tree blocked and logged at the operating system (a network namespace whose only route is a logging proxy on Linux, an audited outbound firewall rule on Windows): no connection attempt is logged, no child process starts and no configuration file changes. A positive control build that sends the direct STS identity request (`STSIdentityResolver`) before refusing must make this check fail. |
 | AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
 | AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper and all its descendants; killing only the helper during an established transport, with the shell running, ends every descendant before the replacement helper starts; killing the helper mid-StartSession fails that command with "core stopped", one replacement starts, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. A replacement that exits at once, never completes its handshake, or stops answering heartbeats leads, within the stated limits, to "SSM Connect core unavailable" with Retry and no further automatic restart; a first helper that never handshakes leads there without any automatic restart; after ten healthy minutes one automatic restart is available again; a pending command whose cancel is not confirmed within 10 seconds leads to helper replacement. |
-| AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 SDK operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message. Under a controlled clock, with no retry settings configured, the delays between attempts match the pinned SDK's retry strategy options; closed connections, HTTP timeouts and transient transport failures are retried as the SDK's retry classifier retries them; and cancelling during a backoff wait ends the call without another attempt; the existing error-translation tests pass on the client. Separately, without an endpoint override, the SDK's endpoint resolver and the client's give the same production endpoint for every service in standard, China and GovCloud regions. With `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, `AWS_NEW_RETRIES_2026` or a shared-config retry setting present, the client's attempts and delays are unchanged; with `AWS_ENDPOINT_URL`, a service-specific endpoint variable or a shared-config endpoint present, every request still goes to the resolver's regional endpoint. For the STS identity request under the new fixed policy (not compared with today's single attempt): a throttling or 5xx response is retried with the policy's delays, an access-denied response fails at once with its typed error, and cancelling during backoff makes no further attempt. The STS identity request recorded from today's direct path matches the client's request byte for byte after signing with the same time. Each of the 12 requests succeeds once against AWS natively on every matrix target. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. |
+| AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 SDK operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message. Under a controlled clock, with no retry settings configured, the delays between attempts match the pinned SDK's retry strategy options; closed connections, HTTP timeouts and transient transport failures are retried as the SDK's retry classifier retries them; and cancelling during a backoff wait ends the call without another attempt; the existing error-translation tests pass on the client. Separately, without an endpoint override, the SDK's endpoint resolver and the client's give the same production endpoint for every service in standard, China and GovCloud regions. With `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, `AWS_NEW_RETRIES_2026` or a shared-config retry setting present, the client's attempts and delays are unchanged; with `AWS_ENDPOINT_URL`, a service-specific endpoint variable or a shared-config endpoint present, every request still goes to the resolver's regional endpoint. The STS identity request makes exactly one attempt: a throttling, 5xx or access-denied response fails at once with the same typed error as today. The STS identity request recorded from today's direct path matches the client's request byte for byte after signing with the same time. Each of the 12 requests succeeds once against AWS natively on every matrix target. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. |
 
 ## Tasks
 
@@ -604,7 +614,7 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T2 `docs/specs/cross-platform-client.spec.md` - record the named comparison hosts and the current macOS release baseline from T1 as an annotation under this task; done: the annotation names the Mac, Windows and Linux hosts with OS builds, the workload and every median (AC-22)
 - [ ] T32 `SSMConnectKit/Tests/SSMConnectAWSClientTests/SigV4Tests.swift` - failing tests built from the published Signature Version 4 test suite and the existing STS presign cases; done: they fail because the signer does not exist (AC-28)
 - [ ] T33 `SSMConnectKit/Sources/SSMConnectAWSClient/SigV4.swift` - the signer, used by the STS presign as well; done: T32 and the existing STS tests pass on macOS, Linux and Windows CI runners (AC-28)
-- [ ] T34 `SSMConnectKit/Tools/FixtureRecorder/`, `SSMConnectKit/Tests/SSMConnectAWSClientTests/` - record, from the current SDK-based code through a local endpoint, the request, a success, a throttling response and each translated service error for all 11 SDK operations and the STS identity request from today's direct path, and write failing parity tests for requests, retry counts, resolver-level endpoints in standard, China and GovCloud regions without an override, the fixed retry policy and regional endpoint unaffected by retry and endpoint settings in the environment and shared config, STS failure scenarios under the new policy, controlled-clock backoff delays, transport failures, cancellation during backoff and the resulting typed errors; done: the tests fail because the client does not exist (AC-28)
+- [ ] T34 `SSMConnectKit/Tools/FixtureRecorder/`, `SSMConnectKit/Tests/SSMConnectAWSClientTests/` - record, from the current SDK-based code through a local endpoint, the request, a success, a throttling response and each translated service error for all 11 SDK operations and the STS identity request from today's direct path, and write failing parity tests for requests, retry counts, resolver-level endpoints in standard, China and GovCloud regions without an override, the fixed retry policy and regional endpoint unaffected by retry and endpoint settings in the environment and shared config, STS single-attempt failure scenarios, controlled-clock backoff delays, transport failures, cancellation during backoff and the resulting typed errors; done: the tests fail because the client does not exist (AC-28)
 - [ ] T35 `SSMConnectKit/Sources/SSMConnectAWSClient/` - the client: REST JSON, EC2 Query, AWS Query and AWS JSON 1.1 encoding, endpoint resolution, the fixed retry policy and error results for the 12 requests, with `STSIdentityResolver` moved onto it; done: T34 passes on macOS, Linux and Windows CI runners (AC-28)
 - [ ] T4 `spikes/helper-feasibility/` - minimal Swift helper built from the current SSO, SSM and plugin sources and the T35 AWS client behind stub UI ports, speaking over stdin/stdout; done: it builds natively on Windows 11 x64 and Fedora 43 x86-64 (AC-23, AC-28)
 - [ ] T5 `docs/specs/cross-platform-client.spec.md` - run T4 on Windows 11 x64 and Fedora 43 and record exact Swift, AWS client commit and plugin versions, interactive SSO and refresh, an AWS response, usable SSM traffic, cancellation and owned-process cleanup as an annotation under this task; done: every item is recorded as observed (AC-23)
@@ -623,12 +633,12 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T18 `windows/tests/SSMConnect.App.Tests/HelperHostTests.cs` - failing tests for the helper host: a job object per helper, terminate and wait empty before a replacement, one automatic restart under the handshake, heartbeat and cancel limits with its re-arm, the error with Retry, single instance, user apps started outside the job, and the "updated; restart it" message on a build mismatch; done: they fail because the host does not exist (AC-18, AC-27, AC-21)
 - [ ] T19 `windows/src/SSMConnect.App/HelperHost.cs` - the helper host; done: T18 passes (AC-18, AC-27)
 - [ ] T20 `windows/src/SSMConnect.App/` - the WPF shell reapplied from `ce24cf2` without connection rules: settings, tray, profile files, clipboard, notifications, startup, and launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
-- [ ] T21 `packaging/windows/`, `.github/workflows/release-windows.yml` - per-user WiX MSI with the Restart Manager close prompt, WinGet manifest hashed from the built MSI, and notices; done: the workflow builds the MSI and validates the manifest, and the unpacked MSI holds the helper, runtime and notices (AC-21, AC-24)
+- [ ] T21 `packaging/windows/`, `.github/workflows/release.yml` - restructure the release workflow to create the tag and GitHub Release before platform jobs, with the macOS job uploading its existing assets, and add the Windows job: a per-user WiX MSI with the Restart Manager close prompt, WinGet manifest hashed from the built MSI, and notices; done: a dispatched run on a test tag creates the release first, the macOS and Windows jobs upload independently, a rerun of one job replaces only its asset, the manifest validates, and the unpacked MSI holds the helper, runtime and notices (AC-21, AC-24)
 - [ ] T22 `SSMConnectKit/Sources/SSMConnectLinux/` - core-side Linux adapters: user-only atomic files, key-value store, plugin and SSH process launch, VS Code, Chrome and Zen discovery with per-platform pinned versions; done: adapter tests pass on Fedora 43 and Ubuntu 24.04 (AC-19, AC-16, AC-17)
 - [ ] T23 `linux/tests/helper_host_test.cpp` - failing tests for the helper host: a transient systemd user service bound to the shell's scope, creating that scope when missing, stop and wait empty before a replacement, the restart limits, single instance, and user apps in their own transient scopes; done: they fail because the host does not exist (AC-18, AC-27)
 - [ ] T24 `linux/src/helper_host.cpp` - the helper host; done: T23 passes (AC-18, AC-27)
 - [ ] T25 `linux/src/`, `linux/qml/` - the Qt 6 shell with a StatusNotifierItem tray, launching VS Code, DCV Viewer and browsers at the helper's request; done: a UI drive-through test shows every action reaching the helper as a command (AC-11, AC-14)
-- [ ] T26 `packaging/linux/`, `.github/workflows/release-linux.yml` - `.rpm` and `.deb` whose maintainer scripts only run non-fatal cache refreshes, with notices; done: the workflow builds both and the package inspection in the AC-21 and AC-24 rows passes (AC-21, AC-24)
+- [ ] T26 `packaging/linux/`, `.github/workflows/release.yml` - the Linux job: `.rpm` and `.deb` whose maintainer scripts only run non-fatal cache refreshes, with notices; done: the Linux job builds and uploads both on a test tag, publishes with the macOS job failed, and the package inspection in the AC-21 and AC-24 rows passes (AC-21, AC-24)
 - [ ] T36 `SSMConnectKit/Package.swift`, `SSMConnectKit/Package.resolved`, `SSMConnectKit/Sources/SSMConnectAWS/` - switch macOS to the client and remove aws-sdk-swift and aws-crt-swift from the package; done: the complete macOS package suite and `scripts/release.sh` pass, the documented macOS flows run natively on the client, and the resolved package graph has no aws-sdk-swift, aws-crt-swift or Smithy module (AC-28, AC-20)
 - [ ] T27 `docs/specs/cross-platform-client.spec.md` - macOS native acceptance: the AC-20 flows, the AC-26 upgrade and rollback scenario, and the macOS parts of the AC-12 to AC-19 and AC-25 rows, and each of the 12 AWS requests once against AWS on macOS; done: an evidence line under each criterion exercised (AC-28, AC-20, AC-26, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-25)
 - [ ] T28 `docs/specs/cross-platform-client.spec.md` - Windows 11 x64 native acceptance of the AC-12 to AC-19, AC-21, AC-23, AC-25 and AC-27 rows, and each of the 12 AWS requests once against AWS on Windows 11 x64; done: an evidence line under each criterion exercised (AC-28, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
@@ -638,46 +648,7 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-### Q24: Does the STS identity request keep its single attempt?
-
-**Recommendation:** A. Today it makes one attempt and fails on any non-success
-response (`SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-22`).
-Keeping that inside the client preserves macOS behavior and needs no third
-exception or new failure scenarios.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Keep one attempt inside the client** | The request moves into the client (signing, endpoint, errors) but is never retried, exactly as today. | A transient STS error still fails the action, as it does now. |
-| **B. Retry it under the fixed policy** | Transient STS errors recover. | A third named exception to macOS preservation, with its own failure tests. |
-
-**Why this is yours:** It decides whether a behavior change is allowed. R-13 F-01 raised it.
-
-### Q25: What cleans up an editor proxy's plugin when the proxy itself is suspended?
-
-**Recommendation:** A. The editor proxy runs under VS Code's SSH, outside the
-helper's container, as on macOS today, and ends its plugin when its lease checks
-fail (`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:174-203`).
-A suspended proxy is the same gap macOS has now; supervising it is new
-machinery for a contrived case.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Keep today's proxy behavior** | The proxy ends its plugin when the lease owner is gone or VS Code's SSH closes; Design states that a suspended proxy is outside the cleanup guarantee, as on macOS. | A deliberately suspended proxy can leave its plugin running until it resumes or VS Code closes the SSH connection. |
-| **B. Contain the proxy's plugin separately** | The plugin ends even while the proxy is suspended. | A per-proxy job object or systemd unit plus a supervisor that runs without the proxy, on every platform, with native tests. |
-
-**Why this is yours:** It decides how far the cleanup guarantee reaches. R-13 F-02 raised it.
-
-### Q26: How do the three platforms share one release?
-
-**Recommendation:** A. It keeps one version authority and one release owner,
-as the delivery convention requires, while each platform publishes on its own.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. One workflow creates tag and release first; platforms attach assets** | `release.yml` computes the version, creates the tag and the GitHub Release before any build, then macOS, Windows and Linux jobs build and upload their own assets. A failed platform leaves its asset missing; rerunning that job uploads or replaces only its asset. WinGet submission runs after the Windows asset uploads. | The release can exist briefly with only some assets. |
-| **B. Separate tags and releases per platform** | Fully independent platform releases. | Three version streams and release pages to keep aligned. |
-
-**Why this is yours:** It shapes every release. R-13 F-03 raised it.
+None.
 
 ## Review Log
 
@@ -1034,7 +1005,9 @@ PROPOSAL: Raise an Open Question selecting the release coordination policy, then
   SSM Connect AWS client on every platform, macOS switched last (replacing Q5);
   a fixed SDK-default retry policy (Q21); the STS identity request moved into
   the client (Q22); configured endpoints ignored too, with both differences
-  recorded as exceptions in `AGENTS.md` and AC-20 (Q23); the same failure rules for every helper with
+  recorded as exceptions in `AGENTS.md` and AC-20 (Q23); the STS request kept at
+  one attempt (Q24); today's editor proxy cleanup kept (Q25); one release created
+  before platform jobs that attach their own assets (Q26); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
   closing on Windows and running until quit on Linux during installs (Q18); the
 Linux helper unit bound to the shell's systemd scope (Q19); a failed Linux
