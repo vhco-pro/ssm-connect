@@ -541,6 +541,7 @@ None.
 | 2026-11-17 | R-4 | spec | `70c8856` | gpt-6.1-sol | procedural | One blocking (Windows job cleanup on helper exit) and four should-fix |
 | 2026-11-17 | R-5 | spec | `4c1906f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix and one nit |
 | 2026-11-17 | R-6 | spec | `828865e` | gpt-6.1-sol | procedural | One blocking (rpm/deb failure recovery overstated) and one nit |
+| 2026-11-17 | R-7 | spec | `3b57fd0` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 
 ### R-1
 
@@ -742,6 +743,15 @@ SEVERITY: nit
 WHERE: Context / Owner summary, lines 52-53; Design / Migration, performance and release boundaries, lines 460-469; Acceptance Criteria / AC-21; Test Plan / AC-21; Sources / Q18
 EVIDENCE: The summary says Linux installation and removal wait for the user to quit. Design and AC-21's proof instead allow package changes while the client remains running, with specific errors if its helper subsequently needs replacement. The detailed behavior is defined; the summary describes a different timing policy.
 PROPOSAL: Say that Linux leaves the running client active during upgrade or removal until the user quits, and mention the restart or quit requirement if its helper is lost.
+
+### R-7
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary, helper failure; Scope / native integration adapters; Design / One implementation, several shells, platform adapters; Design / Integration and feasibility, containment and editor recovery; Acceptance Criteria / AC-17, AC-18, AC-27; Test Plan / AC-17, AC-18, AC-27
+EVIDENCE: Design terminates every process in the helper's container after helper failure while promising that VS Code retains unsaved windows. The current editor launcher invokes the editor through Process at SSMConnectKit/Sources/SSMConnectKit/StateMachine/RemoteDevelopmentStateMachine.swift:70-71 and 637-643. Reusing that launch inside the helper can place a newly started editor inside its teardown container. Windows child processes inherit job membership by default, according to Microsoft's [Job Objects documentation](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects); Linux unit cleanup kills its contained processes, as documented by [systemd.kill](https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html). The specification does not define how editor UI escapes that lifetime. AC-17's helper-failure scenario does not require VS Code to be initially closed, so it can pass using an existing editor process while missing this failure.
+PROPOSAL: Specify that editor UI survives outside the helper's teardown container while its owned access channels remain revocable. Require native tests that start with VS Code closed, launch it through SSM Connect, create unsaved content and kill the helper, then verify that the editor survives and reconnects through recovery.
 
 ## Sources
 
