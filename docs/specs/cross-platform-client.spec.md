@@ -64,12 +64,16 @@ repositories on pkg.vhco.pro are later features. Performance is held to the
 current macOS release: the refactored macOS app within 10% of it on every
 metric, Windows and Linux within 1.5 times.
 
-Native spikes execute unchanged Swift model/parser code and a small helper on
-Windows and Linux. The locked SDK/YAML probe passes on Linux; the Windows AWS CRT
-build fails with both build backends. The first implementation increment fixes
-that through an upstream packaging fix or a compatible release, without a fork.
-Full workflows, authentication, transports and native adapters are unverified,
-and no criterion is met by these subset checks.
+AWS's Swift SDK and its C runtime do not support Windows, and AWS treats
+Windows as a backlog feature request. The core therefore reaches AWS through
+its own small client for the 11 operations it uses, on every platform. The app
+already runs SSO and its credential cache itself and passes the SDK fixed
+credentials, so the SDK only signs, sends and parses those calls. The client is
+proven on Linux and Windows first; macOS switches to it last, once its full
+suite and native flows pass, and the SDK and its C runtime then leave every
+build. Native spikes execute unchanged Swift model/parser code and a small
+helper on Windows and Linux. Full workflows, authentication, transports and
+native adapters are unverified, and no criterion is met by these subset checks.
 
 This draft replaces the old two-core scope; its historical acceptance and
 passing tests do not carry over. The owner has authorized branch preparation,
@@ -155,9 +159,16 @@ dependencies:
   `source/bsd` in that branch. The native backend is also deprecated.
 
 Changing the backend alone therefore does not unblock the locked Windows
-dependency build. This identifies dependency packaging/build work to investigate
-before a production migration, rather than a reason to translate the Swift core.
-The owner chose an upstream packaging fix or compatible release first (see Design). No dependency patch or upgrade was applied.
+dependency build, and no newer release does either. aws-crt-swift v0.64.3, the
+latest, still compiles `aws-c-io/source/bsd` on Windows; AWS states on
+[aws-crt-swift#289](https://github.com/awslabs/aws-crt-swift/issues/289) that
+neither aws-crt-swift nor aws-sdk-swift supports Windows; and the one community
+attempt, [aws-crt-swift#290](https://github.com/awslabs/aws-crt-swift/pull/290),
+closed in 2024. The SDK signs and sends through those C libraries, so upstream
+Windows support means porting several of them. The app uses 11 SDK operations
+and passes the SDK static credentials it obtained itself
+(`SSMConnectKit/Sources/SSMConnectKit/Services/SSMClients.swift:20-30`), and it
+already signs its STS identity request without the SDK (`STSPresigner`).
 
 These are subset and dependency-loading checks. No full connection state
 machine, real SSO/refresh, SSM session, native GUI or desktop integration has
@@ -199,6 +210,8 @@ Not included:
   Foundation is a later feature; the MSI ships unsigned.
 - Hosted apt or dnf repositories. Signed repositories on pkg.vhco.pro are a later
   feature.
+- AWS operations beyond those the app uses today, a fork of aws-sdk-swift or
+  aws-crt-swift, or contributing Windows support to them.
 - Automatically including unfinished features from related specifications.
 
 ## Design
@@ -231,14 +244,14 @@ Use the historical target split as prior art:
 | --- | --- |
 | `SSMConnectDomain` | Models, validation, portable document semantics, state/event values and typed errors. |
 | `SSMConnectWorkflow` | Authentication and desktop/web/editor orchestration against injected ports. |
-| `SSMConnectAWS` | Swift SDK calls, credential providers and error translation. |
+| `SSMConnectAWS` | The SSM Connect AWS client below: signing, the operations the app uses, retries and error translation. |
 | Platform adapters | Native files, process containment, browser/editor integration, clipboard, notifications and startup. |
 | UI/composition | Native presentation, user consent, event observation and dependency assembly. |
 
 Names may be adjusted when tasks are written. Preserve compatibility through
 the existing umbrella where needed; do not make current macOS callers migrate
 unnecessarily. Domain/workflow boundaries must not import AppKit, SwiftUI,
-Darwin, ServiceManagement, UserNotifications or expose AWS SDK/native UI types.
+Darwin, ServiceManagement, UserNotifications or expose AWS client or native UI types.
 Foundation APIs also require platform checks; importing Foundation is not proof
 that every API used is portable.
 
@@ -323,14 +336,43 @@ Command delivery follows these rules:
   none: an SSM session AWS started before a helper stop, whose ID the client never
   received, ends at the account's Session Manager idle timeout.
 
+### AWS client
+
+The core reaches AWS through one SSM Connect AWS client on every platform,
+written in Swift on Foundation's `URLSession` (FoundationNetworking on Linux and
+Windows) and an XML parser for EC2 responses. It implements exactly the
+operations the app uses today:
+
+| Service | Operations | Protocol |
+| --- | --- | --- |
+| SSO OIDC | RegisterClient, StartDeviceAuthorization, CreateToken | REST JSON, unsigned |
+| SSO | GetRoleCredentials | REST JSON, SSO bearer token |
+| EC2 | DescribeInstances, StartInstances, StopInstances | EC2 Query, Signature Version 4 |
+| Systems Manager | DescribeInstanceInformation, StartSession | AWS JSON 1.1, Signature Version 4 |
+| Secrets Manager | GetSecretValue | AWS JSON 1.1, Signature Version 4 |
+| EC2 Instance Connect | SendSSHPublicKey | AWS JSON 1.1, Signature Version 4 |
+
+It reproduces what the current SDK configuration does for these calls: the
+regional endpoint the SDK resolves for each region, its retry behavior, and the
+error results the app's existing translation receives, so the typed errors and
+messages users see stay the same. Signature Version 4 signing is implemented
+once and shared with the existing STS presign. Credentials and tokens never
+appear in logs or errors. The client adds no operation the app does not use,
+and the project does not fork aws-sdk-swift or aws-crt-swift.
+
+Linux and Windows use the client from their first build. The macOS app keeps
+aws-sdk-swift until its full package suite and documented native flows pass on
+the client; it then switches, and aws-sdk-swift and aws-crt-swift are removed
+from the package, so no shipped artifact contains them. Contributing Windows
+support to aws-crt-swift is not part of this feature.
+
+### First increment
+
 Before broad extraction, the first accepted implementation increment must prove
-the helper and the exact Swift dependency stack on native Windows and Linux.
-Exercise SSO authorization/refresh, an AWS service call, real SSM/plugin I/O,
-cancellation and owned-child cleanup. On Windows it first removes the AWS CRT
-build failure through an upstream aws-crt-swift packaging fix or a compatible
-SDK/CRT release; the project does not maintain a fork. If neither is available
-within that increment, it stops for an owner decision. A blocker never silently
-authorizes another core language, a platform-specific AWS adapter, a duplicated
+the helper and the AWS client on native Windows and Linux. Exercise SSO
+authorization/refresh, an AWS service call, real SSM/plugin I/O, cancellation
+and owned-child cleanup. A blocker there stops the increment for an owner
+decision; it never silently authorizes another core language, a duplicated
 workflow or a CLI-based authentication fallback.
 
 The authorized, credential-free spike is reproducible through
@@ -508,6 +550,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-25: An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode.
 - [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
 - [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
+- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app.
 
 ## Test Plan
 
@@ -525,11 +568,12 @@ core, or change macOS signing claims through this refactor.
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
 | AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps working, and killing its helper produces the "updated; restart it" message. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps working, killing its helper shows the "removed; quit it" message, and after the user quits no owned process or file remains. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
 | AC-22 | First record the comparison hosts and then the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app on the baseline Mac and at most 1.5 times for Windows and Linux on their recorded hosts. |
-| AC-23 | Native Windows/Linux feasibility records must include exact Swift/SDK/plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
+| AC-23 | Native Windows/Linux feasibility records must include exact Swift, AWS client commit and plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
 | AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. |
 | AC-25 | With fake ports recording every call, run each action with each required capability reported missing (Session Manager plugin for every action, OpenSSH and VS Code for editor actions, browser for managed browsing); assert the refusal names that capability and zero AWS calls, process launches and configuration writes were recorded. With DCV Viewer reported missing, a desktop connection keeps its tunnel up with the current warning, as `ConnectionStateMachineTests` requires today. Repeat natively on each matrix target with one capability removed, with every outbound connection from the client's process tree blocked and logged at the operating system (a network namespace whose only route is a logging proxy on Linux, an audited outbound firewall rule on Windows): no connection attempt is logged, no child process starts and no configuration file changes. A positive control build that sends the direct STS identity request (`STSIdentityResolver`) before refusing must make this check fail. |
 | AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
 | AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper and all its descendants; killing only the helper during an established transport, with the shell running, ends every descendant before the replacement helper starts; killing the helper mid-StartSession fails that command with "core stopped", one replacement starts, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. A replacement that exits at once, never completes its handshake, or stops answering heartbeats leads, within the stated limits, to "SSM Connect core unavailable" with Retry and no further automatic restart; a first helper that never handshakes leads there without any automatic restart; after ten healthy minutes one automatic restart is available again; a pending command whose cancel is not confirmed within 10 seconds leads to helper replacement. |
+| AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message; the existing error-translation tests pass on the client. Each operation succeeds once against AWS natively on each platform. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. |
 
 ## Tasks
 
@@ -820,7 +864,8 @@ NO FINDINGS
   editor, web forwards and tunnels primary on targets without a GUI (Q11);
   orphaned SSM sessions left to the idle timeout (Q12); a transient systemd user
   service on Linux (Q13); one automatic restart, then a visible error (Q14); fixed
-  named comparison hosts (Q15); the same failure rules for every helper with
+  named comparison hosts (Q15); after T3 found no Windows support upstream, one
+  SSM Connect AWS client on every platform, macOS switched last (replacing Q5); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
   closing on Windows and running until quit on Linux during installs (Q18); the
 Linux helper unit bound to the shell's systemd scope (Q19); a failed Linux
