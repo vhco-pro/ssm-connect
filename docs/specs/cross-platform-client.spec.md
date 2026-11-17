@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Spec review R-8 is clean with no open questions; awaiting owner acceptance. The Windows AWS CRT build remains the first increment's blocker."
+status: planned
+status_description: "Accepted by the owner on 2026-11-17 after clean spec review R-8; next step is the task list. The Windows AWS CRT build remains the first increment's blocker."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -533,7 +533,7 @@ core, or change macOS signing claims through this refactor.
 
 ## Tasks
 
-None yet. After a clean independent review and owner acceptance, generate
+None yet. The spec is accepted; generate
 one-commit tasks through vh-adlc. The first are the macOS performance baseline
 and the Windows/Linux helper and dependency increment. The branch preparation
 and historical snapshot are not implementation tasks or evidence that the
