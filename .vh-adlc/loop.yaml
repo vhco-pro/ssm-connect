@@ -1,0 +1,48 @@
+# Loop settings for the shared vh-adlc development loop.
+# The plugin's references/loop-settings.md documents every field.
+schema_version: 1
+
+# Authoring and implementation run on Opus. Independent reviews go to GPT through the Codex CLI:
+# spec reviews read-only, implementation reviews workspace-write under the route's preservation check.
+roles:
+  author:
+    route: host
+    model: opus
+  implementer:
+    route: host
+    model: opus
+  spec_reviewer:
+    route: command
+    model: gpt-6.1-sol
+    model_attestation: codex-session
+    argv:
+      - /usr/bin/codex
+      - exec
+      - --json
+      - --skip-git-repo-check
+      - -s
+      - read-only
+      - -m
+      - "{model}"
+      - "{prompt}"
+  implementation_reviewer:
+    route: command
+    model: gpt-6.1-sol
+    model_attestation: codex-session
+    argv:
+      - /usr/bin/codex
+      - exec
+      - --json
+      - -s
+      - workspace-write
+      - -m
+      - "{model}"
+      - "{prompt}"
+
+instruction_files:
+  - AGENTS.md
+  - CLAUDE.md
+
+review_scratch:
+  - SSMConnectKit/.build
+  - .build

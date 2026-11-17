@@ -475,6 +475,6 @@ No independent review or acceptance has been recorded for this revision.
 - [Pinned aws-crt-swift manifest](https://github.com/awslabs/aws-crt-swift/blob/d1678252cb3da2d34f70db43e402927360df4d8c/Package.swift):
   its Windows `aws-c-io` exclusions omit `source/bsd`, consistent with the native
   backend's observed attempt to compile the BSD kqueue source on Windows.
-- [Feature-document conventions](https://github.com/vhco-pro/docs/blob/d8f07c9dd69038375a535af8ad586086688f85ab/conventions/feature-documents.md)
-  and [prose guide](https://github.com/vhco-pro/docs/blob/d8f07c9dd69038375a535af8ad586086688f85ab/guides/humanize-prose.md):
+- [Feature-document conventions](https://github.com/vhco-pro/docs/blob/0c983f6793bfe35eb96ae95ad0c361c6200af44f/conventions/feature-documents.md)
+  and [prose guide](https://github.com/vhco-pro/docs/blob/0c983f6793bfe35eb96ae95ad0c361c6200af44f/guides/humanize-prose.md):
   the pinned format and authoring rules for this revision.
