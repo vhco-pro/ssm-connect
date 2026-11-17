@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-14 applied. Needs a fresh review and re-acceptance."
+status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-15 applied. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -50,8 +50,9 @@ shell; macOS keeps linking the core in-process. Nothing is replayed: if the
 helper stops, its processes and editor channels end with it, in-flight actions
 fail and one replacement starts before the app shows an error with Retry.
 Installing over or removing a running app asks first on Windows. On Linux the
-running app keeps working until the user quits, and asks for a restart or quit
-if it loses its helper meanwhile. A failed Linux install is repaired by
+running app keeps its established connections, but from the moment the package
+changes it refuses every new action, including new editor channels from open VS
+Code windows, and asks the user to restart or quit. A failed Linux install is repaired by
 installing again. Browser support
 matches macOS on every platform. The DCV desktop becomes optional: the editor,
 web forwards and tunnels are the primary paths and work against targets with no
@@ -557,7 +558,12 @@ Before launching the helper, the plugin or the editor proxy, the shell and helpe
 check that the installed build matches their own. After an upgrade they refuse
 every new action with "SSM Connect was updated; restart it", and after removal
 with "SSM Connect was removed; quit it", instead of failing on a replaced or
-missing file. The Windows uninstaller asks through Restart Manager, like the
+missing file. The editor proxy, which VS Code starts without the shell or helper,
+applies the same rule: each lease records its owner's build, and a proxy whose
+installed build differs refuses a new channel before any AWS call and prints the
+"updated; restart it" message for VS Code to show. After removal the proxy is
+gone, so VS Code's SSH reports that it cannot start the connection. Established
+channels continue. The Windows uninstaller asks through Restart Manager, like the
 installer.
 
 A failed MSI rolls back. A failed `.rpm` or `.deb` install is repaired by
@@ -586,7 +592,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-25: An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode.
 - [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
 - [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
-- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path and keeps its single attempt.
+- [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path, except that in China regions it goes to the resolver's `amazonaws.com.cn` host, and keeps its single attempt.
 
 ## Test Plan
 
@@ -602,7 +608,7 @@ core, or change macOS signing claims through this refactor.
 | AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes, and VS Code, DCV Viewer and browser windows SSM Connect launched, keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
-| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection, and starting a new connection, opening VS Code and killing the helper each produce the "updated; restart it" message without launching anything. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, and after the user quits no owned process or file remains. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
+| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection, and starting a new connection, opening VS Code, requesting a new channel from an already open VS Code window, and killing the helper each produce the "updated; restart it" message without launching anything or calling AWS. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, a new channel from an open VS Code window fails with VS Code's SSH connection error and no AWS call, and after the user quits no owned process or file remains. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
 | AC-22 | First record the comparison hosts and then the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app on the baseline Mac and at most 1.5 times for Windows and Linux on their recorded hosts. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift, AWS client commit and plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
 | AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. With the macOS job failing, the Windows and Linux jobs still publish their assets to the release; rerunning a platform job after its assets were published uploads nothing and leaves every published asset byte-identical, and Homebrew and WinGet installs still verify; platform jobs finishing at the same time leave one release holding every asset. |
@@ -623,7 +629,7 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T2 `docs/specs/cross-platform-client.spec.md` - record the named comparison hosts and the current macOS release baseline from T1 as an annotation under this task; done: the annotation names the Mac, Windows and Linux hosts with OS builds, the workload and every median (AC-22)
 - [ ] T32 `SSMConnectKit/Tests/SSMConnectAWSClientTests/SigV4Tests.swift` - failing tests built from the published Signature Version 4 test suite and the existing STS presign cases; done: they fail because the signer does not exist (AC-28)
 - [ ] T33 `SSMConnectKit/Sources/SSMConnectAWSClient/SigV4.swift` - the signer, used by the STS presign as well; done: T32 and the existing STS tests pass on macOS, Linux and Windows CI runners (AC-28)
-- [ ] T34 `SSMConnectKit/Tools/FixtureRecorder/`, `SSMConnectKit/Tests/SSMConnectAWSClientTests/` - record, from the current SDK-based code through a local endpoint, the request, a success, a throttling response and each translated service error for all 11 SDK operations and the STS identity request from today's direct path, and write failing parity tests for requests, retry counts, resolver-level endpoints in standard, China and GovCloud regions without an override, the fixed retry policy and regional endpoint unaffected by retry and endpoint settings in the environment and shared config, STS single-attempt failure scenarios, controlled-clock backoff delays, transport failures, cancellation during backoff and the resulting typed errors; done: the tests fail because the client does not exist (AC-28)
+- [ ] T34 `SSMConnectKit/Tools/FixtureRecorder/`, `SSMConnectKit/Tests/SSMConnectAWSClientTests/` - record, from the current SDK-based code through a local endpoint, the request, a success, a throttling response and each translated service error for all 11 SDK operations and the STS identity request from today's direct path (its China host excepted), and write failing parity tests for requests, retry counts, resolver-level endpoints in standard, China and GovCloud regions without an override, the fixed retry policy and regional endpoint unaffected by retry and endpoint settings in the environment and shared config, STS single-attempt failure scenarios, controlled-clock backoff delays, transport failures, cancellation during backoff and the resulting typed errors; done: the tests fail because the client does not exist (AC-28)
 - [ ] T35 `SSMConnectKit/Sources/SSMConnectAWSClient/` - the client: REST JSON, EC2 Query, AWS Query and AWS JSON 1.1 encoding, endpoint resolution, the fixed retry policy and error results for the 12 requests, with `STSIdentityResolver` moved onto it; done: T34 passes on macOS, Linux and Windows CI runners (AC-28)
 - [ ] T4 `spikes/helper-feasibility/` - minimal Swift helper built from the current SSO, SSM and plugin sources and the T35 AWS client behind stub UI ports, speaking over stdin/stdout; done: it builds natively on Windows 11 x64 and Fedora 43 x86-64 (AC-23, AC-28)
 - [ ] T5 `docs/specs/cross-platform-client.spec.md` - run T4 on Windows 11 x64 and Fedora 43 and record exact Swift, AWS client commit and plugin versions, interactive SSO and refresh, an AWS response, usable SSM traffic, cancellation and owned-process cleanup as an annotation under this task; done: every item is recorded as observed (AC-23)
@@ -637,7 +643,7 @@ host or an installed app run only under the owner's authority for that task.
 - [ ] T13 `SSMConnectKit/Sources/SSMConnectWorkflow/CapabilityPreflight.swift` - preflight before any effect; done: T12 and `ConnectionStateMachineTests` pass (AC-25, AC-13)
 - [ ] T14 `SSMConnectKit/Tests/SSMConnectHelperTests/ProtocolTests.swift` - failing protocol tests with fake ports: framing, refusal of a different build at handshake, one terminal result per admitted command, refusal before side effects, cooperative cancel isolation, heartbeat; done: they fail because the helper targets do not exist (AC-27)
 - [ ] T15 `SSMConnectKit/Sources/SSMConnectHelperProtocol/`, `SSMConnectKit/Sources/SSMConnectHelper/` - helper executable over stdin/stdout with diagnostics on stderr, exiting on stdin EOF; done: T14 passes on macOS, Ubuntu and Windows CI runners (AC-27, AC-11)
-- [ ] T16 `SSMConnectKit/Sources/SSMConnectWorkflow/LeaseOwner.swift`, `SSMConnectKit/Sources/SSMConnectProxy/` - lease owner identity behind a port (the app process on macOS, the helper's PID and start time on Windows and Linux), so the proxy ends channels when the owner is gone; done: new lease tests pass on all three platforms and existing Remote-SSH tests pass unchanged (AC-17)
+- [ ] T16 `SSMConnectKit/Sources/SSMConnectWorkflow/LeaseOwner.swift`, `SSMConnectKit/Sources/SSMConnectProxy/` - lease owner identity behind a port (the app process on macOS, the helper's PID and start time on Windows and Linux), so the proxy ends channels when the owner is gone, and record the owner's build in the lease so a proxy of a different installed build refuses new channels before any AWS call; done: new lease tests pass on all three platforms and existing Remote-SSH tests pass unchanged (AC-17)
 - [ ] T17 `SSMConnectKit/Sources/SSMConnectWindows/` - core-side Windows adapters: per-user ACL atomic files, key-value store, plugin and SSH process launch, VS Code, Chrome and Zen discovery with per-platform pinned versions; done: adapter tests pass on the windows-2025 runner (AC-19, AC-16, AC-17)
 - [ ] T18 `windows/tests/SSMConnect.App.Tests/HelperHostTests.cs` - failing tests for the helper host: a job object per helper, terminate and wait empty before a replacement, one automatic restart under the handshake, heartbeat and cancel limits with its re-arm, the error with Retry, single instance, user apps started outside the job, and the "updated; restart it" message on a build mismatch; done: they fail because the host does not exist (AC-18, AC-27, AC-21)
 - [ ] T19 `windows/src/SSMConnect.App/HelperHost.cs` - the helper host; done: T18 passes (AC-18, AC-27)
@@ -657,18 +663,7 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-### Q30: What happens when an open VS Code window asks for a new editor channel after a Linux upgrade or removal?
-
-**Recommendation:** A. It applies Q29's rule to the one launch path that does not
-pass through the shell or helper: VS Code starts the editor proxy itself
-(`SSMConnectKit/Sources/SSMConnectKit/Tunnel/RemoteSSHBridge.swift:115`).
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. The proxy refuses too** | The lease records its owner's build. A proxy whose installed build differs from that refuses the new channel before any AWS call and prints "SSM Connect was updated; restart it", which VS Code shows. After removal the proxy is gone, so VS Code's SSH reports that it cannot start the connection. Established channels continue. | VS Code shows an SSH connection error after removal rather than an SSM Connect message. |
-| **B. Keep the old proxy usable** | Open windows keep opening channels until the user quits. | The old proxy and plugin must stay on disk through upgrade and removal, the versioned install Q29 rejected. |
-
-**Why this is yours:** It extends the Q29 decision to VS Code. R-15 F-02 raised it.
+None.
 
 ## Review Log
 
@@ -1078,7 +1073,8 @@ PROPOSAL: Refresh the owner summary to distinguish continued established connect
   before platform jobs that attach their own assets (Q26); STS on the client's
   resolver with the China correction as a third exception (Q27); published
   assets never change (Q28); a running Linux client keeps its connections but
-  refuses new actions after an upgrade or removal (Q29); the same failure rules for every helper with
+  refuses new actions after an upgrade or removal (Q29); the editor proxy refuses
+  new channels the same way (Q30); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
   closing on Windows and running until quit on Linux during installs (Q18); the
 Linux helper unit bound to the shell's systemd scope (Q19); a failed Linux
