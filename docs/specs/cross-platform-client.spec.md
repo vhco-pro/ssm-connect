@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Re-accepted on 2026-11-18 after clean review R-20; implementation resumes at T32."
+status: in-progress
+status_description: "Implementing on feat/shared-swift-core from T32 (AWS client). T1 awaits a baseline-Mac run; native Windows work awaits a w11-sandbox SSH entry."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
