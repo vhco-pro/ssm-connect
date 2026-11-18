@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-17 applied. Needs a fresh review and re-acceptance."
+status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-18 applied. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -75,8 +75,9 @@ SSO and its credential cache itself and passes the SDK fixed credentials, so the
 SDK only signs, sends and parses those calls. The client retries with one fixed
 policy equal to the SDK's defaults and always uses the regional endpoint; AWS
 retry settings and configured endpoints no longer affect SSM Connect, and the
-STS identity request reaches the correct host in China regions: the three named
-exceptions to preserving macOS behavior. The client is
+STS identity request reaches the correct host in China regions. With the shared
+preflight that refuses an action missing a hard requirement before any AWS call,
+these are the four named exceptions to preserving macOS behavior. The client is
 proven on Linux and Windows first; macOS switches to it last, once its full
 suite and native flows pass, and the SDK and its C runtime then leave every
 build. Native spikes execute unchanged Swift model/parser code and a small
@@ -383,9 +384,9 @@ It takes its endpoint from the client's resolver like every other request.
 Today it hardcodes `sts.<region>.amazonaws.com`
 (`SSMConnectKit/Sources/SSMConnectKit/Auth/STSPresigner.swift:16`), so this
 changes only China regions, where the correct suffix is `amazonaws.com.cn`.
-Ignoring retry settings and configured endpoints, and that China correction, are
-the only intended differences from the current macOS app, recorded as exceptions
-in `AGENTS.md`. Signature Version 4 signing is implemented
+Ignoring retry settings and configured endpoints, that China correction, and the
+capability preflight below are the only intended differences from the current
+macOS app, recorded as exceptions in `AGENTS.md`. Signature Version 4 signing is implemented
 once and also produces the presigned STS token. Credentials and tokens never
 appear in logs or errors. The client adds no operation the app does not use,
 and the project does not fork aws-sdk-swift or aws-crt-swift.
@@ -446,7 +447,10 @@ capabilities the requested action cannot work without: the Session Manager
 plugin for every action, OpenSSH and VS Code for editor actions, and a supported
 browser for managed browsing. A missing one produces an actionable refusal
 naming it, and the action never silently downgrades to a different connection
-mode. DCV Viewer is not such a capability: a desktop connection on a client
+mode. This applies on macOS too, where a missing plugin is found today only after
+sign-in, a possible instance start and an SSM session request
+(`SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:304-426`).
+DCV Viewer is not such a capability: a desktop connection on a client
 without Viewer keeps its tunnel up and shows the current warning
 (`SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:489-502`).
 
@@ -571,7 +575,12 @@ Connect was updated; restart it", and one whose files were removed with "SSM
 Connect was removed; quit it", instead of failing on a replaced or missing file.
 During a partial upgrade, an action that uses only unchanged files of its own
 build may still proceed on that build; once the upgrade completes, every new
-action is refused. The editor proxy, which VS Code starts without the shell or helper,
+action that launches a file is refused. A running helper keeps serving commands
+that launch nothing new. A file replaced in the instant between its check and
+its start is outside this check: a helper swapped in then is refused at
+handshake, the proxy checks its own build once it runs, and a plugin swapped in
+then runs the newer bundled plugin, whose command-line interface the helper and
+proxy already use. The editor proxy, which VS Code starts without the shell or helper,
 applies the same rule: each lease records its owner's build, and a proxy whose
 own build or plugin hash differs refuses a new channel before any AWS call and prints the
 "updated; restart it" message for VS Code to show. After removal the proxy is
@@ -603,7 +612,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-17: Native editor access preserves stable workspace authority, owned leases, unsaved windows and explicit replacement/recovery behavior without weakening host trust.
 - [ ] AC-18: Disconnect, cancellation, app exit, crash and supported sleep/logoff transitions leave no unintended owned local processes or reusable unauthorized access.
 - [ ] AC-19: Profiles, ordinary state/events, diagnostics and temporary artifacts do not expose credentials or tokens; local caches and integration artifacts enforce the target OS's ownership and permission rules.
-- [ ] AC-20: The macOS application retains its current native interaction and documented desktop, browser, editor and recovery behavior while using the extracted core, except that AWS retry settings and configured AWS endpoints no longer affect it and its STS identity request uses the correct China endpoint.
+- [ ] AC-20: The macOS application retains its current native interaction and documented desktop, browser, editor and recovery behavior while using the extracted core, except that AWS retry settings and configured AWS endpoints no longer affect it, its STS identity request uses the correct China endpoint, and an action missing a hard requirement is refused before any AWS call.
 - [ ] AC-21: Every declared Windows/Linux artifact installs, starts with its required dependencies, upgrades and uninstalls correctly on its declared native OS/CPU/desktop matrix, including while a prior version is running, without interrupting it unless the user agrees.
 - [ ] AC-22: Each declared client meets the startup, idle-resource, responsiveness and connection-latency budgets in Design against the recorded macOS baseline: 1.10 times for the refactored macOS app and 1.5 times for Windows and Linux.
 - [ ] AC-23: Supported Windows and Linux clients complete real SSO/refresh, AWS/SSM/plugin and native-integration scenarios; cross-compilation is not their sole support evidence.
@@ -627,7 +636,7 @@ core, or change macOS signing claims through this refactor.
 | AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes, and VS Code, DCV Viewer and browser windows SSM Connect launched, keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
-| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection, and starting a new connection, opening VS Code, requesting a new channel from an already open VS Code window, and killing the helper each produce the "updated; restart it" message without launching anything or calling AWS. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, a new channel from an open VS Code window fails with VS Code's SSH connection error and no AWS call, and after the user quits no program file or transient artifact (helper unit, lease, temporary file) remains while profiles, settings, browser profiles and routing and restore files are still present. Pause an `.rpm` and a `.deb` upgrade after only the helper executable is replaced: starting a new connection, which needs a new helper, is refused with the "updated; restart it" message, while a new channel from an open VS Code window, which uses the unchanged proxy and plugin with the running old helper, proceeds on the old build; repeat with only the plugin replaced and verify that both are refused and no launch starts files from two builds. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
+| AC-21 | On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection, and starting a new connection, opening VS Code, requesting a new channel from an already open VS Code window, and killing the helper each produce the "updated; restart it" message without launching anything or calling AWS. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, a new channel from an open VS Code window fails with VS Code's SSH connection error and no AWS call, and after the user quits no program file or transient artifact (helper unit, lease, temporary file) remains while profiles, settings, browser profiles and routing and restore files are still present. Pause an `.rpm` and a `.deb` upgrade after only the helper executable is replaced: a new connection handled by the running old helper proceeds on the old build, a new channel from an open VS Code window proceeds on the old build, and killing the helper then refuses the replacement launch with the "updated; restart it" message. Repeat with only the plugin replaced: a new connection and a new VS Code channel are both refused with that message, and no launch starts files from two builds. Replace the helper between its check and its start and verify the handshake refuses it. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
 | AC-22 | First record the comparison hosts and then the current macOS release baseline in this document under the recorded workload. Then, on each matrix target, measure startup-to-ready, settled idle RSS/CPU, UI-command response and cold/warm connection timings under the same workload with the process set, runs, median and sampling defined in Design. Pass when every metric is at most 1.10 times the baseline for the refactored macOS app on the baseline Mac and at most 1.5 times for Windows and Linux on their recorded hosts. |
 | AC-23 | Native Windows/Linux feasibility records must include exact Swift, AWS client commit and plugin versions, interactive SSO plus refresh, AWS response, usable SSM traffic, cancellation and owned-process cleanup. Later full native acceptance must use the final UI/core integration. |
 | AC-24 | Rebuild through each actual release path; inspect the unpacked final artifact for selected core/helper/runtime assets, executable permissions or signatures as applicable, and licenses. Check that the WinGet manifest's SHA-256 matches the released MSI. Verify one platform's release does not require publishing another's. With the macOS job failing, the Windows and Linux jobs still publish their assets to the release; rerunning a platform job after its assets were published uploads nothing and leaves every published asset byte-identical, and Homebrew and WinGet installs still verify; platform jobs finishing at the same time leave one release holding every asset. A Windows/Linux-only release is not marked latest; a macOS ZIP uploaded to an older release after a newer one already has its ZIP leaves the newer release latest; the Homebrew sync then installs the latest macOS ZIP. Pausing an older run's macOS job just before its latest step, completing a newer release's publication, and then resuming the older run leaves the newer release latest, and Homebrew installs its ZIP. |
@@ -682,37 +691,7 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-### Q36: What covers a file replaced in the instant between its check and its start?
-
-**Recommendation:** A. The window is the moment between reading a file and
-starting it, during a package upgrade. The two launches that matter already
-catch it: the helper handshake refuses a helper from another build, and the
-editor proxy checks its own build once it runs. Binding each launch to the
-checked file needs per-platform descriptor-based execution, which systemd-run
-and Foundation's `Process` do not offer.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Accept the narrow race, caught where it matters** | A helper swapped in that instant is refused at handshake; a proxy checks itself after it starts; a plugin swapped in that instant runs the newer bundled plugin, whose command-line interface the helper and proxy already use. The guarantee says so. | In that instant a newer plugin can run under an older helper or proxy. |
-| **B. Bind execution to the checked file** | No mixed launch at all. | Opening, hashing and executing through the same descriptor on each platform, replacing systemd-run and `Process` launches, with race tests. |
-
-**Why this is yours:** It decides how absolute the Q34 guarantee is. R-18 F-02 raised it.
-
-### Q37: Does the capability preflight change macOS behavior too?
-
-**Recommendation:** A. The preflight lives in the shared core, so keeping
-today's macOS order would need a platform branch in the core. Today a missing
-plugin on macOS is found only after sign-in, a possible instance start and an
-SSM session request
-(`SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:304-426`);
-refusing first avoids those side effects.
-
-| Option | You get | It costs |
-| --- | --- | --- |
-| **A. Refuse first on macOS too, as a fourth exception** | The same preflight everywhere: a missing hard requirement is refused before any AWS call. `AGENTS.md` and AC-20 add it as a fourth exception. | A fourth exception line. |
-| **B. Keep today's macOS order** | No macOS change. | A platform branch in the shared core and a macOS-specific proof. |
-
-**Why this is yours:** It changes macOS behavior. R-18 F-03 raised it.
+None.
 
 ## Review Log
 
@@ -1198,7 +1177,9 @@ PROPOSAL: Raise an Open Question deciding whether early capability refusal is an
   new channels the same way (Q30); launches check the exact executable's build
   (Q31); uninstall keeps user data (Q32); only the macOS job marks a release
   latest (Q33); the Linux rule narrowed to never launching a mixed build (Q34);
-  the latest step serialized in a queued concurrency group (Q35); the same failure rules for every helper with
+  the latest step serialized in a queued concurrency group (Q35); the
+  check-to-start race accepted where the handshake and proxy self-check catch it
+  (Q36); the preflight applied on macOS as a fourth exception (Q37); the same failure rules for every helper with
   Cancel bounding a stall (Q16); helper-owned editor leases (Q17); asking before
   closing on Windows and running until quit on Linux during installs (Q18); the
 Linux helper unit bound to the shell's systemd scope (Q19); a failed Linux
