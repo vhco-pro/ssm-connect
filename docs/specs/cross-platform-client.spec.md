@@ -676,7 +676,31 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q34: Is the Linux update rule "never launch a mixed build" rather than "refuse everything once any file changes"?
+
+**Recommendation:** A. The risk Q29 and Q31 address is starting a file from
+another build. Detecting every package change across the client and the
+separately started proxy, including changes during admission, is more machinery
+for no added safety.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Never launch a mixed build** | Every launch checks the exact files it starts against the launching build, as Q31 defines, and refuses with "updated; restart it" on any mismatch. An action that uses only unchanged files of its own build may proceed during a partial upgrade. | A user may still open a channel on the old build until the files it needs change. |
+| **B. Refuse everything once any file changes** | One rule: no new action after any package change. | A package-wide change detector shared by the shell, helper and proxy, with tests for changes during admission. |
+
+**Why this is yours:** It narrows a guarantee you chose. R-17 F-01 raised it.
+
+### Q35: How are concurrent release runs kept from marking the wrong release latest?
+
+**Recommendation:** A. The delivery convention requires serializing competing
+publication runs, and a GitHub Actions concurrency group is its standard form.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. One concurrency group for the latest step** | The macOS job's eligibility check and latest-mark update run in one step inside a repository-wide `release-latest` concurrency group that queues rather than cancels, so a paused older run re-checks after a newer one finishes. | Release runs wait briefly for each other at that step. |
+| **B. Re-check after marking** | No queueing. | A compare-and-repair loop with its own race to test. |
+
+**Why this is yours:** It shapes release automation. R-17 F-02 raised it.
 
 ## Review Log
 
@@ -699,6 +723,7 @@ None.
 | 2026-11-17 | R-14 | spec | `f5f70ba` | gpt-6.1-sol | procedural | One blocking (STS endpoint in China) and two should-fix |
 | 2026-11-17 | R-15 | spec | `854a1ac` | gpt-6.1-sol | procedural | One blocking (AC-28 STS equality versus China) and two should-fix |
 | 2026-11-17 | R-16 | spec | `0cedaa8` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
+| 2026-11-18 | R-17 | spec | `5b63311` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 
 ### R-1
 
@@ -1090,6 +1115,22 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:47-51; Design / Integration and feasibility, helper restart rules; Test Plan / AC-27; Tasks / T18, T23; Sources / Q14, Q16
 EVIDENCE: The owner summary says that if the helper stops, “one replacement starts before the app shows an error with Retry.” Design limits automatic replacements and explicitly includes first-helper failure among cases where no replacement starts. AC-27 also requires an initial handshake failure to show the error without an automatic restart. The summary promises recovery in cases where the detailed policy deliberately refuses it.
 PROPOSAL: State the bounded restart policy in the summary, including initial startup failure and an exhausted replacement allowance. Keep the already selected detailed policy unchanged.
+
+### R-17
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary:53-56; Design / Migration, performance and release boundaries:556-574; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T16, T22, T26, T29; Sources / Q29-Q31
+EVIDENCE: The per-executable checks addressing R-16 F-01 do not establish refusal from the moment any package file changes. Consider an upgrade paused after replacing only the helper executable. The old helper remains running, while the installed proxy and plugin still belong to its old build. A new channel from an existing VS Code window passes every specified proxy check: its build matches the lease owner and its plugin hash matches. No specified check examines the replaced helper pathname. RemoteSSHBridge.swift:134-146 independently authorizes that channel through AWS. The new AC-21 partial-upgrade scenario therefore requires a refusal that the defined checks do not establish.
+PROPOSAL: Define how action admission detects package replacement across both client and independent proxy paths, including changes concurrent with admission, or raise an Open Question narrowing the immediate-refusal guarantee. Test replacement of the helper alone while the proxy and plugin remain unchanged.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design / Migration, performance and release boundaries:535-546; Acceptance Criteria / AC-24; Test Plan / AC-24; Tasks / T21, T31; Sources / Q33
+EVIDENCE: The latest-release policy addressing R-16 F-03 leaves concurrent workflow runs undefined. An older macOS job can check that no newer release has a ZIP, pause, then resume after a newer job uploads its ZIP and marks its release latest. The older job can then overwrite that mark using its earlier decision. The specified AC-24 scenario starts the older upload after the newer ZIP already exists, so it does not exercise this interleaving. The retained Homebrew sync reads the latest release, making this a distribution regression. The pinned conventions/delivery.md also requires serialization where competing publication runs could conflict.
+PROPOSAL: Define serialization covering the latest-release eligibility check and update across workflow runs. Add a scenario that pauses the older job after its eligibility check, completes the newer publication, then resumes the older job and verifies that Homebrew still selects the newer ZIP.
 
 ## Sources
 
