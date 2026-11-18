@@ -721,6 +721,7 @@ None.
 | 2026-11-18 | R-18 | spec | `0ffb4ce` | gpt-6.1-sol | procedural | One blocking (partial-upgrade scenario versus the persistent helper) and two should-fix |
 | 2026-11-18 | R-19 | spec | `c7c2163` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-18 | R-20 | spec | `654c59e` | gpt-6.1-sol | procedural | NO FINDINGS |
+| 2026-11-18 | R-20 | spec | `654c59e` | n/a | n/a | accepted by owner |
 
 ### R-1
 
