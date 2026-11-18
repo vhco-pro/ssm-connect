@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; R-9 to R-19 applied. Needs a fresh review and re-acceptance."
+status_description: "Revised after T3 for one SSM Connect AWS client on every platform; spec review R-20 is clean. Awaiting owner re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -720,6 +720,7 @@ None.
 | 2026-11-18 | R-17 | spec | `5b63311` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-18 | R-18 | spec | `0ffb4ce` | gpt-6.1-sol | procedural | One blocking (partial-upgrade scenario versus the persistent helper) and two should-fix |
 | 2026-11-18 | R-19 | spec | `c7c2163` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
+| 2026-11-18 | R-20 | spec | `654c59e` | gpt-6.1-sol | procedural | NO FINDINGS |
 
 ### R-1
 
@@ -1166,6 +1167,10 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:53-57; Design / Migration, performance and release boundaries:569-583; Test Plan / AC-21, no-mixed-build assertion; Sources / Q34, Q36
 EVIDENCE: The summary promises that the running Linux app never starts a file from a different build, and Design says a partial install never starts a mixed build. Lines 579-583 explicitly permit a plugin replaced between validation and execution to run the newer bundled plugin. That exception, introduced in response to R-18 F-02 and recorded as Q36, permits the behavior the blanket guarantees prohibit. The owner summary therefore overstates the selected protection.
 PROPOSAL: State the already selected plugin race exception in the owner summary and qualify the unconditional no-mixed-build clauses. Make the corresponding AC-21 assertion explicitly distinguish replacement detected before launch from the accepted check-to-start race.
+
+### R-20
+
+NO FINDINGS
 
 ## Sources
 
