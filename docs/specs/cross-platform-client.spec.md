@@ -716,6 +716,7 @@ None.
 | 2026-11-17 | R-16 | spec | `0cedaa8` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
 | 2026-11-18 | R-17 | spec | `5b63311` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-18 | R-18 | spec | `0ffb4ce` | gpt-6.1-sol | procedural | One blocking (partial-upgrade scenario versus the persistent helper) and two should-fix |
+| 2026-11-18 | R-19 | spec | `c7c2163` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 
 ### R-1
 
@@ -1146,6 +1147,22 @@ SEVERITY: should-fix
 WHERE: AGENTS.md:27-32; Context / Owner summary:75-79; Scope / macOS behavior preservation; Design / AWS client:386-388; Design / Behavior, identity and local state:444-451; Acceptance Criteria / AC-20, AC-25; Test Plan / AC-20, AC-25; Tasks / T12, T13, T27; Sources / Q11
 EVIDENCE: Repository instructions require preserving existing macOS behavior with three named AWS-client exceptions. Design and AC-25 additionally require refusing a missing plugin before any AWS call on macOS. Today's ConnectionStateMachine.swift authenticates at lines 304-312, can start the instance at lines 347-358, and requests an SSM session at lines 419-426 before BundledPluginTunnel.swift:56-64 detects the missing plugin. The proposed preflight therefore changes remote side effects and failure behavior beyond the three declared exceptions. The preservation contract and preflight requirement cannot both describe that case.
 PROPOSAL: Raise an Open Question deciding whether early capability refusal is an additional authorized macOS behavior change. Reconcile AGENTS.md, the preservation clauses, AC-20 and the preflight proofs with the owner's decision.
+
+### R-19
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary:53-57; Design / Migration, performance and release boundaries:569-585; Test Plan / AC-21; Tasks / T22, T29; Sources / Q29, Q31, Q34
+EVIDENCE: Design requires every new action launching a file to refuse after a completed Linux upgrade, but specifies executable build checks and the bundled plugin's expected hash. An upgrade can retain the same upstream plugin bytes. The running old helper then passes the plugin hash check and can start another connection without launching the replaced helper or proxy. The existing plugin is independently pinned at scripts/fetch-plugin.sh:18-24; no requirement makes its bytes change with each application release. AC-21 nevertheless requires this connection to refuse without launching anything or calling AWS. The persistent-helper correction addressing R-18 F-01 resolves the partial-upgrade scenario but leaves this completed-upgrade case unresolved.
+PROPOSAL: Define how completed upgrades are detected when the bundled plugin remains identical, or raise an Open Question narrowing the refusal policy. Add a native upgrade scenario whose two application builds contain the same plugin.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:53-57; Design / Migration, performance and release boundaries:569-583; Test Plan / AC-21, no-mixed-build assertion; Sources / Q34, Q36
+EVIDENCE: The summary promises that the running Linux app never starts a file from a different build, and Design says a partial install never starts a mixed build. Lines 579-583 explicitly permit a plugin replaced between validation and execution to run the newer bundled plugin. That exception, introduced in response to R-18 F-02 and recorded as Q36, permits the behavior the blanket guarantees prohibit. The owner summary therefore overstates the selected protection.
+PROPOSAL: State the already selected plugin race exception in the owner summary and qualify the unconditional no-mixed-build clauses. Make the corresponding AC-21 assertion explicitly distinguish replacement detected before launch from the accepted check-to-start race.
 
 ## Sources
 
