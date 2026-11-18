@@ -682,7 +682,37 @@ host or an installed app run only under the owner's authority for that task.
 
 ## Open Questions
 
-None.
+### Q36: What covers a file replaced in the instant between its check and its start?
+
+**Recommendation:** A. The window is the moment between reading a file and
+starting it, during a package upgrade. The two launches that matter already
+catch it: the helper handshake refuses a helper from another build, and the
+editor proxy checks its own build once it runs. Binding each launch to the
+checked file needs per-platform descriptor-based execution, which systemd-run
+and Foundation's `Process` do not offer.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Accept the narrow race, caught where it matters** | A helper swapped in that instant is refused at handshake; a proxy checks itself after it starts; a plugin swapped in that instant runs the newer bundled plugin, whose command-line interface the helper and proxy already use. The guarantee says so. | In that instant a newer plugin can run under an older helper or proxy. |
+| **B. Bind execution to the checked file** | No mixed launch at all. | Opening, hashing and executing through the same descriptor on each platform, replacing systemd-run and `Process` launches, with race tests. |
+
+**Why this is yours:** It decides how absolute the Q34 guarantee is. R-18 F-02 raised it.
+
+### Q37: Does the capability preflight change macOS behavior too?
+
+**Recommendation:** A. The preflight lives in the shared core, so keeping
+today's macOS order would need a platform branch in the core. Today a missing
+plugin on macOS is found only after sign-in, a possible instance start and an
+SSM session request
+(`SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:304-426`);
+refusing first avoids those side effects.
+
+| Option | You get | It costs |
+| --- | --- | --- |
+| **A. Refuse first on macOS too, as a fourth exception** | The same preflight everywhere: a missing hard requirement is refused before any AWS call. `AGENTS.md` and AC-20 add it as a fourth exception. | A fourth exception line. |
+| **B. Keep today's macOS order** | No macOS change. | A platform branch in the shared core and a macOS-specific proof. |
+
+**Why this is yours:** It changes macOS behavior. R-18 F-03 raised it.
 
 ## Review Log
 
@@ -706,6 +736,7 @@ None.
 | 2026-11-17 | R-15 | spec | `854a1ac` | gpt-6.1-sol | procedural | One blocking (AC-28 STS equality versus China) and two should-fix |
 | 2026-11-17 | R-16 | spec | `0cedaa8` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
 | 2026-11-18 | R-17 | spec | `5b63311` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
+| 2026-11-18 | R-18 | spec | `0ffb4ce` | gpt-6.1-sol | procedural | One blocking (partial-upgrade scenario versus the persistent helper) and two should-fix |
 
 ### R-1
 
@@ -1113,6 +1144,29 @@ SEVERITY: should-fix
 WHERE: Design / Migration, performance and release boundaries:535-546; Acceptance Criteria / AC-24; Test Plan / AC-24; Tasks / T21, T31; Sources / Q33
 EVIDENCE: The latest-release policy addressing R-16 F-03 leaves concurrent workflow runs undefined. An older macOS job can check that no newer release has a ZIP, pause, then resume after a newer job uploads its ZIP and marks its release latest. The older job can then overwrite that mark using its earlier decision. The specified AC-24 scenario starts the older upload after the newer ZIP already exists, so it does not exercise this interleaving. The retained Homebrew sync reads the latest release, making this a distribution regression. The pinned conventions/delivery.md also requires serialization where competing publication runs could conflict.
 PROPOSAL: Define serialization covering the latest-release eligibility check and update across workflow runs. Add a scenario that pauses the older job after its eligibility check, completes the newer publication, then resumes the older job and verifies that Homebrew still selects the newer ZIP.
+
+### R-18
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Design / Integration and feasibility:268-283, 307-339; Design / Migration, performance and release boundaries:565-574; Test Plan / AC-21; Tasks / T29; Sources / Q34
+EVIDENCE: The partial-upgrade scenario added for R-17 F-01 says that starting a new connection “needs a new helper” and must refuse after only the helper executable is replaced. Design instead keeps one helper per shell, accepting commands until it stops. With that old helper still healthy and the plugin unchanged, another connection needs no helper launch and uses only its original build. The narrowed Design explicitly permits such actions during partial upgrade, but AC-21's proof rejects them.
+PROPOSAL: Align the partial-upgrade scenario with the persistent helper and the selected unchanged-file policy. Test refusal of an actual helper replacement separately from a connection command handled by the surviving helper.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary:53-57; Design / Migration, performance and release boundaries:565-578; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T16, T22, T26, T29; Sources / Q31, Q34
+EVIDENCE: The revision addressing R-17 F-01 narrows the guarantee to never launching a mixed build, but specifies only checking an executable before launching it. Replacement between those operations remains undefined. An isolated Linux probe hashed a temporary copy of /usr/bin/true, replaced its pathname with /usr/bin/false, then launched that pathname. It observed checked_original_file=True, pathname_changed_after_check=True and launched_exit_status=1. Current launch paths likewise execute by pathname at BundledPluginTunnel.swift:87-93 and RemoteSSHBridge.swift:174-184. AC-21 pauses replacement before actions begin, so it does not exercise this interleaving.
+PROPOSAL: Define how execution remains bound to the validated file during concurrent package replacement, raising the mechanism or guarantee change as an Open Question. Add scenarios that replace the helper or plugin after validation but before execution, including the independent editor proxy path.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: AGENTS.md:27-32; Context / Owner summary:75-79; Scope / macOS behavior preservation; Design / AWS client:386-388; Design / Behavior, identity and local state:444-451; Acceptance Criteria / AC-20, AC-25; Test Plan / AC-20, AC-25; Tasks / T12, T13, T27; Sources / Q11
+EVIDENCE: Repository instructions require preserving existing macOS behavior with three named AWS-client exceptions. Design and AC-25 additionally require refusing a missing plugin before any AWS call on macOS. Today's ConnectionStateMachine.swift authenticates at lines 304-312, can start the instance at lines 347-358, and requests an SSM session at lines 419-426 before BundledPluginTunnel.swift:56-64 detects the missing plugin. The proposed preflight therefore changes remote side effects and failure behavior beyond the three declared exceptions. The preservation contract and preflight requirement cannot both describe that case.
+PROPOSAL: Raise an Open Question deciding whether early capability refusal is an additional authorized macOS behavior change. Reconcile AGENTS.md, the preservation clauses, AC-20 and the preflight proofs with the owner's decision.
 
 ## Sources
 
