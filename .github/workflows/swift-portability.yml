@@ -9,6 +9,7 @@ on:
       - SSMConnectKit/Package.resolved
       - SSMConnectKit/Sources/SSMConnectKit/Models/AWSRegion.swift
       - SSMConnectKit/Sources/SSMConnectKit/Services/AWSConfigParser.swift
+      - SSMConnectKit/AWSClient/**
   workflow_dispatch:
 
 permissions:
@@ -57,3 +58,30 @@ jobs:
           path: ${{ runner.temp }}/ssm-connect-spike/
           if-no-files-found: warn
           retention-days: 7
+
+  aws-client:
+    name: aws-client (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Test the AWS client package
+        shell: bash
+        run: swift test --package-path SSMConnectKit/AWSClient

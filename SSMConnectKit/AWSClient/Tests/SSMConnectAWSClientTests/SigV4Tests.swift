@@ -46,8 +46,7 @@ struct SigV4Tests {
         #expect(result.stringToSign == vector.text("query-string-to-sign.txt"))
         #expect(result.signature == vector.text("query-signature.txt"))
         let expected = Vector.parseRequest(vector.text("query-signed-request.txt"))
-        let signedQuery = result.canonicalQuery + "&X-Amz-Signature=" + result.signature
-        #expect(Vector.queryPairs(signedQuery) == Vector.queryPairs(expected.query ?? ""))
+        #expect(Vector.queryPairs(result.signedQuery) == Vector.queryPairs(expected.query ?? ""))
     }
 
     /// The presigned GetCallerIdentity URL the app mints today (STSPresignerTests in the

@@ -16,6 +16,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.7.13"),
         .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
+        // SSM Connect's own portable AWS client (cross-platform-client spec, AWS client).
+        .package(path: "AWSClient"),
     ],
     targets: [
         .executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectKit"]),
@@ -23,6 +25,7 @@ let package = Package(
             name: "SSMConnectKit",
             dependencies: [
                 .product(name: "Yams", package: "Yams"),
+                .product(name: "SSMConnectAWSClient", package: "AWSClient"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
                 .product(name: "AWSSSO", package: "aws-sdk-swift"),
                 .product(name: "AWSEC2", package: "aws-sdk-swift"),
