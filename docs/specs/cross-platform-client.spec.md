@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Revised after T3 for one SSM Connect AWS client on every platform; spec review R-20 is clean. Awaiting owner re-acceptance."
+status: planned
+status_description: "Re-accepted on 2026-11-18 after clean review R-20; implementation resumes at T32."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
