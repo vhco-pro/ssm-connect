@@ -1,0 +1,27 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "EC2 says InvalidInstanceID.NotFound (InvalidInstanceID.NotFound, HTTP 400)"
+  },
+  "name" : "ec2-instance-not-found",
+  "operation" : "DescribeInstances",
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Errors><Error><Code>InvalidInstanceID.NotFound<\/Code><Message>EC2 says InvalidInstanceID.NotFound<\/Message><\/Error><\/Errors><RequestID>req-1234<\/RequestID><\/Response>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "EC2 says InvalidInstanceID.NotFound",
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "InvalidInstanceID.NotFound"
+  },
+  "service" : "ec2"
+}

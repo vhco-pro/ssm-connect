@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a AuthorizationPendingException."
+  },
+  "name" : "sso-oidc-authorization-pending",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"authorization_pending\",\"error_description\":\"OIDC says authorization_pending\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "AuthorizationPendingException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSSSOOIDC.AuthorizationPendingException",
+    "typeName" : "AuthorizationPendingException"
+  },
+  "service" : "sso-oidc"
+}

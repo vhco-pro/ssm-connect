@@ -1,0 +1,31 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "Invalid instance id (InvalidInstanceId, HTTP 400)"
+  },
+  "name" : "ssm-invalid-instance-id",
+  "operation" : "DescribeInstanceInformation",
+  "response" : {
+    "body" : "{\"__type\":\"InvalidInstanceId\",\"message\":\"Invalid instance id\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "Invalid instance id",
+    "swiftType" : "AWSSSM.InvalidInstanceId",
+    "typeName" : "InvalidInstanceId"
+  },
+  "service" : "ssm"
+}

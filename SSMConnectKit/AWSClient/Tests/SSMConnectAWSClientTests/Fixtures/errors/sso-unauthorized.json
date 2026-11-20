@@ -1,0 +1,35 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : true,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "Session token not found or invalid (UnauthorizedException, HTTP 401)"
+  },
+  "name" : "sso-unauthorized",
+  "operation" : "GetRoleCredentials",
+  "response" : {
+    "body" : "{\"message\":\"Session token not found or invalid\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "UnauthorizedException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 401
+  },
+  "sdk" : {
+    "httpStatus" : 401,
+    "message" : "Session token not found or invalid",
+    "swiftType" : "AWSSSO.UnauthorizedException",
+    "typeName" : "UnauthorizedException"
+  },
+  "service" : "sso"
+}

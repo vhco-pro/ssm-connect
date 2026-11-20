@@ -1,0 +1,31 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "Authorization failed (Forbidden, HTTP 400)"
+  },
+  "name" : "ec2-instance-connect-auth",
+  "operation" : "SendSSHPublicKey",
+  "response" : {
+    "body" : "{\"__type\":\"AuthException\",\"message\":\"Authorization failed\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "Authorization failed",
+    "swiftType" : "AWSEC2InstanceConnect.AuthException",
+    "typeName" : "Forbidden"
+  },
+  "service" : "ec2-instance-connect"
+}

@@ -1,0 +1,27 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "EC2 says IncorrectInstanceState (IncorrectInstanceState, HTTP 400)"
+  },
+  "name" : "ec2-incorrect-instance-state",
+  "operation" : "StartInstances",
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Errors><Error><Code>IncorrectInstanceState<\/Code><Message>EC2 says IncorrectInstanceState<\/Message><\/Error><\/Errors><RequestID>req-1234<\/RequestID><\/Response>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "EC2 says IncorrectInstanceState",
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "IncorrectInstanceState"
+  },
+  "service" : "ec2"
+}

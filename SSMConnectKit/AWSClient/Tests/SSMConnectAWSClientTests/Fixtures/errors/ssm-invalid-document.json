@@ -1,0 +1,31 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "Document is not supported (InvalidDocument, HTTP 400)"
+  },
+  "name" : "ssm-invalid-document",
+  "operation" : "StartSession",
+  "response" : {
+    "body" : "{\"__type\":\"InvalidDocument\",\"message\":\"Document is not supported\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "Document is not supported",
+    "swiftType" : "AWSSSM.InvalidDocument",
+    "typeName" : "InvalidDocument"
+  },
+  "service" : "ssm"
+}

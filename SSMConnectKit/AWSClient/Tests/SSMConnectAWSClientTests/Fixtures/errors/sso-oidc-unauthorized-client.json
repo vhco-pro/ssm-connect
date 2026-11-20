@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : true,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a UnauthorizedClientException."
+  },
+  "name" : "sso-oidc-unauthorized-client",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"unauthorized_client\",\"error_description\":\"OIDC says unauthorized_client\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "UnauthorizedClientException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSSSOOIDC.UnauthorizedClientException",
+    "typeName" : "UnauthorizedClientException"
+  },
+  "service" : "sso-oidc"
+}

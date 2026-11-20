@@ -1,0 +1,35 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "Could not find role (ResourceNotFoundException, HTTP 404)"
+  },
+  "name" : "sso-resource-not-found",
+  "operation" : "GetRoleCredentials",
+  "response" : {
+    "body" : "{\"message\":\"Could not find role\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "ResourceNotFoundException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 404
+  },
+  "sdk" : {
+    "httpStatus" : 404,
+    "message" : "Could not find role",
+    "swiftType" : "AWSSSO.ResourceNotFoundException",
+    "typeName" : "ResourceNotFoundException"
+  },
+  "service" : "sso"
+}

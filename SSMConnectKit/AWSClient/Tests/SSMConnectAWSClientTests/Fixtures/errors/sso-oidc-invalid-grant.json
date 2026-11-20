@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : true,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a InvalidGrantException."
+  },
+  "name" : "sso-oidc-invalid-grant",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"invalid_grant\",\"error_description\":\"OIDC says invalid_grant\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "InvalidGrantException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSSSOOIDC.InvalidGrantException",
+    "typeName" : "InvalidGrantException"
+  },
+  "service" : "sso-oidc"
+}

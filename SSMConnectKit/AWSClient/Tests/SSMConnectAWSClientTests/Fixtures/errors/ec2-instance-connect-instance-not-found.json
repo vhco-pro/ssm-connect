@@ -1,0 +1,31 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "Instance not found (EC2InstanceNotFound, HTTP 400)"
+  },
+  "name" : "ec2-instance-connect-instance-not-found",
+  "operation" : "SendSSHPublicKey",
+  "response" : {
+    "body" : "{\"__type\":\"EC2InstanceNotFoundException\",\"message\":\"Instance not found\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "Instance not found",
+    "swiftType" : "AWSEC2InstanceConnect.EC2InstanceNotFoundException",
+    "typeName" : "EC2InstanceNotFound"
+  },
+  "service" : "ec2-instance-connect"
+}

@@ -1,0 +1,27 @@
+{
+  "app" : {
+    "isPermissionDenied" : true,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : true,
+    "renderedMessage" : "EC2 says UnauthorizedOperation (UnauthorizedOperation, HTTP 403)"
+  },
+  "name" : "ec2-unauthorized-operation",
+  "operation" : "DescribeInstances",
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Errors><Error><Code>UnauthorizedOperation<\/Code><Message>EC2 says UnauthorizedOperation<\/Message><\/Error><\/Errors><RequestID>req-1234<\/RequestID><\/Response>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 403
+  },
+  "sdk" : {
+    "httpStatus" : 403,
+    "message" : "EC2 says UnauthorizedOperation",
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "UnauthorizedOperation"
+  },
+  "service" : "ec2"
+}

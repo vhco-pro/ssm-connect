@@ -48,6 +48,7 @@ let package = Package(
                 .product(name: "AWSEC2", package: "aws-sdk-swift"),
                 .product(name: "AWSSSM", package: "aws-sdk-swift"),
                 .product(name: "AWSSecretsManager", package: "aws-sdk-swift"),
+                .product(name: "AWSEC2InstanceConnect", package: "aws-sdk-swift"),
             ]
         ),
     ]
