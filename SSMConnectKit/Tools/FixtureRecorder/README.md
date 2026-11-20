@@ -8,6 +8,7 @@ app's, so the recorder runs the SDK version the app ships.
 ```sh
 swift build --build-system native
 .build/debug/FixtureRecorder endpoints ../../AWSClient/Tests/SSMConnectAWSClientTests/Fixtures/endpoints.json
+.build/debug/FixtureRecorder requests ../../AWSClient/Tests/SSMConnectAWSClientTests/Fixtures/requests
 ```
 
 On Linux the build needs the OpenSSL headers (`libssl-dev`) for aws-crt-swift, and
@@ -17,3 +18,4 @@ use `--build-system native`. Run it with no `AWS_ENDPOINT_URL*` variables set.
 | Command | Writes |
 | --- | --- |
 | `endpoints <file>` | each client's default resolver output, without an endpoint override, per service and region |
+| `requests <dir>` | for each SDK operation the app calls, with the app's inputs: the request sent to a loopback server, the canned success response, and the decoded fields the app reads |

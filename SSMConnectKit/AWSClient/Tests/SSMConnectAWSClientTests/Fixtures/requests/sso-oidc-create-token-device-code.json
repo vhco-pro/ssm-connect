@@ -1,0 +1,55 @@
+{
+  "decoded" : {
+    "accessToken" : "access-token",
+    "expiresIn" : "3600",
+    "refreshToken" : "refresh-token"
+  },
+  "name" : "sso-oidc-create-token-device-code",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "{\"grantType\":\"urn:ietf:params:oauth:grant-type:device_code\",\"clientId\":\"client-id\",\"clientSecret\":\"client-secret\",\"deviceCode\":\"device-code\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "0f3eff5e-b05c-4602-8b2f-ae9c44e54605"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "Content-Length",
+        "141"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/sso_oidc#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/token"
+  },
+  "response" : {
+    "body" : "{\"accessToken\":\"access-token\",\"tokenType\":\"Bearer\",\"expiresIn\":3600,\"refreshToken\":\"refresh-token\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-RequestId",
+        "11111111-2222-3333-4444-555555555555"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "sso-oidc"
+}

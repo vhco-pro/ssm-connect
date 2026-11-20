@@ -1,0 +1,64 @@
+{
+  "decoded" : {
+    "count" : "1",
+    "instanceId" : "i-0123456789abcdef0",
+    "privateIpAddress" : "10.0.0.12",
+    "state" : "running"
+  },
+  "name" : "ec2-describe-instances-by-id",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "InstanceId.1=i-0123456789abcdef0&Action=DescribeInstances&Version=2016-11-15",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-www-form-urlencoded"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "47b45224-f928-4fda-81b5-29ae42a87b97"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ec2\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=91e3f7d937c2c925a4b4dd751024d9a87e40ddee5f178a59b99504aeaae867e6"
+      ],
+      [
+        "Content-Length",
+        "76"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ec2#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DescribeInstancesResponse xmlns=\"http:\/\/ec2.amazonaws.com\/doc\/2016-11-15\/\"><requestId>11111111-2222-3333-4444-555555555555<\/requestId><reservationSet><item><reservationId>r-0123456789abcdef0<\/reservationId><ownerId>123456789012<\/ownerId><instancesSet><item><instanceId>i-0123456789abcdef0<\/instanceId><instanceState><code>16<\/code><name>running<\/name><\/instanceState><privateIpAddress>10.0.0.12<\/privateIpAddress><tagSet><item><key>Name<\/key><value>workstation<\/value><\/item><\/tagSet><\/item><\/instancesSet><\/item><\/reservationSet><\/DescribeInstancesResponse>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ec2"
+}

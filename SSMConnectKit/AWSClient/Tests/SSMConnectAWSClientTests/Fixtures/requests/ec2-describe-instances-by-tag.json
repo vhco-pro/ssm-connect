@@ -1,0 +1,64 @@
+{
+  "decoded" : {
+    "count" : "1",
+    "instanceId" : "i-0123456789abcdef0",
+    "privateIpAddress" : "10.0.0.12",
+    "state" : "running"
+  },
+  "name" : "ec2-describe-instances-by-tag",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "Filter.1.Name=tag%3AName&Filter.1.Value.1=workstation&Filter.2.Name=instance-state-name&Filter.2.Value.1=pending&Filter.2.Value.2=running&Filter.2.Value.3=stopping&Filter.2.Value.4=stopped&Action=DescribeInstances&Version=2016-11-15",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-www-form-urlencoded"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "a51034c0-ca77-4156-99ac-d487530a3b86"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ec2\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=21a3857bc43fad12dc3570661a7cd2e7b2e60e0140e1945b48ff11b88d74caca"
+      ],
+      [
+        "Content-Length",
+        "232"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ec2#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DescribeInstancesResponse xmlns=\"http:\/\/ec2.amazonaws.com\/doc\/2016-11-15\/\"><requestId>11111111-2222-3333-4444-555555555555<\/requestId><reservationSet><item><reservationId>r-0123456789abcdef0<\/reservationId><ownerId>123456789012<\/ownerId><instancesSet><item><instanceId>i-0123456789abcdef0<\/instanceId><instanceState><code>16<\/code><name>running<\/name><\/instanceState><privateIpAddress>10.0.0.12<\/privateIpAddress><tagSet><item><key>Name<\/key><value>workstation<\/value><\/item><\/tagSet><\/item><\/instancesSet><\/item><\/reservationSet><\/DescribeInstancesResponse>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ec2"
+}

@@ -1,0 +1,71 @@
+{
+  "decoded" : {
+    "count" : "1",
+    "instanceId" : "i-0123456789abcdef0",
+    "pingStatus" : "Online"
+  },
+  "name" : "ssm-describe-instance-information",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "{\"Filters\":[{\"Key\":\"InstanceIds\",\"Values\":[\"i-0123456789abcdef0\"]}]}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "1a5d66f1-16a9-4832-b25f-46788fcff9b8"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ssm\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=166d8fe159fc8074990674ae960678b5585c94a34458527ee6ba3081dab80235"
+      ],
+      [
+        "Content-Length",
+        "68"
+      ],
+      [
+        "X-Amz-Target",
+        "AmazonSSM.DescribeInstanceInformation"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ssm#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "{\"InstanceInformationList\":[{\"InstanceId\":\"i-0123456789abcdef0\",\"PingStatus\":\"Online\"}]}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "11111111-2222-3333-4444-555555555555"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ssm"
+}

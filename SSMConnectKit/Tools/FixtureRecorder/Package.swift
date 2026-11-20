@@ -11,6 +11,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/awslabs/aws-sdk-swift.git", exact: "1.7.62"),
+        .package(url: "https://github.com/smithy-lang/smithy-swift", exact: "0.242.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.101.0"),
     ],
     targets: [
         .executableTarget(
@@ -23,6 +25,10 @@ let package = Package(
                 .product(name: "AWSSSM", package: "aws-sdk-swift"),
                 .product(name: "AWSSecretsManager", package: "aws-sdk-swift"),
                 .product(name: "AWSSTS", package: "aws-sdk-swift"),
+                .product(name: "SmithyIdentity", package: "smithy-swift"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
             ]
         ),
     ]

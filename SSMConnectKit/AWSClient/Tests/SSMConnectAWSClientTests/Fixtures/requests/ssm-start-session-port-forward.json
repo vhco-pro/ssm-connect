@@ -1,0 +1,71 @@
+{
+  "decoded" : {
+    "sessionId" : "user-0123456789abcdef0",
+    "streamUrl" : "wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/user-0123456789abcdef0?role=publish_subscribe",
+    "tokenValue" : "session-token-value"
+  },
+  "name" : "ssm-start-session-port-forward",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "{\"DocumentName\":\"AWS-StartPortForwardingSession\",\"Parameters\":{\"portNumber\":[\"8443\"],\"localPortNumber\":[\"58443\"]},\"Target\":\"i-0123456789abcdef0\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "ec3c310d-5ab2-46c4-87f6-9cfec7ef4360"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ssm\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=c8e32351556f9711a4ecb9ce3aa5486568ebee88b6dac5e1d70736012241913e"
+      ],
+      [
+        "Content-Length",
+        "145"
+      ],
+      [
+        "X-Amz-Target",
+        "AmazonSSM.StartSession"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ssm#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "{\"SessionId\":\"user-0123456789abcdef0\",\"StreamUrl\":\"wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/user-0123456789abcdef0?role=publish_subscribe\",\"TokenValue\":\"session-token-value\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "11111111-2222-3333-4444-555555555555"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ssm"
+}

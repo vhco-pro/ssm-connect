@@ -1,0 +1,56 @@
+{
+  "decoded" : {
+    "deviceCode" : "device-code",
+    "expiresIn" : "600",
+    "interval" : "5",
+    "verificationUriComplete" : "https:\/\/device.sso.eu-central-1.amazonaws.com\/?user_code=ABCD-EFGH"
+  },
+  "name" : "sso-oidc-start-device-authorization",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "{\"clientId\":\"client-id\",\"clientSecret\":\"client-secret\",\"startUrl\":\"https:\\\/\\\/example.awsapps.com\\\/start\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "67fdfee1-388f-4a77-a334-9b7d24f877cd"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "Content-Length",
+        "105"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/sso_oidc#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/device_authorization"
+  },
+  "response" : {
+    "body" : "{\"deviceCode\":\"device-code\",\"userCode\":\"ABCD-EFGH\",\"verificationUri\":\"https:\/\/device.sso.eu-central-1.amazonaws.com\/\",\"verificationUriComplete\":\"https:\/\/device.sso.eu-central-1.amazonaws.com\/?user_code=ABCD-EFGH\",\"expiresIn\":600,\"interval\":5}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-RequestId",
+        "11111111-2222-3333-4444-555555555555"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "sso-oidc"
+}
