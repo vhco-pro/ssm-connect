@@ -84,4 +84,11 @@ jobs:
           swift-build: 6.4.2-RELEASE
       - name: Test the AWS client package
         shell: bash
-        run: swift test --package-path SSMConnectKit/AWSClient
+        run: |
+          # Swift 6.4.2 bundles Clang 21; the windows-2025-vs2026 image from 20261116 ships an
+          # MSVC STL (14.52) that rejects Clang older than 22 when swift-crypto's C++ builds.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            swift test --package-path SSMConnectKit/AWSClient -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+          else
+            swift test --package-path SSMConnectKit/AWSClient
+          fi
