@@ -1,0 +1,43 @@
+{
+  "attempts" : 2,
+  "delays" : [
+    0.194
+  ],
+  "name" : "ssm-retry-after-ignored",
+  "outcome" : "success",
+  "responses" : [
+    {
+      "body" : "{\"__type\":\"ServiceUnavailable\",\"message\":\"scripted ServiceUnavailable\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "ServiceUnavailable"
+        ],
+        [
+          "x-amz-retry-after",
+          "5000"
+        ]
+      ],
+      "status" : 503
+    },
+    {
+      "body" : "{\"SessionId\":\"user-0123456789abcdef0\",\"StreamUrl\":\"wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/user-0123456789abcdef0\",\"TokenValue\":\"session-token-value\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-RequestId",
+          "11111111-2222-3333-4444-555555555555"
+        ]
+      ],
+      "status" : 200
+    }
+  ],
+  "service" : "ssm"
+}

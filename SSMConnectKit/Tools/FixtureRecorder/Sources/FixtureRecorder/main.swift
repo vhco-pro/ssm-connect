@@ -7,7 +7,7 @@ import AWSSSOOIDC
 import AWSSTS
 import Foundation
 
-// Usage: FixtureRecorder endpoints <output.json> | requests <directory>
+// Usage: FixtureRecorder endpoints <output.json> | requests <directory> | retries <directory>
 //
 // endpoints: each client's default endpoint resolver, without an endpoint override,
 // for every service the app calls and a set of standard, China and GovCloud regions.
@@ -57,7 +57,8 @@ let arguments = CommandLine.arguments
 switch (arguments.count, arguments.count > 1 ? arguments[1] : "") {
 case (3, "endpoints"): try await recordEndpoints(to: arguments[2])
 case (3, "requests"): try await recordRequests(to: arguments[2])
+case (3, "retries"): try await recordRetries(to: arguments[2])
 default:
-    FileHandle.standardError.write(Data("usage: FixtureRecorder endpoints <output.json> | requests <directory>\n".utf8))
+    FileHandle.standardError.write(Data("usage: FixtureRecorder endpoints <output.json> | requests <directory> | retries <directory>\n".utf8))
     exit(2)
 }

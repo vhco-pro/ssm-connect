@@ -9,6 +9,7 @@ app's, so the recorder runs the SDK version the app ships.
 swift build --build-system native
 .build/debug/FixtureRecorder endpoints ../../AWSClient/Tests/SSMConnectAWSClientTests/Fixtures/endpoints.json
 .build/debug/FixtureRecorder requests ../../AWSClient/Tests/SSMConnectAWSClientTests/Fixtures/requests
+.build/debug/FixtureRecorder retries ../../AWSClient/Tests/SSMConnectAWSClientTests/Fixtures/retries
 ```
 
 On Linux the build needs the OpenSSL headers (`libssl-dev`) for aws-crt-swift, and
@@ -19,3 +20,4 @@ use `--build-system native`. Run it with no `AWS_ENDPOINT_URL*` variables set.
 | --- | --- |
 | `endpoints <file>` | each client's default resolver output, without an endpoint override, per service and region |
 | `requests <dir>` | for each SDK operation the app calls, with the app's inputs: the request sent to a loopback server, the canned success response, and the decoded fields the app reads |
+| `retries <dir>` | for scripted failure sequences (throttling, 5xx, 408, a dropped connection, denials, an ignored retry-after header, and the SSO OIDC errors device polling handles), the SDK's attempts, the delays between them and the outcome, with no retry settings configured |

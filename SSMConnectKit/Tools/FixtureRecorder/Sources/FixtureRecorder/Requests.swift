@@ -39,17 +39,24 @@ struct RequestFixture: Codable {
 /// Requests seen and the response to give the next one.
 final class Exchange: @unchecked Sendable {
     private let lock = NSLock()
-    private var next: CannedResponse?
+    private var queue: [CannedResponse] = []
     private var seen: [RecordedRequest] = []
+    private var times: [Date] = []
 
-    func arm(_ response: CannedResponse) { lock.withLock { next = response; seen = [] } }
+    /// One response for every request.
+    func arm(_ response: CannedResponse) { arm([response]) }
+    /// Responses in order; the last repeats. Status 0 closes the connection without a reply.
+    func arm(_ responses: [CannedResponse]) { lock.withLock { queue = responses; seen = []; times = [] } }
     func record(_ request: RecordedRequest) -> CannedResponse {
         lock.withLock {
             seen.append(request)
-            return next ?? CannedResponse(status: 500, headers: [], body: "unarmed")
+            times.append(Date())
+            guard !queue.isEmpty else { return CannedResponse(status: 500, headers: [], body: "unarmed") }
+            return queue.count > 1 ? queue.removeFirst() : queue[0]
         }
     }
     var requests: [RecordedRequest] { lock.withLock { seen } }
+    var arrivals: [Date] { lock.withLock { times } }
 }
 
 final class RecordingHandler: ChannelInboundHandler, @unchecked Sendable {
@@ -77,6 +84,10 @@ final class RecordingHandler: ChannelInboundHandler, @unchecked Sendable {
                 body: body.getString(at: body.readerIndex, length: body.readableBytes) ?? ""
             )
             let response = exchange.record(recorded)
+            if response.status == 0 {
+                context.close(promise: nil)
+                return
+            }
             var headers = HTTPHeaders(response.headers.map { ($0[0], $0[1]) })
             headers.replaceOrAdd(name: "Content-Length", value: String(response.body.utf8.count))
             let status = HTTPResponseStatus(statusCode: response.status)
@@ -109,8 +120,8 @@ func stateChangeXML(_ action: String, current: (Int, String), previous: (Int, St
     """
 }
 
-func recordRequests(to directory: String) async throws {
-    let exchange = Exchange()
+/// A loopback HTTP server that records requests into `exchange`.
+func startServer(_ exchange: Exchange) async throws -> (channel: Channel, group: MultiThreadedEventLoopGroup, endpoint: String) {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     let channel = try await ServerBootstrap(group: group)
         .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -120,7 +131,12 @@ func recordRequests(to directory: String) async throws {
             }
         }
         .bind(host: "127.0.0.1", port: 0).get()
-    let endpoint = "http://127.0.0.1:\(channel.localAddress!.port!)"
+    return (channel, group, "http://127.0.0.1:\(channel.localAddress!.port!)")
+}
+
+func recordRequests(to directory: String) async throws {
+    let exchange = Exchange()
+    let (channel, group, endpoint) = try await startServer(exchange)
 
     let region = "eu-central-1"
     let identity = AWSCredentialIdentity(

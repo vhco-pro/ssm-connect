@@ -1,0 +1,39 @@
+{
+  "attempts" : 1,
+  "delays" : [
+
+  ],
+  "name" : "sso-oidc-authorization-pending",
+  "outcome" : "error: AuthorizationPendingException",
+  "responses" : [
+    {
+      "body" : "{\"error\":\"authorization_pending\",\"error_description\":\"scripted authorization_pending\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/json"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "AuthorizationPendingException"
+        ]
+      ],
+      "status" : 400
+    },
+    {
+      "body" : "{\"accessToken\":\"access-token\",\"tokenType\":\"Bearer\",\"expiresIn\":3600,\"refreshToken\":\"refresh-token\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/json"
+        ],
+        [
+          "x-amzn-RequestId",
+          "11111111-2222-3333-4444-555555555555"
+        ]
+      ],
+      "status" : 200
+    }
+  ],
+  "service" : "sso-oidc"
+}
