@@ -107,5 +107,10 @@ let package = Package(
             // Read from the source tree through #filePath, not bundled.
             exclude: ["Fixtures"]
         ),
+        // The helper protocol and executable, with fake ports; runs on macOS, Linux and Windows.
+        .testTarget(
+            name: "SSMConnectHelperTests",
+            dependencies: ["SSMConnectHelperProtocol", "SSMConnectHelper"]
+        ),
     ]
 )
