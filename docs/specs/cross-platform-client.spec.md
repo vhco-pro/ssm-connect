@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Revised for clock-skew correction matching the SDK (T42, T43); R-21 to R-24 applied; spec review R-25 is clean. Awaiting owner re-acceptance."
+status: planned
+status_description: "Re-accepted on 2026-11-21 after clean review R-25."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
