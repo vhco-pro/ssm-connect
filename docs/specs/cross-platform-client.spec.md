@@ -789,6 +789,7 @@ None.
 | 2026-11-18 | R-20 | spec | `654c59e` | n/a | n/a | accepted by owner |
 | 2026-11-21 | R-21 | spec | `9f2969f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-21 | R-22 | spec | `8d04477` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
+| 2026-11-21 | R-23 | spec | `da7d96c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix and one nit |
 
 ### R-1
 
@@ -1285,6 +1286,29 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:84-87; Design / AWS client:407-415; Tasks / T5
 EVIDENCE: The summary added when addressing R-21 says the motivating clock failure occurs where today's app would recover. However, T5's driver requests identity before DescribeInstances or StartSession at drive.py:71-83. Today's STSIdentityResolver.swift:16-22,42-46 signs with local time, sends once and rejects a non-success response without learning clock skew. Design explicitly preserves that behavior at lines 411-415. SDK clock correction therefore does not establish recovery for the complete motivating sequence, and the revised client deliberately retains this limitation.
 PROPOSAL: Limit the recovery claim to SDK-managed signed requests and explain that the direct STS identity path still fails under clock skew. Preserve the selected single-attempt STS policy.
+
+### R-23
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Frontmatter / covers:7-17; Context / Owner summary:90-97; Design / First increment:447-452; Test Plan / AC-23; Tasks / T4, T5, T44
+EVIDENCE: The coverage list includes spikes/swift-portability/ but omits spikes/helper-feasibility/. T4 and the new T44 modify that omitted directory, and T5 relies on its driver for the mandatory native feasibility proof before extraction. The pinned feature-document standard requires covers to include every path affecting the feature. These proof-producing files therefore fall outside the declared coverage used by freshness and feature-tree checks. The T44 addition addressing R-22 F-02 leaves this omission in place.
+PROPOSAL: Add spikes/helper-feasibility/ to covers so changes to the helper, driver and build scripts participate in feature verification.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks / T43:725, T45:727
+EVIDENCE: The quota work addressing R-22 F-01 puts implementation in T43, whose completion requires T45 to pass. T45 appears later and must first demonstrate tests failing because the client has no retry quota. Following the listed order cannot establish both done conditions: T43 requires unwritten tests, and completing its quota implementation removes T45's required failing state. The pinned standard requires dependency order with failing tests first.
+PROPOSAL: Move T45 before T43, preserving both task IDs. Record its expected failure before implementing the quota.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Tasks / T4:728
+EVIDENCE: T4 describes the helper as built from current SSO, SSM and plugin sources behind stub UI ports. spikes/helper-feasibility/run.sh:11-12 and run.ps1:10-11 copy only SSMSessionResponse, AWSRegion and IdentityMapper. HelperSpike/main.swift:78-127 implements its own authorization and refresh harness, and lines 148-195 implement its plugin orchestration. The task overstates source reuse, although its native-build done condition is unchanged.
+PROPOSAL: Describe T4 as a feasibility harness using the AWS client and the three reused portable types. Retain the distinction between this subset evidence and final workflow integration.
 
 ## Sources
 
