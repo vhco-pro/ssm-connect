@@ -2,12 +2,12 @@ import CYaml
 import Foundation
 import Yams
 
-enum ProfileDocumentCodec {
-    static let maximumBytes = 256 * 1024
-    static let maximumDepth = 32
-    static let maximumNodes = 8192
+package enum ProfileDocumentCodec {
+    package static let maximumBytes = 256 * 1024
+    package static let maximumDepth = 32
+    package static let maximumNodes = 8192
 
-    static func read(_ data: Data, format: ProfileFileFormat) throws -> PortableProfileDocument {
+    package static func read(_ data: Data, format: ProfileFileFormat) throws -> PortableProfileDocument {
         guard data.count <= maximumBytes, let text = String(data: data, encoding: .utf8) else {
             throw PortableProfileError.invalid("Profile files must be UTF-8 and at most 256 KiB.")
         }
@@ -30,7 +30,7 @@ enum ProfileDocumentCodec {
         return try PortableProfileDocument(fields: fields)
     }
 
-    static func write(_ document: PortableProfileDocument, format: ProfileFileFormat) throws -> Data {
+    package static func write(_ document: PortableProfileDocument, format: ProfileFileFormat) throws -> Data {
         _ = try document.profile(localID: UUID())
         let data: Data
         switch format {

@@ -4,14 +4,14 @@ import Foundation
 ///
 /// SDK-free on purpose: the `AWSEC2` types are mapped into this value in `EC2Service`
 /// so the rest of the app (state machine, mocks, tests) never imports the SDK.
-struct EC2Instance: Equatable, Sendable {
-    let id: String
-    let state: State
+package struct EC2Instance: Equatable, Sendable {
+    package let id: String
+    package let state: State
     /// Private IPv4 address (nil until the instance is running / assigned).
-    let privateIpAddress: String?
+    package let privateIpAddress: String?
 
     /// Lifecycle state, mirroring EC2's `instance-state-name` values (spec §8).
-    enum State: String, Sendable {
+    package enum State: String, Sendable {
         case pending
         case running
         case shuttingDown = "shutting-down"
@@ -22,6 +22,12 @@ struct EC2Instance: Equatable, Sendable {
         case unknown
 
         /// Whether the instance is gone / going away and cannot be connected to.
-        var isTerminal: Bool { self == .terminated || self == .shuttingDown }
+        package var isTerminal: Bool { self == .terminated || self == .shuttingDown }
+    }
+
+    package init(id: String, state: State, privateIpAddress: String?) {
+        self.id = id
+        self.state = state
+        self.privateIpAddress = privateIpAddress
     }
 }

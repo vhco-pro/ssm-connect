@@ -22,9 +22,10 @@ if [[ "${OSTYPE}" == msys* || "${OSTYPE}" == cygwin* ]]; then
 fi
 
 if swiftc \
-    "$ROOT/SSMConnectKit/Sources/SSMConnectKit/Models/AWSRegion.swift" \
-    "$ROOT/SSMConnectKit/Sources/SSMConnectKit/Services/AWSConfigParser.swift" \
+    "$ROOT/SSMConnectKit/Sources/SSMConnectDomain/AWSRegion.swift" \
+    "$ROOT/SSMConnectKit/Sources/SSMConnectDomain/AWSConfigParser.swift" \
     "$ROOT/spikes/swift-portability/main.swift" \
+    -package-name SSMConnectKit \
     -o "$WORK/core-probe$EXE" >"$OUTPUT/core-build.log" 2>&1; then
     if "$WORK/core-probe$EXE" \
         <"$ROOT/spikes/swift-portability/requests.jsonl" \

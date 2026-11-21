@@ -21,9 +21,18 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectKit"]),
+        // Models, validation, the profile document codec and typed errors, shared by every
+        // desktop client. No macOS framework and no AWS SDK module: scripts/check-boundaries.sh
+        // holds that line. Declarations the macOS code used are `package`, so the rest of this
+        // package keeps its access and nothing new becomes public.
+        .target(
+            name: "SSMConnectDomain",
+            dependencies: [.product(name: "Yams", package: "Yams")]
+        ),
         .target(
             name: "SSMConnectKit",
             dependencies: [
+                "SSMConnectDomain",
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "SSMConnectAWSClient", package: "AWSClient"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
@@ -39,6 +48,7 @@ let package = Package(
             name: "SSMConnectKitTests",
             dependencies: [
                 "SSMConnectKit",
+                "SSMConnectDomain",
                 // The tests construct AWS SDK response types directly. AWSClientRuntime is
                 // explicit because the error-rendering tests build a real
                 // `UnknownAWSHTTPServiceError` rather than a look-alike stub (#20).

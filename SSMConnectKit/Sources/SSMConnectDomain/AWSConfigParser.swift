@@ -7,39 +7,61 @@ import Foundation
 /// for the start URL + SSO region, and carries `sso_account_id` / `sso_role_name` / `region`
 /// itself. The legacy inline form (`sso_start_url` / `sso_region` directly on the profile) is
 /// also honored as a fallback.
-struct AWSConfigParser {
+package struct AWSConfigParser {
 
     /// An `[sso-session NAME]` block.
-    struct SSOSession: Equatable {
-        var startUrl: String?
-        var region: String?
+    package struct SSOSession: Equatable {
+        package var startUrl: String?
+        package var region: String?
+
+        package init(startUrl: String? = nil, region: String? = nil) {
+            self.startUrl = startUrl
+            self.region = region
+        }
     }
 
     /// A `[profile NAME]` (or `[default]`) block.
-    struct Profile: Equatable {
-        var ssoSession: String?
-        var ssoAccountId: String?
-        var ssoRoleName: String?
-        var region: String?
+    package struct Profile: Equatable {
+        package var ssoSession: String?
+        package var ssoAccountId: String?
+        package var ssoRoleName: String?
+        package var region: String?
         // Legacy inline SSO keys.
-        var ssoStartUrl: String?
-        var ssoRegion: String?
+        package var ssoStartUrl: String?
+        package var ssoRegion: String?
+
+        package init(ssoSession: String? = nil, ssoAccountId: String? = nil, ssoRoleName: String? = nil, region: String? = nil, ssoStartUrl: String? = nil, ssoRegion: String? = nil) {
+            self.ssoSession = ssoSession
+            self.ssoAccountId = ssoAccountId
+            self.ssoRoleName = ssoRoleName
+            self.region = region
+            self.ssoStartUrl = ssoStartUrl
+            self.ssoRegion = ssoRegion
+        }
     }
 
     /// Fully resolved SSO facts for a profile (sso-session block merged in).
-    struct ResolvedProfile: Equatable {
-        var startUrl: String?
-        var ssoRegion: String?
-        var accountId: String?
-        var roleName: String?
-        var resourceRegion: String?
+    package struct ResolvedProfile: Equatable {
+        package var startUrl: String?
+        package var ssoRegion: String?
+        package var accountId: String?
+        package var roleName: String?
+        package var resourceRegion: String?
+
+        package init(startUrl: String? = nil, ssoRegion: String? = nil, accountId: String? = nil, roleName: String? = nil, resourceRegion: String? = nil) {
+            self.startUrl = startUrl
+            self.ssoRegion = ssoRegion
+            self.accountId = accountId
+            self.roleName = roleName
+            self.resourceRegion = resourceRegion
+        }
     }
 
-    private(set) var ssoSessions: [String: SSOSession] = [:]
-    private(set) var profiles: [String: Profile] = [:]
+    package private(set) var ssoSessions: [String: SSOSession] = [:]
+    package private(set) var profiles: [String: Profile] = [:]
 
     /// Parse raw `~/.aws/config` text into sections.
-    init(contents: String) {
+    package init(contents: String) {
         var currentSection: (kind: String, name: String)?
         for rawLine in contents.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = Self.stripComment(String(rawLine)).trimmingCharacters(in: .whitespaces)
@@ -65,7 +87,7 @@ struct AWSConfigParser {
 
     /// Resolve a profile by name, merging its referenced `sso-session` block.
     /// `profileName` is the bare name (e.g. `workstation-prd`); `default` is also accepted.
-    func resolvedProfile(named profileName: String) -> ResolvedProfile? {
+    package func resolvedProfile(named profileName: String) -> ResolvedProfile? {
         guard let profile = profiles[profileName] else { return nil }
         let session = profile.ssoSession.flatMap { ssoSessions[$0] }
         // Trim region values at the parse boundary so stored profiles are clean (a
@@ -83,7 +105,7 @@ struct AWSConfigParser {
 
     /// All profiles that reference SSO (have a resolvable start URL), each fully resolved and
     /// sorted by name — for the first-launch "import from ~/.aws/config" picker (F-18).
-    func resolvedProfiles() -> [(name: String, resolved: ResolvedProfile)] {
+    package func resolvedProfiles() -> [(name: String, resolved: ResolvedProfile)] {
         profiles.keys.sorted().compactMap { name in
             guard let resolved = resolvedProfile(named: name),
                   let startUrl = resolved.startUrl, !startUrl.isEmpty else { return nil }
@@ -151,7 +173,7 @@ struct AWSConfigParser {
 
 extension AWSConfigParser {
     /// Convenience: load and parse `~/.aws/config` if it exists.
-    static func loadDefault(fileManager: FileManager = .default) -> AWSConfigParser? {
+    package static func loadDefault(fileManager: FileManager = .default) -> AWSConfigParser? {
         let url = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent(".aws/config")
         guard let data = try? Data(contentsOf: url),

@@ -7,8 +7,8 @@ on:
       - .github/workflows/swift-portability.yml
       - spikes/swift-portability/**
       - SSMConnectKit/Package.resolved
-      - SSMConnectKit/Sources/SSMConnectKit/Models/AWSRegion.swift
-      - SSMConnectKit/Sources/SSMConnectKit/Services/AWSConfigParser.swift
+      - SSMConnectKit/Sources/SSMConnectDomain/AWSRegion.swift
+      - SSMConnectKit/Sources/SSMConnectDomain/AWSConfigParser.swift
       - SSMConnectKit/AWSClient/**
   workflow_dispatch:
 

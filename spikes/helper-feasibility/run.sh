@@ -8,8 +8,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 reused="$here/Sources/HelperSpike/Reused"
 rm -rf "$reused" && mkdir -p "$reused"
-for file in Models/SSMSessionResponse.swift Models/AWSRegion.swift Auth/IdentityMapper.swift; do
-    cp "$root/SSMConnectKit/Sources/SSMConnectKit/$file" "$reused/"
+for file in SSMSessionResponse.swift AWSRegion.swift IdentityMapper.swift; do
+    cp "$root/SSMConnectKit/Sources/SSMConnectDomain/$file" "$reused/"
 done
 cd "$here"
 swift build -c release --static-swift-stdlib "$@"

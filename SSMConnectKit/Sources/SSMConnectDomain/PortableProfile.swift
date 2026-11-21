@@ -1,11 +1,11 @@
 import Foundation
 
-enum PortableProfileError: LocalizedError, Equatable {
+package enum PortableProfileError: LocalizedError, Equatable {
     case invalid(String)
     case conflict
     case formattingConsentRequired
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case let .invalid(message): return message
         case .conflict: return "The profile file changed since it was loaded. Reload and review the changes, or save a local copy. Nothing was overwritten."
@@ -15,10 +15,10 @@ enum PortableProfileError: LocalizedError, Equatable {
     }
 }
 
-enum ProfileFileFormat: String, Codable {
+package enum ProfileFileFormat: String, Codable {
     case json, yaml
 
-    init(url: URL) throws {
+    package init(url: URL) throws {
         switch url.pathExtension.lowercased() {
         case "json": self = .json
         case "yaml", "yml": self = .yaml
@@ -27,10 +27,10 @@ enum ProfileFileFormat: String, Codable {
     }
 }
 
-indirect enum ProfileValue: Equatable, Codable, Sendable {
+package indirect enum ProfileValue: Equatable, Codable, Sendable {
     case object([String: ProfileValue]), array([ProfileValue]), string(String), number(Decimal), bool(Bool), null
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer()
         if value.decodeNil() { self = .null }
         else if let bool = try? value.decode(Bool.self) { self = .bool(bool) }
@@ -40,7 +40,7 @@ indirect enum ProfileValue: Equatable, Codable, Sendable {
         else { self = .object(try value.decode([String: ProfileValue].self)) }
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var value = encoder.singleValueContainer()
         switch self {
         case let .object(object): try value.encode(object)
@@ -52,16 +52,16 @@ indirect enum ProfileValue: Equatable, Codable, Sendable {
         }
     }
 
-    var object: [String: ProfileValue]? { if case let .object(value) = self { return value }; return nil }
-    var string: String? { if case let .string(value) = self { return value }; return nil }
+    package var object: [String: ProfileValue]? { if case let .object(value) = self { return value }; return nil }
+    package var string: String? { if case let .string(value) = self { return value }; return nil }
 }
 
-struct PortableProfileDocument: Equatable, Codable, Sendable {
-    static let schemaVersion = 2
+package struct PortableProfileDocument: Equatable, Codable, Sendable {
+    package static let schemaVersion = 2
     private static let forwardKeys: Set<String> = ["name", "localPort", "remoteHost", "remotePort", "openPath"]
-    private(set) var fields: [String: ProfileValue]
+    package private(set) var fields: [String: ProfileValue]
 
-    var id: UUID {
+    package var id: UUID {
         // Construction validates this invariant; persisted documents are revalidated by the store.
         get throws {
             guard let text = fields["id"]?.string, let id = UUID(uuidString: text) else {
@@ -71,17 +71,17 @@ struct PortableProfileDocument: Equatable, Codable, Sendable {
         }
     }
 
-    init(fields: [String: ProfileValue]) throws {
+    package init(fields: [String: ProfileValue]) throws {
         self.fields = fields
         _ = try profile(localID: UUID())
     }
 
-    init(profile: ConnectionProfile, documentID: UUID = UUID()) throws {
+    package init(profile: ConnectionProfile, documentID: UUID = UUID()) throws {
         fields = ["id": .string(documentID.uuidString.lowercased())]
         self = try updating(profile: profile)
     }
 
-    func profile(localID: UUID, localBrowserProfilePath: String? = nil) throws -> ConnectionProfile {
+    package func profile(localID: UUID, localBrowserProfilePath: String? = nil) throws -> ConnectionProfile {
         try Self.checkSecurity(.object(fields), path: "profile")
         let version = try integer("schemaVersion")
         guard version == 1 || version == Self.schemaVersion else {
@@ -159,8 +159,9 @@ struct PortableProfileDocument: Equatable, Codable, Sendable {
             try validateBlockShape(value, field: "remoteDevelopment")
             remote = try decode(RemoteDevelopmentConfiguration.self, value: value, field: "remoteDevelopment")
             if let folder = remote?.folder, !folder.isEmpty {
-                do { _ = try RemoteSSHConfiguration.folderURI(alias: "portable-profile", folder: folder) }
-                catch { throw PortableProfileError.invalid("remoteDevelopment.folder must be an absolute remote path.") }
+                guard RemoteFolder.uri(alias: "portable-profile", folder: folder) != nil else {
+                    throw PortableProfileError.invalid("remoteDevelopment.folder must be an absolute remote path.")
+                }
             }
         }
         if version == 2 {
@@ -183,7 +184,7 @@ struct PortableProfileDocument: Equatable, Codable, Sendable {
             webForwards: web, remoteDevelopment: remote)
     }
 
-    func updating(profile: ConnectionProfile) throws -> Self {
+    package func updating(profile: ConnectionProfile) throws -> Self {
         var object = fields
         let values: [String: ProfileValue] = [
             "schemaVersion": .number(Decimal(Self.schemaVersion)),
@@ -228,7 +229,7 @@ struct PortableProfileDocument: Equatable, Codable, Sendable {
         return try Self(fields: object)
     }
 
-    func withNewIdentity() throws -> Self {
+    package func withNewIdentity() throws -> Self {
         var fields = fields
         fields["id"] = .string(UUID().uuidString.lowercased())
         return try Self(fields: fields)

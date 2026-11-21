@@ -7,8 +7,8 @@ $root = Resolve-Path (Join-Path $here '..\..')
 $reused = Join-Path $here 'Sources\HelperSpike\Reused'
 Remove-Item -Recurse -Force $reused -ErrorAction SilentlyContinue
 New-Item -ItemType Directory $reused | Out-Null
-foreach ($file in 'Models\SSMSessionResponse.swift', 'Models\AWSRegion.swift', 'Auth\IdentityMapper.swift') {
-    Copy-Item (Join-Path $root "SSMConnectKit\Sources\SSMConnectKit\$file") $reused
+foreach ($file in 'SSMSessionResponse.swift', 'AWSRegion.swift', 'IdentityMapper.swift') {
+    Copy-Item (Join-Path $root "SSMConnectKit\Sources\SSMConnectDomain\$file") $reused
 }
 Set-Location $here
 swift build -c release

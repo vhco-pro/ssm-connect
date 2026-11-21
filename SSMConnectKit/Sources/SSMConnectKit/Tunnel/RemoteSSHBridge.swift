@@ -85,15 +85,8 @@ enum RemoteSSHConfiguration {
     static func alias(_ id: UUID) -> String { "ssm-connect-" + id.uuidString.lowercased() }
 
     static func folderURI(alias: String, folder: String) throws -> String {
-        guard folder.hasPrefix("/"), !folder.contains(where: \ .isNewline), !folder.contains("\0") else {
-            throw RemoteSSHError.invalidFolder
-        }
-        var components = URLComponents()
-        components.scheme = "vscode-remote"
-        components.host = "ssh-remote+" + alias
-        components.path = folder
-        guard let url = components.url else { throw RemoteSSHError.invalidFolder }
-        return url.absoluteString
+        guard let uri = RemoteFolder.uri(alias: alias, folder: folder) else { throw RemoteSSHError.invalidFolder }
+        return uri
     }
 
     static func arguments(alias: String, folder: String?) throws -> [String] {

@@ -11,94 +11,128 @@ import Foundation
 /// (Phase E) and profile management UI/seeding (Phase G).
 public struct ConnectionProfile: Identifiable, Equatable, Codable, Sendable {
     public var id: UUID = UUID()
-    var name: String
+    package var name: String
 
     // MARK: SSO / authentication (Phase B)
 
     /// AWS SSO start URL, e.g. `https://d-xxxx.awsapps.com/start`.
-    var ssoStartUrl: String
+    package var ssoStartUrl: String
     /// SSO/OIDC region for `SSOOIDC.*` and `SSO.GetRoleCredentials` (e.g. `eu-west-1`).
     /// Distinct from `resourceRegion` (B4, spec §F-04).
-    var ssoRegion: String
-    var accountId: String
-    var roleName: String
+    package var ssoRegion: String
+    package var accountId: String
+    package var roleName: String
 
     // MARK: Resource operations (Phases C–E)
 
     /// Region for EC2/SSM/Secrets operations (e.g. `eu-central-1`).
-    var resourceRegion: String
-    var instanceTagKey: String
-    var instanceTagValue: String
+    package var resourceRegion: String
+    package var instanceTagKey: String
+    package var instanceTagValue: String
     /// Secrets Manager secret id for the DCV password (optional, F-11).
-    var secretId: String?
+    package var secretId: String?
 
     // MARK: Tunnel (Phase D)
 
-    var localPort: Int
+    package var localPort: Int
     /// Remote port forwarded over the tunnel (DCV default 8443).
-    var remotePort: Int
+    package var remotePort: Int
 
     // MARK: Connect action (Phase E/G)
 
     /// What to launch once the tunnel is up; existing profiles default to DCV Viewer.
-    var connectAction: ConnectAction = .dcvViewer
+    package var connectAction: ConnectAction = .dcvViewer
 
     // MARK: Multi-user (Phase F)
 
     /// Connect mode. `nil` (legacy profiles / default) is treated as `.singleUser`, so existing
     /// profiles and stored data are unaffected. `.multiUser` switches to per-user virtual sessions
     /// authenticated by a presigned-identity token (no password) — see spec MU-00a / CL-04.
-    var connectMode: ConnectMode? = nil
+    package var connectMode: ConnectMode? = nil
     /// Port the on-box agent listens on (`/ensure-session` + token verifier), forwarded over a second
     /// SSM tunnel in multi-user mode. `nil` → 8444.
-    var agentRemotePort: Int? = nil
-    var webForwards: WebForwardsConfiguration? = nil
-    var remoteDevelopment: RemoteDevelopmentConfiguration? = nil
+    package var agentRemotePort: Int? = nil
+    package var webForwards: WebForwardsConfiguration? = nil
+    package var remoteDevelopment: RemoteDevelopmentConfiguration? = nil
 
     /// Resolved connect mode — legacy/`nil` maps to `.singleUser` (vanilla, the default).
-    var resolvedConnectMode: ConnectMode { connectMode ?? .singleUser }
+    package var resolvedConnectMode: ConnectMode { connectMode ?? .singleUser }
     /// Resolved agent port (`nil` → 8444).
-    var resolvedAgentRemotePort: Int { agentRemotePort ?? 8444 }
+    package var resolvedAgentRemotePort: Int { agentRemotePort ?? 8444 }
 
     /// Whether the profile has the minimum fields needed to attempt a connection. Used to gate
     /// auto-connect and guide first-launch users (the app ships with NO profile baked in).
-    var isConfigured: Bool {
+    package var isConfigured: Bool {
         !ssoStartUrl.isEmpty && AWSRegion.isValid(ssoRegion) && !accountId.isEmpty
             && !roleName.isEmpty && AWSRegion.isValid(resourceRegion)
             && !instanceTagKey.isEmpty && !instanceTagValue.isEmpty
     }
+
+    package init(id: UUID = UUID(), name: String, ssoStartUrl: String, ssoRegion: String, accountId: String, roleName: String, resourceRegion: String, instanceTagKey: String, instanceTagValue: String, secretId: String? = nil, localPort: Int, remotePort: Int, connectAction: ConnectAction = .dcvViewer, connectMode: ConnectMode? = nil, agentRemotePort: Int? = nil, webForwards: WebForwardsConfiguration? = nil, remoteDevelopment: RemoteDevelopmentConfiguration? = nil) {
+        self.id = id
+        self.name = name
+        self.ssoStartUrl = ssoStartUrl
+        self.ssoRegion = ssoRegion
+        self.accountId = accountId
+        self.roleName = roleName
+        self.resourceRegion = resourceRegion
+        self.instanceTagKey = instanceTagKey
+        self.instanceTagValue = instanceTagValue
+        self.secretId = secretId
+        self.localPort = localPort
+        self.remotePort = remotePort
+        self.connectAction = connectAction
+        self.connectMode = connectMode
+        self.agentRemotePort = agentRemotePort
+        self.webForwards = webForwards
+        self.remoteDevelopment = remoteDevelopment
+    }
 }
 
-struct RemoteDevelopmentConfiguration: Equatable, Codable, Sendable {
-    var enabled = false
-    var folder: String? = nil
+package struct RemoteDevelopmentConfiguration: Equatable, Codable, Sendable {
+    package var enabled = false
+    package var folder: String? = nil
+
+    package init(enabled: Bool = false, folder: String? = nil) {
+        self.enabled = enabled
+        self.folder = folder
+    }
 }
 
-struct WebForwardsConfiguration: Equatable, Codable, Sendable {
-    var enabled: Bool = false
-    var sshUser: String? = nil
-    var socksPort: Int? = 1080
-    var proxySuffixes: [String] = []
-    var localForwards: [LocalForward] = []
-    var browser: ManagedBrowserChoice? = nil
-    var browserMode: BrowserMode? = nil
-    var browserProfilePath: String? = nil
+package struct WebForwardsConfiguration: Equatable, Codable, Sendable {
+    package var enabled: Bool = false
+    package var sshUser: String? = nil
+    package var socksPort: Int? = 1080
+    package var proxySuffixes: [String] = []
+    package var localForwards: [LocalForward] = []
+    package var browser: ManagedBrowserChoice? = nil
+    package var browserMode: BrowserMode? = nil
+    package var browserProfilePath: String? = nil
 
-    struct LocalForward: Identifiable, Equatable, Codable, Sendable {
-        var id: Int { localPort }
-        var name: String
-        var localPort: Int
-        var remoteHost: String
-        var remotePort: Int
-        var openPath: String? = nil
-        var portableOptions: [String: ProfileValue] = [:]
+    package struct LocalForward: Identifiable, Equatable, Codable, Sendable {
+        package var id: Int { localPort }
+        package var name: String
+        package var localPort: Int
+        package var remoteHost: String
+        package var remotePort: Int
+        package var openPath: String? = nil
+        package var portableOptions: [String: ProfileValue] = [:]
 
-        enum CodingKeys: String, CodingKey {
+        package enum CodingKeys: String, CodingKey {
             case name, localPort, remoteHost, remotePort, openPath, portableOptions
+        }
+
+        package init(name: String, localPort: Int, remoteHost: String, remotePort: Int, openPath: String? = nil, portableOptions: [String: ProfileValue] = [:]) {
+            self.name = name
+            self.localPort = localPort
+            self.remoteHost = remoteHost
+            self.remotePort = remotePort
+            self.openPath = openPath
+            self.portableOptions = portableOptions
         }
     }
 
-    init(enabled: Bool = false, sshUser: String? = nil, socksPort: Int? = 1080,
+    package init(enabled: Bool = false, sshUser: String? = nil, socksPort: Int? = 1080,
             proxySuffixes: [String] = [], localForwards: [LocalForward] = [], browser: ManagedBrowserChoice? = nil,
             browserMode: BrowserMode? = nil, browserProfilePath: String? = nil) {
         self.enabled = enabled
@@ -115,7 +149,7 @@ struct WebForwardsConfiguration: Equatable, Codable, Sendable {
         case enabled, sshUser, socksPort, proxySuffixes, localForwards, browser, browserMode, browserProfilePath
     }
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         sshUser = try values.decodeIfPresent(String.self, forKey: .sshUser)
@@ -128,7 +162,7 @@ struct WebForwardsConfiguration: Equatable, Codable, Sendable {
         browserProfilePath = try values.decodeIfPresent(String.self, forKey: .browserProfilePath)
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(enabled, forKey: .enabled)
         try values.encodeIfPresent(sshUser, forKey: .sshUser)
@@ -142,7 +176,7 @@ struct WebForwardsConfiguration: Equatable, Codable, Sendable {
 }
 
 extension WebForwardsConfiguration.LocalForward {
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         name = try values.decode(String.self, forKey: .name)
         localPort = try values.decode(Int.self, forKey: .localPort)
@@ -153,17 +187,17 @@ extension WebForwardsConfiguration.LocalForward {
     }
 }
 
-enum BrowserMode: String, CaseIterable, Codable, Identifiable, Sendable {
+package enum BrowserMode: String, CaseIterable, Codable, Identifiable, Sendable {
     case existing, separate
-    var id: String { rawValue }
-    var name: String { self == .existing ? "Use My Browser" : "Separate Browser" }
+    package var id: String { rawValue }
+    package var name: String { self == .existing ? "Use My Browser" : "Separate Browser" }
 }
 
-enum ManagedBrowserChoice: String, CaseIterable, Codable, Identifiable, Sendable {
+package enum ManagedBrowserChoice: String, CaseIterable, Codable, Identifiable, Sendable {
     case automatic, chrome, edge, firefox, zen
 
-    var id: String { rawValue }
-    var name: String {
+    package var id: String { rawValue }
+    package var name: String {
         switch self {
         case .automatic: "Automatic"
         case .chrome: "Google Chrome"
@@ -178,7 +212,7 @@ extension ConnectionProfile {
     /// A neutral, empty profile the user fills in (nothing about any AWS environment is hardcoded
     /// in the app — F-18, ADR-5). Ports default to DCV's 8443. The instance tag value and secret
     /// id are blank because `~/.aws/config` doesn't carry them; the user supplies them in Settings.
-    static var template: ConnectionProfile {
+    package static var template: ConnectionProfile {
         ConnectionProfile(
             name: "New Workstation",
             ssoStartUrl: "",
@@ -196,7 +230,7 @@ extension ConnectionProfile {
 
     /// Build a profile from a resolved `~/.aws/config` entry (G4/G5). SSO facts come from config;
     /// the instance tag value + DCV secret id are left for the user to fill (config has no such concept).
-    init(name: String, awsConfig resolved: AWSConfigParser.ResolvedProfile) {
+    package init(name: String, awsConfig resolved: AWSConfigParser.ResolvedProfile) {
         self.init(
             name: name,
             ssoStartUrl: resolved.startUrl ?? "",

@@ -11,19 +11,19 @@ import Foundation
 ///
 /// `isValid(_:)` evaluates the raw string (so `" eu-central-1 "` is invalid); callers that want
 /// to accept surrounding whitespace `normalize(_:)` first.
-enum AWSRegion {
+package enum AWSRegion {
     /// The exact regex the AWS SDK uses to validate a region. Compiled once.
     private static let pattern = "^(?!.*-$)(?!-)[a-zA-Z0-9-]{1,63}$"
     private static let regex = try! NSRegularExpression(pattern: pattern)
 
     /// Trim leading/trailing whitespace and newlines. Does not otherwise alter the value.
-    static func normalize(_ s: String) -> String {
+    package static func normalize(_ s: String) -> String {
         s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Whether `s` is a syntactically valid AWS region per the SDK's own rule. The raw string is
     /// evaluated as-is; leading/trailing whitespace makes it invalid.
-    static func isValid(_ s: String) -> Bool {
+    package static func isValid(_ s: String) -> Bool {
         let range = NSRange(s.startIndex..<s.endIndex, in: s)
         return regex.firstMatch(in: s, range: range) != nil
     }

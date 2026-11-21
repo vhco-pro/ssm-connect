@@ -13,13 +13,13 @@ import Foundation
 /// domain) to a safe, unambiguous Linux username, rather than silently deleting
 /// characters or truncating — either of which could merge two distinct identities
 /// into the same account. Reserved/system names are refused outright.
-enum IdentityMapper {
-    enum MappingError: Error, Equatable, LocalizedError {
+package enum IdentityMapper {
+    package enum MappingError: Error, Equatable, LocalizedError {
         case noRoleSessionName
         case unsafeUsername
         case reservedUsername
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .noRoleSessionName: "Couldn't read your identity from AWS."
             case .unsafeUsername: "Your identity doesn't map to a valid workstation username."
@@ -29,7 +29,7 @@ enum IdentityMapper {
     }
 
     /// Reserved usernames we must never map to (system/service accounts). Mirrors the agent's list.
-    static let reserved: Set<String> = [
+    package static let reserved: Set<String> = [
         "root", "daemon", "bin", "sys", "sync", "games", "man", "lp", "mail", "news",
         "proxy", "www-data", "backup", "list", "nobody", "systemd-network", "dbus",
         "sshd", "rpc", "dcv", "dcvsmagent", "ec2-user", "ssm-user", "admin", "ubuntu", "centos",
@@ -38,7 +38,7 @@ enum IdentityMapper {
     /// Extracts the role-session-name (the segment after the last `/`) from an
     /// assumed-role ARN and maps it to a Linux username, rejecting anything
     /// ambiguous or privileged.
-    static func username(fromARN arn: String) throws -> String {
+    package static func username(fromARN arn: String) throws -> String {
         guard let slash = arn.lastIndex(of: "/") else {
             throw MappingError.noRoleSessionName
         }
@@ -53,7 +53,7 @@ enum IdentityMapper {
     /// is minimal and lossless-or-reject: take the local-part before any `@`,
     /// lowercase it; the result must match `^[a-z][a-z0-9_-]{0,31}$` and not be
     /// reserved, else it is REJECTED (never stripped or truncated).
-    static func sanitize(_ raw: String) throws -> String {
+    package static func sanitize(_ raw: String) throws -> String {
         var s = raw
         if let at = s.firstIndex(of: "@") {
             s = String(s[..<at])

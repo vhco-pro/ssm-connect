@@ -11,39 +11,39 @@ import Foundation
 /// - **Multi-user:** `authtoken=` (a presigned-identity token) + `sessionid=` targeting the user's
 ///   own virtual session. No password. The native client supports both `authtoken` and `sessionid`
 ///   in the `[connect]` section.
-struct DCVConnectionFile: Equatable, Sendable {
+package struct DCVConnectionFile: Equatable, Sendable {
     /// IPv4 loopback (not `localhost`): the SSM port-forward binds IPv4 `127.0.0.1` only, while
     /// `localhost` resolves to IPv6 `::1` first on macOS — the DCV Viewer then connects to `::1`,
     /// finds no listener, and fails with "endpoint is unreachable" (see docs/specs/bug-ipv6-localhost-*).
-    var host: String = "127.0.0.1"
-    var port: Int
-    var user: String = "ec2-user"
+    package var host: String = "127.0.0.1"
+    package var port: Int
+    package var user: String = "ec2-user"
     /// Vanilla auth: Secrets-Manager password. `nil` in multi-user mode.
-    var password: String?
+    package var password: String?
     /// Multi-user auth: presigned-identity token. `nil` in vanilla mode.
-    var authToken: String?
+    package var authToken: String?
     /// Target DCV session id (the user's own virtual session). `nil` for the default session.
-    var sessionId: String?
+    package var sessionId: String?
     /// DCV web URL path; `/` for a default session.
-    var webUrlPath: String = "/"
+    package var webUrlPath: String = "/"
 
     /// Temp-file naming so the startup sweep can find orphans left by a crash (ADR-8, §8).
-    static let tempFilePrefix = "ssm-connect-"
-    static let fileExtension = "dcv"
+    package static let tempFilePrefix = "ssm-connect-"
+    package static let fileExtension = "dcv"
 
     /// Vanilla (single-user) connection: `user` + Secrets-Manager `password`.
-    static func vanilla(host: String = "127.0.0.1", port: Int, user: String = "ec2-user", password: String) -> DCVConnectionFile {
+    package static func vanilla(host: String = "127.0.0.1", port: Int, user: String = "ec2-user", password: String) -> DCVConnectionFile {
         DCVConnectionFile(host: host, port: port, user: user, password: password)
     }
 
     /// Multi-user connection: `user`'s own `sessionId`, authorized by a presigned-identity `authToken`.
-    static func multiUser(host: String = "127.0.0.1", port: Int, user: String, sessionId: String, authToken: String) -> DCVConnectionFile {
+    package static func multiUser(host: String = "127.0.0.1", port: Int, user: String, sessionId: String, authToken: String) -> DCVConnectionFile {
         DCVConnectionFile(host: host, port: port, user: user, password: nil, authToken: authToken, sessionId: sessionId)
     }
 
     /// Renders the INI content DCV Viewer expects. Emits only the fields relevant to the active
     /// auth mode (token fields when present, otherwise the password field).
-    func iniContent() -> String {
+    package func iniContent() -> String {
         var lines = [
             "[version]",
             "format=1.0",
@@ -58,5 +58,15 @@ struct DCVConnectionFile: Equatable, Sendable {
         if let password { lines.append("password=\(password)") }
         lines.append("weburlpath=\(webUrlPath)")
         return lines.joined(separator: "\n")
+    }
+
+    package init(host: String = "127.0.0.1", port: Int, user: String = "ec2-user", password: String? = nil, authToken: String? = nil, sessionId: String? = nil, webUrlPath: String = "/") {
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.authToken = authToken
+        self.sessionId = sessionId
+        self.webUrlPath = webUrlPath
     }
 }
