@@ -1,3 +1,4 @@
+using System.IO;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
@@ -23,7 +24,7 @@ public sealed class HelperHostTests
         CancelConfirmation: TimeSpan.FromSeconds(10), HealthyRearm: TimeSpan.FromMinutes(10));
 
     /// <summary>An in-process helper that speaks the protocol over anonymous pipes.</summary>
-    sealed class FakeHelper : IHelperConnection
+    internal sealed class FakeHelper : IHelperConnection
     {
         readonly AnonymousPipeServerStream toHelper = new(PipeDirection.Out);
         readonly AnonymousPipeClientStream helperIn;
@@ -47,6 +48,10 @@ public sealed class HelperHostTests
         public Stream Input => toHelper;
         public Stream Output => fromHelper;
         public Task Exited => exited.Task;
+
+        /// <summary>Sends an event frame to the shell, as the helper does.</summary>
+        public void Emit(string workflow, string name, Dictionary<string, string> fields) =>
+            Send(new { type = "event", sequence = 1, workflow, name, fields });
 
         public void Exit()
         {
@@ -103,7 +108,7 @@ public sealed class HelperHostTests
     }
 
     /// <summary>Starts fake helpers and records container operations in order.</summary>
-    sealed class FakeSpawner(Func<FakeHelper> make) : IHelperSpawner
+    internal sealed class FakeSpawner(Func<FakeHelper> make) : IHelperSpawner
     {
         public readonly List<string> Log = [];
         public readonly List<FakeHelper> Started = [];

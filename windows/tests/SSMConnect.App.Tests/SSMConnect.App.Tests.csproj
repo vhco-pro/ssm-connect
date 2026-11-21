@@ -6,6 +6,7 @@
     <RootNamespace>SSMConnect.App.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
