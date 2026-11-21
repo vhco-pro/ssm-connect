@@ -58,14 +58,20 @@ public struct AWSClient: Sendable {
     let transport: any HTTPTransport
     let now: @Sendable () -> Date
     let retry: RetryPolicy
+    let clockSkew: ClockSkewStore
+    let quotas = RetryQuotas()
 
+    /// `clockSkew` is the process-wide store unless a test supplies its own. Each client holds
+    /// its own retry quotas, so code that reuses one client shares them across calls.
     public init(region: String, credentials: AWSCredentialSet?, transport: any HTTPTransport = URLSessionTransport(),
-                now: @escaping @Sendable () -> Date = { Date() }, retry: RetryPolicy = .standard) {
+                now: @escaping @Sendable () -> Date = { Date() }, retry: RetryPolicy = .standard,
+                clockSkew: ClockSkewStore = .shared) {
         self.region = region
         self.credentials = credentials
         self.transport = transport
         self.now = now
         self.retry = retry
+        self.clockSkew = clockSkew
     }
 
     // MARK: SSO OIDC (REST JSON, unsigned)
@@ -105,7 +111,7 @@ public struct AWSClient: Sendable {
         components.path = "/federation/credentials"
         components.percentEncodedQuery = "account_id=\(SigV4.uriEncode(accountId, encodeSlash: true))&role_name=\(SigV4.uriEncode(roleName, encodeSlash: true))"
         let request = HTTPRequest(method: "GET", url: components.url!, headers: [("x-amz-sso_bearer_token", accessToken)])
-        let response = try await send(retrying: true, { request }, decodeError: ErrorDecoding.restJSON)
+        let response = try await send(.sso, url: request.url, signed: false, { _ in request }, decodeError: ErrorDecoding.restJSON)
         let body = ErrorDecoding.jsonObject(response.body)
         guard let role = body["roleCredentials"] as? [String: Any], let key = role["accessKeyId"] as? String,
               let secret = role["secretAccessKey"] as? String, let token = role["sessionToken"] as? String else {
@@ -214,15 +220,15 @@ public struct AWSClient: Sendable {
         url.appendPathComponent(String(path.dropFirst()))
         let request = HTTPRequest(method: "POST", url: url, headers: [("Content-Type", "application/json")],
                                   body: try JSONSerialization.data(withJSONObject: input))
-        let response = try await send(retrying: true, { request }, decodeError: ErrorDecoding.restJSON)
+        let response = try await send(service, url: url, signed: false, { _ in request }, decodeError: ErrorDecoding.restJSON)
         return ErrorDecoding.jsonObject(response.body)
     }
 
     private func awsJSON(_ service: AWSService, target: String, _ input: [String: Any]) async throws -> [String: Any] {
         let body = try JSONSerialization.data(withJSONObject: input)
         let url = try AWSEndpoints.url(for: service, region: region)
-        let response = try await send(retrying: true, {
-            try self.signed(service, url: url, body: body,
+        let response = try await send(service, url: url, signed: true, { date in
+            try self.signed(service, url: url, body: body, date: date,
                             headers: [("Content-Type", "application/x-amz-json-1.1"), ("X-Amz-Target", target)])
         }, decodeError: { ErrorDecoding.awsJSON($0, service: service) })
         return ErrorDecoding.jsonObject(response.body)
@@ -232,21 +238,21 @@ public struct AWSClient: Sendable {
         let pairs = params + [("Action", action), ("Version", "2016-11-15")]
         let form = pairs.map { "\(SigV4.uriEncode($0.0, encodeSlash: true))=\(SigV4.uriEncode($0.1, encodeSlash: true))" }.joined(separator: "&")
         let url = try AWSEndpoints.url(for: .ec2, region: region)
-        let response = try await send(retrying: true, {
-            try self.signed(.ec2, url: url, body: Data(form.utf8), headers: [("Content-Type", "application/x-www-form-urlencoded")])
+        let response = try await send(.ec2, url: url, signed: true, { date in
+            try self.signed(.ec2, url: url, body: Data(form.utf8), date: date, headers: [("Content-Type", "application/x-www-form-urlencoded")])
         }, decodeError: ErrorDecoding.ec2)
         guard let root = XMLElement.parse(response.body) else { throw AWSClientError.malformedResponse(operation: action) }
         return root
     }
 
-    /// A POST to the service root, signed in header form at the time of the attempt.
-    private func signed(_ service: AWSService, url: URL, body: Data, headers: [(String, String)]) throws -> HTTPRequest {
+    /// A POST to the service root, signed in header form at `date`.
+    private func signed(_ service: AWSService, url: URL, body: Data, date: Date, headers: [(String, String)]) throws -> HTTPRequest {
         let host = url.port.map { "\(url.host!):\($0)" } ?? url.host!
         let unsigned = [("Host", host)] + headers
         let result = SigV4.signHeaders(
             SigV4.Request(method: "POST", path: "/", headers: unsigned, body: body),
             credentials: try requireCredentials(),
-            context: SigV4.Context(region: region, service: service.signingName, date: now())
+            context: SigV4.Context(region: region, service: service.signingName, date: date)
         )
         return HTTPRequest(method: "POST", url: url, headers: headers + result.headers, body: body)
     }
@@ -256,24 +262,41 @@ public struct AWSClient: Sendable {
         return credentials
     }
 
-    /// Sends with the fixed retry policy; each attempt rebuilds (and re-signs) the request.
-    func send(retrying: Bool, _ build: () throws -> HTTPRequest,
+    /// Sends with the fixed retry policy, the clock-skew correction and the client's retry quota
+    /// for `service`. Each attempt rebuilds the request; a signed one is signed at the local time
+    /// plus the host's stored offset (`build` receives that time).
+    func send(_ service: AWSService, url: URL, signed: Bool, _ build: (Date) throws -> HTTPRequest,
               decodeError: (HTTPResponse) -> AWSServiceError) async throws -> HTTPResponse {
+        let host = url.host ?? ""
         var retryCount = 0
+        var lastRetryCost: Int?
         while true {
             try Task.checkCancellation()
             let failure: any Error
+            let timedOut: Bool
             do {
-                let response = try await transport.send(try build())
-                if (200..<300).contains(response.status) { return response }
+                let local = now()
+                let offset = await clockSkew.offset(host: host) ?? 0
+                let response = try await transport.send(try build(local.addingTimeInterval(offset)))
+                if (200..<300).contains(response.status) {
+                    quotas.release(service.signingName, lastRetryCost: lastRetryCost)
+                    return response
+                }
                 let error = decodeError(response)
-                guard retrying, RetryPolicy.isRetryable(error) else { throw error }
+                let skewChanged = await clockSkew.update(host: host) { previous in
+                    ClockSkew.next(previous: previous, error: error, signedAt: signed ? local : nil, response: response)
+                }
+                guard skewChanged || RetryPolicy.isRetryable(error) else { throw error }
                 failure = error
+                timedOut = false
             } catch let error as URLError {
-                guard retrying, RetryPolicy.isRetryable(error) else { throw error }
+                guard RetryPolicy.isRetryable(error) else { throw error }
                 failure = error
+                timedOut = error.code == .timedOut
             }
             guard retryCount + 1 < RetryPolicy.maxAttempts else { throw failure }
+            guard let cost = quotas.take(service.signingName, timeout: timedOut) else { throw failure }
+            lastRetryCost = cost
             try await retry.sleep(RetryPolicy.delay(retry: retryCount, random: retry.random()))
             retryCount += 1
         }
