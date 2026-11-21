@@ -757,6 +757,7 @@ None.
 | 2026-11-18 | R-19 | spec | `c7c2163` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-18 | R-20 | spec | `654c59e` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-18 | R-20 | spec | `654c59e` | n/a | n/a | accepted by owner |
+| 2026-11-21 | R-21 | spec | `9f2969f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 
 ### R-1
 
@@ -1207,6 +1208,29 @@ PROPOSAL: State the already selected plugin race exception in the owner summary 
 ### R-20
 
 NO FINDINGS
+
+### R-21
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, lines 382-394; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T42, T43; Sources / clock-skew decision, lines 1228-1229
+EVIDENCE: The new clock-skew revision defines storing and retaining corrections but omits their removal. The pinned [AWSClockSkewProvider](https://github.com/awslabs/aws-sdk-swift/blob/b60b2f0805a6177cf0bc181c973134281fbff972/Sources/Core/AWSClientRuntime/Sources/AWSClientRuntime/ClockSkew/AWSClockSkewProvider.swift#L24-L47) clears an existing correction when a subsequent skew error has a near, missing or invalid Date header. Its calculation also uses the unadjusted local timestamp: [SigV4Signer](https://github.com/smithy-lang/smithy-swift/blob/31336dfea2e448523630ea1fe4d83ddc1156de3c/Sources/SmithyHTTPAuth/SigV4Signer.swift#L55-L79) records Date() separately from the corrected signing date at line 142. Design's “time it signed at” does not distinguish those timestamps. The listed proofs can pass without establishing recovery when the local clock changes after a correction was learned.
+PROPOSAL: Define calculation from the unadjusted local timestamp and the SDK's transitions for clearing an existing correction. Extend T42 and AC-28's proof with an already-corrected client whose local clock is subsequently repaired, plus missing and invalid Date headers.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, per-host correction and changed-offset retry, lines 382-391; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T42, T43
+EVIDENCE: The revision introduces shared mutable clock state without defining concurrent updates. The pinned [ClockSkewStore](https://github.com/smithy-lang/smithy-swift/blob/31336dfea2e448523630ea1fe4d83ddc1156de3c/Sources/ClientRuntime/ClockSkew/ClockSkewStore.swift#L10-L41) serializes comparison, replacement and the returned changed flag in one actor operation. With two simultaneous AuthFailure responses for the same host and offset, only the first update changes that store. Separate reads and writes could let both callers report a change and retry. Every stated sequential skew check could pass while that behavior differs from the SDK.
+PROPOSAL: Specify process-wide sharing and atomic comparison, update and changed-result semantics. Add concurrent same-host failure checks that compare resulting retries with the pinned SDK.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary, lines 71-93; Context / Observed credential-free portability results, lines 183-185; Design / First increment; Tasks / T32-T43, T4, T5; Sources / clock-skew decision
+EVIDENCE: Frontmatter identifies clock-skew correction as the current revision, but the owner summary does not explain that change since the latest acceptance. It still describes authentication and transports as unverified and authorization as limited to credential-free spikes. T5 now records native SSO authorization, refresh and usable SSM traffic on Windows and Fedora, while T33 and T35 record completed client checks. These records are not independently established native proof in this review, but their presence conflicts with the summary's unqualified account of progress. The pinned feature-document standard requires refreshing the summary when proof or decisions change.
+PROPOSAL: Refresh the summary to explain the clock-skew addition and distinguish recorded subset results from remaining full-workflow acceptance. Reconcile the authorization wording with the authority actually granted for completed tasks, preserving separate permission boundaries for future operations.
 
 ## Sources
 
