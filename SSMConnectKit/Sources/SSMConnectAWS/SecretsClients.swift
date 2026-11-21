@@ -1,22 +1,26 @@
+// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
+#if os(macOS)
 import AWSSecretsManager
 import Foundation
+import SSMConnectDomain
+import SSMConnectWorkflow
 import SmithyIdentity
 
 /// Thin seam over `aws-sdk-swift`'s `SecretsManagerClient` so `SecretsService` is unit-testable
 /// with a mocked client (E1, ADR-P2).
-protocol SecretsClienting: Sendable {
+package protocol SecretsClienting: Sendable {
     func getSecretValue(_ input: GetSecretValueInput) async throws -> GetSecretValueOutput
 }
 
 extension SecretsManagerClient: SecretsClienting {
-    func getSecretValue(_ input: GetSecretValueInput) async throws -> GetSecretValueOutput {
+    package func getSecretValue(_ input: GetSecretValueInput) async throws -> GetSecretValueOutput {
         try await getSecretValue(input: input)
     }
 }
 
 /// Builds a real `SecretsManagerClient` bound to SSO STS credentials and the resource region.
-enum SecretsClientFactory {
-    static func make(credentials: AWSCredentials, region: String) throws -> SecretsClienting {
+package enum SecretsClientFactory {
+    package static func make(credentials: AWSCredentials, region: String) throws -> SecretsClienting {
         let identity = AWSCredentialIdentity(
             accessKey: credentials.accessKeyId,
             secret: credentials.secretAccessKey,
@@ -29,3 +33,4 @@ enum SecretsClientFactory {
         return SecretsManagerClient(config: config)
     }
 }
+#endif

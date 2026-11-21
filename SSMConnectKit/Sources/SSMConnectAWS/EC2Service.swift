@@ -1,22 +1,26 @@
+// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
+#if os(macOS)
 import AWSEC2
 import Foundation
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Default `EC2Providing` backed by `aws-sdk-swift`'s `EC2Client` (C2, C3).
 ///
 /// Resolves the workstation by tag, starts it if stopped, and polls until it is `running`.
 /// All operations use the profile's **resource region** and the SSO-derived STS credentials.
-final class EC2Service: EC2Providing {
-    typealias ClientFactory = @Sendable (_ credentials: AWSCredentials, _ region: String) throws -> EC2Clienting
+package final class EC2Service: EC2Providing {
+    package typealias ClientFactory = @Sendable (_ credentials: AWSCredentials, _ region: String) throws -> EC2Clienting
 
     private let makeClient: ClientFactory
 
-    init(makeClient: @escaping ClientFactory = { try EC2ClientFactory.make(credentials: $0, region: $1) }) {
+    package init(makeClient: @escaping ClientFactory = { try EC2ClientFactory.make(credentials: $0, region: $1) }) {
         self.makeClient = makeClient
     }
 
     // MARK: - EC2Providing
 
-    func resolveInstance(
+    package func resolveInstance(
         tagKey: String,
         tagValue: String,
         region: String,
@@ -40,17 +44,17 @@ final class EC2Service: EC2Providing {
         return try Self.domain(from: instances[0])
     }
 
-    func startInstance(instanceId: String, region: String, credentials: AWSCredentials) async throws {
+    package func startInstance(instanceId: String, region: String, credentials: AWSCredentials) async throws {
         let client = try makeClient(credentials, region)
         _ = try await client.startInstances(StartInstancesInput(instanceIds: [instanceId]))
     }
 
-    func stopInstance(instanceId: String, region: String, credentials: AWSCredentials) async throws {
+    package func stopInstance(instanceId: String, region: String, credentials: AWSCredentials) async throws {
         let client = try makeClient(credentials, region)
         _ = try await client.stopInstances(StopInstancesInput(instanceIds: [instanceId]))
     }
 
-    func pollUntilRunning(
+    package func pollUntilRunning(
         instanceId: String,
         region: String,
         credentials: AWSCredentials,
@@ -111,3 +115,4 @@ final class EC2Service: EC2Providing {
         }
     }
 }
+#endif

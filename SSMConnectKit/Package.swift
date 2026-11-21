@@ -33,11 +33,28 @@ let package = Package(
         // injected ports. Like SSMConnectDomain, no macOS framework and no AWS SDK module; the
         // macOS implementations of its ports stay in the platform targets.
         .target(name: "SSMConnectWorkflow", dependencies: ["SSMConnectDomain"]),
+        // The AWS boundary: SSM Connect's own client and the service ports built on it, shared by
+        // every platform, and on macOS the aws-sdk-swift services until T36 switches it over.
+        .target(
+            name: "SSMConnectAWS",
+            dependencies: [
+                "SSMConnectDomain",
+                "SSMConnectWorkflow",
+                .product(name: "SSMConnectAWSClient", package: "AWSClient"),
+                .product(name: "AWSSSOOIDC", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
+                .product(name: "AWSSSO", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
+                .product(name: "AWSEC2", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
+                .product(name: "AWSEC2InstanceConnect", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
+                .product(name: "AWSSSM", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
+                .product(name: "AWSSecretsManager", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
+            ]
+        ),
         .target(
             name: "SSMConnectKit",
             dependencies: [
                 "SSMConnectDomain",
                 "SSMConnectWorkflow",
+                "SSMConnectAWS",
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "SSMConnectAWSClient", package: "AWSClient"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
@@ -55,6 +72,7 @@ let package = Package(
                 "SSMConnectKit",
                 "SSMConnectDomain",
                 "SSMConnectWorkflow",
+                "SSMConnectAWS",
                 // The tests construct AWS SDK response types directly. AWSClientRuntime is
                 // explicit because the error-rendering tests build a real
                 // `UnknownAWSHTTPServiceError` rather than a look-alike stub (#20).

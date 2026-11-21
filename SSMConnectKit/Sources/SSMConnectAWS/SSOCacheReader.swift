@@ -1,11 +1,15 @@
+// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
+#if os(macOS)
 import CryptoKit
 import Foundation
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Reads (and silently updates) the AWS SSO token cache (F-05, B2).
 ///
 /// Behind a protocol so `AWSAuthProvider` can be unit-tested with fixture tokens
 /// instead of touching the real `~/.aws/sso/cache/` directory.
-protocol SSOCacheReading: Sendable {
+package protocol SSOCacheReading: Sendable {
     /// Returns the cached token matching `startUrl` + `region`, or `nil` if none exists.
     func token(startUrl: String, region: String) throws -> SSOToken?
 
@@ -17,22 +21,22 @@ protocol SSOCacheReading: Sendable {
 }
 
 /// Default `SSOCacheReading` backed by `~/.aws/sso/cache/*.json`.
-struct SSOCacheReader: SSOCacheReading {
+package struct SSOCacheReader: SSOCacheReading {
     private let directory: URL
 
     /// - Parameter directory: the cache directory; defaults to `~/.aws/sso/cache`.
-    init(directory: URL? = nil) {
+    package init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default
             .homeDirectoryForCurrentUser
             .appendingPathComponent(".aws/sso/cache", isDirectory: true)
     }
 
-    func token(startUrl: String, region: String) throws -> SSOToken? {
+    package func token(startUrl: String, region: String) throws -> SSOToken? {
         guard let match = try matchingFile(startUrl: startUrl, region: region) else { return nil }
         return match.token
     }
 
-    func update(_ token: SSOToken) throws {
+    package func update(_ token: SSOToken) throws {
         // Overwrite the existing matching file (preserving unmodelled fields) or create a new
         // 0600 cache file named like the AWS CLI (sha1 of the start URL).
         let url: URL
@@ -65,7 +69,7 @@ struct SSOCacheReader: SSOCacheReading {
     }
 
     /// AWS CLI cache filename stem: lowercase hex sha1 of the start URL.
-    static func cacheKey(for startUrl: String) -> String {
+    package static func cacheKey(for startUrl: String) -> String {
         Insecure.SHA1.hash(data: Data(startUrl.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -93,16 +97,16 @@ struct SSOCacheReader: SSOCacheReading {
     /// Mirror of the on-disk cache JSON. `accessToken`, `expiresAt`, `startUrl`, and
     /// `region` are required for a usable token; the rest are optional.
     private struct RawSSOToken: Decodable {
-        let startUrl: String?
-        let region: String?
-        let accessToken: String?
-        let expiresAt: String?
-        let clientId: String?
-        let clientSecret: String?
-        let refreshToken: String?
-        let registrationExpiresAt: String?
+        package let startUrl: String?
+        package let region: String?
+        package let accessToken: String?
+        package let expiresAt: String?
+        package let clientId: String?
+        package let clientSecret: String?
+        package let refreshToken: String?
+        package let registrationExpiresAt: String?
 
-        func toToken() -> SSOToken? {
+        package func toToken() -> SSOToken? {
             guard let startUrl, let region,
                   let accessToken, !accessToken.isEmpty,
                   let expiresAt, let expiry = SSOCacheReader.date(from: expiresAt) else {
@@ -123,7 +127,7 @@ struct SSOCacheReader: SSOCacheReading {
 
     /// Parses ISO-8601 timestamps as written by the AWS CLI (with or without fractional
     /// seconds), e.g. `2026-06-05T20:00:00Z` or `2026-06-05T20:00:00.123Z`.
-    static func date(from string: String) -> Date? {
+    package static func date(from string: String) -> Date? {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = withFraction.date(from: string) { return date }
@@ -132,9 +136,10 @@ struct SSOCacheReader: SSOCacheReading {
         return plain.date(from: string)
     }
 
-    static func isoString(from date: Date) -> String {
+    package static func isoString(from date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: date)
     }
 }
+#endif

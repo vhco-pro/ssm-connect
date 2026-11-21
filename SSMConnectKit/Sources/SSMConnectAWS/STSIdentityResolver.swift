@@ -1,4 +1,5 @@
 import Foundation
+import SSMConnectDomain
 import SSMConnectAWSClient
 
 /// Resolves the *local* user's own identity by re-executing a presigned
@@ -10,17 +11,17 @@ import SSMConnectAWSClient
 /// `getCallerIdentityARN`: the presigned URL from the client's endpoint resolver,
 /// sent once with no retry and no clock-skew correction, failing on any
 /// non-success response.
-struct STSIdentityResolver {
-    let presigner: STSPresigner
-    var now: @Sendable () -> Date = { Date() }
-    var transport: any HTTPTransport = URLSessionTransport()
+package struct STSIdentityResolver {
+    package let presigner: STSPresigner
+    package var now: @Sendable () -> Date = { Date() }
+    package var transport: any HTTPTransport = URLSessionTransport()
 
-    enum IdentityResolveError: Error, Equatable, LocalizedError {
+    package enum IdentityResolveError: Error, Equatable, LocalizedError {
         case badURL
         case stsRejected
         case noArn
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .badURL: "Couldn't build the identity request."
             case .stsRejected: "AWS rejected the identity request — your session may have expired."
@@ -30,7 +31,7 @@ struct STSIdentityResolver {
     }
 
     /// Returns the verified caller ARN and the derived Linux username.
-    func resolve(credentials: AWSCredentials) async throws -> (arn: String, username: String) {
+    package func resolve(credentials: AWSCredentials) async throws -> (arn: String, username: String) {
         let client = AWSClient(region: presigner.region, credentials: credentials.signingCredentials,
                                transport: transport, now: now)
         let arn: String
@@ -45,5 +46,11 @@ struct STSIdentityResolver {
         }
         let username = try IdentityMapper.username(fromARN: arn)
         return (arn, username)
+    }
+
+    package init(presigner: STSPresigner, now: @escaping @Sendable () -> Date = { Date() }, transport: any HTTPTransport = URLSessionTransport()) {
+        self.presigner = presigner
+        self.now = now
+        self.transport = transport
     }
 }

@@ -3,3 +3,4 @@
 // through the existing umbrella).
 @_exported import SSMConnectDomain
 @_exported import SSMConnectWorkflow
+@_exported import SSMConnectAWS

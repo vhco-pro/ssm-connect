@@ -1,17 +1,21 @@
+// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
+#if os(macOS)
 import AWSSecretsManager
 import Foundation
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Default `SecretsProviding` backed by `aws-sdk-swift`'s `SecretsManagerClient` (E1, F-11).
-final class SecretsService: SecretsProviding {
-    typealias ClientFactory = @Sendable (_ credentials: AWSCredentials, _ region: String) throws -> SecretsClienting
+package final class SecretsService: SecretsProviding {
+    package typealias ClientFactory = @Sendable (_ credentials: AWSCredentials, _ region: String) throws -> SecretsClienting
 
     private let makeClient: ClientFactory
 
-    init(makeClient: @escaping ClientFactory = { try SecretsClientFactory.make(credentials: $0, region: $1) }) {
+    package init(makeClient: @escaping ClientFactory = { try SecretsClientFactory.make(credentials: $0, region: $1) }) {
         self.makeClient = makeClient
     }
 
-    func fetchSecret(secretId: String, region: String, credentials: AWSCredentials) async throws -> String {
+    package func fetchSecret(secretId: String, region: String, credentials: AWSCredentials) async throws -> String {
         let client = try makeClient(credentials, region)
         let output: GetSecretValueOutput
         do {
@@ -25,3 +29,4 @@ final class SecretsService: SecretsProviding {
         return value
     }
 }
+#endif

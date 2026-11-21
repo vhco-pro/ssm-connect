@@ -1,25 +1,29 @@
+// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
+#if os(macOS)
 import AWSSSM
 import Foundation
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Default `SSMProviding` backed by `aws-sdk-swift`'s `SSMClient` (D2).
 ///
 /// Polls SSM until the instance's agent is `Online`, then opens a port-forwarding session.
-final class SSMService: SSMProviding {
-    typealias ClientFactory = @Sendable (_ credentials: AWSCredentials, _ region: String) throws -> SSMClienting
+package final class SSMService: SSMProviding {
+    package typealias ClientFactory = @Sendable (_ credentials: AWSCredentials, _ region: String) throws -> SSMClienting
 
     /// SSM document for local port forwarding (spec §6.4).
-    static let portForwardDocument = "AWS-StartPortForwardingSession"
-    static let sshDocument = "AWS-StartSSHSession"
+    package static let portForwardDocument = "AWS-StartPortForwardingSession"
+    package static let sshDocument = "AWS-StartSSHSession"
 
     private let makeClient: ClientFactory
 
-    init(makeClient: @escaping ClientFactory = { try SSMClientFactory.make(credentials: $0, region: $1) }) {
+    package init(makeClient: @escaping ClientFactory = { try SSMClientFactory.make(credentials: $0, region: $1) }) {
         self.makeClient = makeClient
     }
 
     // MARK: - SSMProviding
 
-    func startSSHSession(
+    package func startSSHSession(
         instanceId: String, region: String, credentials: AWSCredentials
     ) async throws -> SSMSessionResponse {
         let client = try makeClient(credentials, region)
@@ -34,7 +38,7 @@ final class SSMService: SSMProviding {
         return SSMSessionResponse(sessionId: sessionId, streamUrl: streamUrl, tokenValue: tokenValue)
     }
 
-    func waitForSSMOnline(
+    package func waitForSSMOnline(
         instanceId: String,
         region: String,
         credentials: AWSCredentials,
@@ -57,7 +61,7 @@ final class SSMService: SSMProviding {
         throw SSMError.notOnlineInTime(instanceId: instanceId)
     }
 
-    func startSession(
+    package func startSession(
         instanceId: String,
         region: String,
         credentials: AWSCredentials,
@@ -84,3 +88,4 @@ final class SSMService: SSMProviding {
         return SSMSessionResponse(sessionId: sessionId, streamUrl: streamUrl, tokenValue: tokenValue)
     }
 }
+#endif

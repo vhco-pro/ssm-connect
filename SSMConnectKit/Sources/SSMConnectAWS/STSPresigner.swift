@@ -1,4 +1,5 @@
 import Foundation
+import SSMConnectDomain
 import SSMConnectAWSClient
 
 /// Builds a presigned `sts:GetCallerIdentity` GET URL to use as the DCV
@@ -12,11 +13,11 @@ import SSMConnectAWSClient
 /// which passes the AWS signing test suite, signs it. It must produce a URL the
 /// agent's Go verifier accepts (spec §12.4 / ADR-5); STSPresignerTests holds that
 /// known answer.
-struct STSPresigner {
-    let region: String
+package struct STSPresigner {
+    package let region: String
 
     /// Produces the presigned URL. `now` is injectable for deterministic tests.
-    func presignedGetCallerIdentityURL(
+    package func presignedGetCallerIdentityURL(
         credentials: AWSCredentials,
         now: Date,
         expiresSeconds: Int = 120
@@ -24,12 +25,8 @@ struct STSPresigner {
         try AWSClient(region: region, credentials: credentials.signingCredentials, now: { now })
             .presignedCallerIdentityURL(expires: expiresSeconds).absoluteString
     }
-}
 
-extension AWSCredentials {
-    /// The credentials in the AWS client's form; an empty session token is omitted.
-    var signingCredentials: AWSCredentialSet {
-        AWSCredentialSet(accessKeyID: accessKeyId, secretAccessKey: secretAccessKey,
-                         sessionToken: sessionToken.isEmpty ? nil : sessionToken)
+    package init(region: String) {
+        self.region = region
     }
 }

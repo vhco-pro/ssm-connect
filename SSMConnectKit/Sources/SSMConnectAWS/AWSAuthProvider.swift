@@ -1,8 +1,12 @@
+// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
+#if os(macOS)
 import AppKit
 import AWSSSO
 import AWSSSOOIDC
 import ClientRuntime
 import Foundation
+import SSMConnectDomain
+import SSMConnectWorkflow
 import OSLog
 
 /// Default `AuthProviding` backed by `aws-sdk-swift` (B3, B4).
@@ -16,9 +20,9 @@ import OSLog
 ///
 /// All SSO/OIDC + `GetRoleCredentials` calls use the profile's **SSO region**
 /// (`ssoRegion`), which is distinct from the resource region (B4).
-final class AWSAuthProvider: AuthProviding {
-    typealias OIDCClientFactory = @Sendable (_ ssoRegion: String) throws -> SSOOIDCClienting
-    typealias SSOClientFactory = @Sendable (_ ssoRegion: String) throws -> SSOClienting
+package final class AWSAuthProvider: AuthProviding {
+    package typealias OIDCClientFactory = @Sendable (_ ssoRegion: String) throws -> SSOOIDCClienting
+    package typealias SSOClientFactory = @Sendable (_ ssoRegion: String) throws -> SSOClienting
 
     private let cache: SSOCacheReading
     private let makeOIDCClient: OIDCClientFactory
@@ -30,7 +34,7 @@ final class AWSAuthProvider: AuthProviding {
     private let renewalLeadTime: TimeInterval
     private let logger = Logger(subsystem: "pro.vhco.ssm-connect", category: "Authentication")
 
-    init(
+    package init(
         cache: SSOCacheReading = SSOCacheReader(),
         makeOIDCClient: @escaping OIDCClientFactory = { try SSOOIDCClient(region: $0) },
         makeSSOClient: @escaping SSOClientFactory = { try SSOClient(region: $0) },
@@ -52,7 +56,7 @@ final class AWSAuthProvider: AuthProviding {
 
     // MARK: - AuthProviding
 
-    func authenticate(profile: ConnectionProfile) async throws -> AWSCredentials {
+    package func authenticate(profile: ConnectionProfile) async throws -> AWSCredentials {
         if let accessToken = try await validAccessToken(profile: profile) {
             do {
                 return try await roleCredentials(profile: profile, accessToken: accessToken)
@@ -63,7 +67,7 @@ final class AWSAuthProvider: AuthProviding {
         return try await signIn(profile: profile)
     }
 
-    func refreshIfNeeded(profile: ConnectionProfile) async throws -> AWSCredentials {
+    package func refreshIfNeeded(profile: ConnectionProfile) async throws -> AWSCredentials {
         guard let accessToken = try await validAccessToken(profile: profile) else {
             throw AuthError.signInRequired
         }
@@ -75,12 +79,12 @@ final class AWSAuthProvider: AuthProviding {
         }
     }
 
-    func signIn(profile: ConnectionProfile) async throws -> AWSCredentials {
+    package func signIn(profile: ConnectionProfile) async throws -> AWSCredentials {
         let accessToken = try await deviceAuthorize(profile: profile)
         return try await roleCredentials(profile: profile, accessToken: accessToken)
     }
 
-    func authorizationMetadata(profile: ConnectionProfile) async throws -> AuthorizationMetadata? {
+    package func authorizationMetadata(profile: ConnectionProfile) async throws -> AuthorizationMetadata? {
         guard let token = try cache.token(startUrl: profile.ssoStartUrl, region: profile.ssoRegion) else { return nil }
         return AuthorizationMetadata(accessTokenExpiry: token.expiresAt, canRefresh: token.canRefresh(at: now()))
     }
@@ -270,12 +274,12 @@ final class AWSAuthProvider: AuthProviding {
     /// here and therefore arrives as `UnknownAWSHTTPServiceError` rather than a concrete type.
     /// `UnauthorizedException` is deliberately excluded: that one means the *token* is bad, and
     /// the caller's re-auth path should keep handling it.
-    static func isRoleAccessDenied(_ error: Error) -> Bool {
+    package static func isRoleAccessDenied(_ error: Error) -> Bool {
         if (error as? HTTPError)?.httpResponse.statusCode == .forbidden { return true }
         return (error as? ServiceError)?.typeName == "ForbiddenException"
     }
 
-    static func isRejectedAuthorization(_ error: Error) -> Bool {
+    package static func isRejectedAuthorization(_ error: Error) -> Bool {
         if error as? AuthError == .signInRequired || error is InvalidGrantException { return true }
         guard let name = (error as? ServiceError)?.typeName else { return false }
         return ["UnauthorizedException", "ExpiredToken", "ExpiredTokenException",
@@ -283,8 +287,9 @@ final class AWSAuthProvider: AuthProviding {
                 "InvalidClientException", "UnauthorizedClientException"].contains(name)
     }
 
-    static func isPermissionDenied(_ error: Error) -> Bool {
+    package static func isPermissionDenied(_ error: Error) -> Bool {
         guard let name = (error as? ServiceError)?.typeName else { return false }
         return ["AccessDenied", "AccessDeniedException", "UnauthorizedOperation", "ForbiddenException"].contains(name)
     }
 }
+#endif
