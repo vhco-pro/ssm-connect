@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Feasibility proven on Windows and Fedora (T4, T5) with the AWS client (T32-T41 parts done). Open: the clock-skew gap needs a spec decision; next tasks are T6-T11 extraction. T1 awaits a baseline-Mac run."
+status: draft
+status_description: "Revising Design for clock-skew correction matching the SDK, a gap the T5 live run exposed. Needs a fresh review and re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
