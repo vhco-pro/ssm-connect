@@ -4,3 +4,5 @@
 @_exported import SSMConnectDomain
 @_exported import SSMConnectWorkflow
 @_exported import SSMConnectAWS
+@_exported import SSMConnectMacOS
+@_exported import SSMConnectUI

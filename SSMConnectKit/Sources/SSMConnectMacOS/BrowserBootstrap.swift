@@ -3,19 +3,22 @@ import CFNetwork
 import CryptoKit
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 
-enum BrowserFamily { case chromium, firefox }
+package enum BrowserFamily { case chromium, firefox }
 
-struct BrowserDescriptor: Equatable {
-    let choice: ManagedBrowserChoice
-    let bundleID: String
-    let applicationURL: URL
-    let executableURL: URL
-    let version: String
+package struct BrowserDescriptor: Equatable {
+    package let choice: ManagedBrowserChoice
+    package let bundleID: String
+    package let applicationURL: URL
+    package let executableURL: URL
+    package let version: String
 
-    var family: BrowserFamily { choice == .chrome || choice == .edge ? .chromium : .firefox }
-    func supports(_ mode: BrowserMode) -> Bool {
+    package var family: BrowserFamily { choice == .chrome || choice == .edge ? .chromium : .firefox }
+    package func supports(_ mode: BrowserMode) -> Bool {
         switch choice {
         case .chrome: mode == .separate && version == "156.0.8078.12"
         case .zen: version == "1.23.1b"
@@ -23,7 +26,7 @@ struct BrowserDescriptor: Equatable {
         }
     }
 
-    @MainActor static func installed() -> [BrowserDescriptor] {
+    @MainActor package static func installed() -> [BrowserDescriptor] {
         let products: [(ManagedBrowserChoice, String)] = [(.chrome, "com.google.Chrome"),
             (.edge, "com.microsoft.edgemac"), (.firefox, "org.mozilla.firefox"), (.zen, "app.zen-browser.zen")]
         return products.compactMap { choice, bundleID in
@@ -35,17 +38,25 @@ struct BrowserDescriptor: Equatable {
                          executableURL: executable, version: version)
         }
     }
+
+    package init(choice: ManagedBrowserChoice, bundleID: String, applicationURL: URL, executableURL: URL, version: String) {
+        self.choice = choice
+        self.bundleID = bundleID
+        self.applicationURL = applicationURL
+        self.executableURL = executableURL
+        self.version = version
+    }
 }
 
-struct BrowserRouting: Equatable, Codable {
-    let workstationID: UUID
-    let choice: ManagedBrowserChoice
-    let mode: BrowserMode
-    let profilePath: String
-    let port: Int
-    let suffixes: [String]
+package struct BrowserRouting: Equatable, Codable {
+    package let workstationID: UUID
+    package let choice: ManagedBrowserChoice
+    package let mode: BrowserMode
+    package let profilePath: String
+    package let port: Int
+    package let suffixes: [String]
 
-    init(profile: ConnectionProfile, descriptor: BrowserDescriptor, mode: BrowserMode, directory: URL) throws {
+    package init(profile: ConnectionProfile, descriptor: BrowserDescriptor, mode: BrowserMode, directory: URL) throws {
         guard let configuration = profile.webForwards, configuration.enabled,
               let port = configuration.socksPort else { throw BrowserBootstrapError.chooseMode }
         if let error = ProfileEditorValidation.webForwardsError(configuration) {
@@ -59,20 +70,20 @@ struct BrowserRouting: Equatable, Codable {
         suffixes = Array(Set(configuration.proxySuffixes.map { $0.lowercased() })).sorted()
     }
 
-    var pac: String {
+    package var pac: String {
         get throws { try WebForwardsPAC.contents(configuration: .init(socksPort: port, proxySuffixes: suffixes)) }
     }
-    var pacDataURL: String {
+    package var pacDataURL: String {
         get throws { "data:application/x-ns-proxy-autoconfig;base64," + Data(try pac.utf8).base64EncodedString() }
     }
-    var fingerprint: String {
+    package var fingerprint: String {
         get throws {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
             return SHA256.hash(data: try encoder.encode(self)).map { String(format: "%02x", $0) }.joined()
         }
     }
-    func arguments(family: BrowserFamily) throws -> [String] {
+    package func arguments(family: BrowserFamily) throws -> [String] {
         switch family {
         case .chromium:
             ["--user-data-dir=\(profilePath)", "--proxy-pac-url=\(try pacDataURL)",
@@ -81,7 +92,7 @@ struct BrowserRouting: Equatable, Codable {
             ["--new-instance", "--profile", profilePath, "--new-window", "about:blank"]
         }
     }
-    var firefoxPreferences: [String: ProxyPreference] {
+    package var firefoxPreferences: [String: ProxyPreference] {
         get throws {
             ["network.proxy.type": .integer(2), "network.proxy.autoconfig_url": .string(try pacDataURL),
              "network.proxy.socks_remote_dns": .bool(true), "network.proxy.socks5_remote_dns": .bool(true),
@@ -92,11 +103,11 @@ struct BrowserRouting: Equatable, Codable {
 
 
 
-@MainActor final class BrowserBootstrap: BrowserOpening {
+@MainActor package final class BrowserBootstrap: BrowserOpening {
     private struct Instance: Codable {
-        let routing: BrowserRouting
-        let pid: Int32
-        let launchDate: Date
+        package let routing: BrowserRouting
+        package let pid: Int32
+        package let launchDate: Date
     }
     private let root: URL
     private let discover: @MainActor () -> [BrowserDescriptor]
@@ -104,7 +115,7 @@ struct BrowserRouting: Equatable, Codable {
     private let requireUnlockedProfile: @MainActor (BrowserDescriptor, URL) throws -> Void
     private let launch: (@MainActor (BrowserDescriptor, [String]) async throws -> Void)?
 
-    init(root: URL = BrowserPrivateFiles.root,
+    package init(root: URL = BrowserPrivateFiles.root,
          discover: @escaping @MainActor () -> [BrowserDescriptor] = { BrowserDescriptor.installed() },
          isRunning: @escaping @MainActor (BrowserDescriptor) -> Bool = {
              !NSRunningApplication.runningApplications(withBundleIdentifier: $0.bundleID).isEmpty
@@ -118,7 +129,7 @@ struct BrowserRouting: Equatable, Codable {
         self.launch = launch
     }
 
-    func resolve(profile: ConnectionProfile, requireVerifiedSupport: Bool = true) throws -> (BrowserDescriptor, BrowserRouting) {
+    package func resolve(profile: ConnectionProfile, requireVerifiedSupport: Bool = true) throws -> (BrowserDescriptor, BrowserRouting) {
         guard let configuration = profile.webForwards, let mode = configuration.browserMode else {
             throw BrowserBootstrapError.chooseMode
         }
@@ -143,7 +154,7 @@ struct BrowserRouting: Equatable, Codable {
         return (descriptor, try .init(profile: profile, descriptor: descriptor, mode: mode, directory: directory))
     }
 
-    func preflight(profile: ConnectionProfile) throws {
+    package func preflight(profile: ConnectionProfile) throws {
         let (descriptor, routing) = try resolve(profile: profile)
         try checkPolicy(descriptor)
         if routing.mode == .existing {
@@ -171,7 +182,7 @@ struct BrowserRouting: Equatable, Codable {
         }
     }
 
-    func open(profile: ConnectionProfile) async throws {
+    package func open(profile: ConnectionProfile) async throws {
         try preflight(profile: profile)
         let (descriptor, routing) = try resolve(profile: profile)
         let directory = URL(fileURLWithPath: routing.profilePath, isDirectory: true)
@@ -214,7 +225,7 @@ struct BrowserRouting: Equatable, Codable {
         catch { throw BrowserBootstrapError.launchFailed }
     }
 
-    func needsSetup(profile: ConnectionProfile) throws -> Bool {
+    package func needsSetup(profile: ConnectionProfile) throws -> Bool {
         let (_, routing) = try resolve(profile: profile)
         guard routing.mode == .existing else { return false }
         return try !FirefoxProxySetup(root: root).isInstalled(routing)
@@ -233,7 +244,7 @@ struct BrowserRouting: Equatable, Codable {
         return application
     }
 
-    func setupExisting(profile: ConnectionProfile, consent: Bool) throws {
+    package func setupExisting(profile: ConnectionProfile, consent: Bool) throws {
         guard consent else { return }
         let (descriptor, routing) = try resolve(profile: profile)
         guard routing.mode == .existing else { throw BrowserBootstrapError.chooseMode }
@@ -242,7 +253,7 @@ struct BrowserRouting: Equatable, Codable {
         try FirefoxProxySetup(root: root).install(routing)
     }
 
-    func preflightApply(profile: ConnectionProfile) throws {
+    package func preflightApply(profile: ConnectionProfile) throws {
         let (descriptor, routing) = try resolve(profile: profile)
         try checkPolicy(descriptor)
         if routing.mode == .existing {
@@ -252,13 +263,13 @@ struct BrowserRouting: Equatable, Codable {
         else { try preflight(profile: profile) }
     }
 
-    func applyExisting(profile: ConnectionProfile) throws {
+    package func applyExisting(profile: ConnectionProfile) throws {
         try preflightApply(profile: profile)
         let (_, routing) = try resolve(profile: profile)
         if routing.mode == .existing { try FirefoxProxySetup(root: root).update(routing) }
     }
 
-    func restore(profile: ConnectionProfile) throws {
+    package func restore(profile: ConnectionProfile) throws {
         let (descriptor, routing) = try resolve(profile: profile, requireVerifiedSupport: false)
         try checkPolicy(descriptor)
         guard !isRunning(descriptor) else { throw BrowserBootstrapError.closeBrowser }
@@ -278,8 +289,8 @@ struct BrowserRouting: Equatable, Codable {
     }
 }
 
-enum BrowserProfileLock {
-    static func requireUnlocked(_ descriptor: BrowserDescriptor, _ directory: URL) throws {
+package enum BrowserProfileLock {
+    package static func requireUnlocked(_ descriptor: BrowserDescriptor, _ directory: URL) throws {
         if descriptor.family == .chromium {
             let socket = directory.appendingPathComponent("SingletonSocket").resolvingSymlinksInPath()
             if FileManager.default.fileExists(atPath: socket.path) { throw BrowserBootstrapError.closeBrowser }

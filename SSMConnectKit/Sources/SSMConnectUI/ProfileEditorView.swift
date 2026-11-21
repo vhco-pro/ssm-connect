@@ -1,8 +1,11 @@
 import SwiftUI
+import SSMConnectDomain
+import SSMConnectMacOS
+import SSMConnectWorkflow
 
 /// Form editor for a single `ConnectionProfile` (G7, F-18). Validates required fields and
 /// port ranges before allowing Save. Used for both add and edit (the caller decides which).
-struct ProfileEditorView: View {
+package struct ProfileEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ConnectionProfile
     @State private var webConfiguration: WebForwardsConfiguration
@@ -15,11 +18,11 @@ struct ProfileEditorView: View {
     private let onSaveCopy: ((ConnectionProfile) throws -> Void)?
 
     private struct ProxyDomainDraft: Identifiable {
-        let id = UUID()
-        var suffix: String
+        package let id = UUID()
+        package var suffix: String
     }
 
-    init(profile: ConnectionProfile, attachedFile: URL? = nil, attachedFileIsWritable: Bool = true,
+    package init(profile: ConnectionProfile, attachedFile: URL? = nil, attachedFileIsWritable: Bool = true,
          onSaveCopy: ((ConnectionProfile) throws -> Void)? = nil,
          onSave: @escaping (ConnectionProfile) throws -> Void) {
         _draft = State(initialValue: profile)
@@ -33,7 +36,7 @@ struct ProfileEditorView: View {
         self.onSaveCopy = onSaveCopy
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             Form {
                 if let attachedFile {

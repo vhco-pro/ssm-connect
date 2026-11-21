@@ -1,4 +1,7 @@
 import SwiftUI
+import SSMConnectDomain
+import SSMConnectMacOS
+import SSMConnectWorkflow
 
 extension ConnectionState {
     // Spec §5: Color per state

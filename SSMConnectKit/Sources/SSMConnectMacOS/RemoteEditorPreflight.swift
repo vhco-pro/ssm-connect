@@ -1,7 +1,10 @@
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
-enum RemoteEditorPreflight {
+package enum RemoteEditorPreflight {
     package static func check(_ executable: String) async throws {
         let data = try await run(executable, arguments: ["--locate-extension", "ms-vscode-remote.remote-ssh"])
         let directory = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)

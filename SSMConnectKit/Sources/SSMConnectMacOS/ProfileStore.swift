@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Persists connection profiles + global settings to `UserDefaults` (G3, F-18, NF-01).
 ///
@@ -10,8 +13,8 @@ import Observation
 @MainActor
 @Observable
 public final class ProfileStore {
-    private(set) var profiles: [ConnectionProfile]
-    var activeProfileID: UUID?
+    package private(set) var profiles: [ConnectionProfile]
+    package var activeProfileID: UUID?
     public var settings: AppSettings {
         didSet { save() }
     }
@@ -24,10 +27,10 @@ public final class ProfileStore {
     private static let documentsKey = "ssmconnect.portableDocuments.v1"
     private static let attachmentsKey = "ssmconnect.attachments.v1"
     private var documents: [UUID: PortableProfileDocument] = [:]
-    private(set) var attachments: [UUID: ProfileAttachment] = [:]
-    private(set) var pendingFiles: [UUID: ProfileFileSnapshot] = [:]
-    private(set) var fileErrors: [UUID: String] = [:]
-    private(set) var operationError: String?
+    package private(set) var attachments: [UUID: ProfileAttachment] = [:]
+    package private(set) var pendingFiles: [UUID: ProfileFileSnapshot] = [:]
+    package private(set) var fileErrors: [UUID: String] = [:]
+    package private(set) var operationError: String?
     public var configurationDidChange: ((ConnectionProfile, AppSettings) -> Void)?
     private var fileMonitor: Task<Void, Never>?
 
@@ -36,7 +39,7 @@ public final class ProfileStore {
     }
 
     /// Designated initializer. Takes the storage seam so tests can stay off disk entirely.
-    init(store: any KeyValueStoring) {
+    package init(store: any KeyValueStoring) {
         self.defaults = store
         self.profiles = Self.decode([ConnectionProfile].self, from: store, key: Self.profilesKey) ?? []
         self.settings = Self.decode(AppSettings.self, from: store, key: Self.settingsKey) ?? .default
@@ -70,9 +73,9 @@ public final class ProfileStore {
     }
 
     /// Whether the user has configured at least one profile (drives first-launch guidance).
-    var hasProfiles: Bool { !profiles.isEmpty }
+    package var hasProfiles: Bool { !profiles.isEmpty }
 
-    func setActiveProfile(_ id: UUID) {
+    package func setActiveProfile(_ id: UUID) {
         guard profiles.contains(where: { $0.id == id }) else { return }
         activeProfileID = id
         defaults.set(id.uuidString, forKey: Self.activeKey)
@@ -81,14 +84,14 @@ public final class ProfileStore {
 
     // MARK: CRUD
 
-    func addProfile(_ profile: ConnectionProfile) {
+    package func addProfile(_ profile: ConnectionProfile) {
         profiles.append(profile)
         if activeProfileID == nil { setActiveProfile(profile.id) }
         save()
     }
 
     @discardableResult
-    func updateProfile(_ profile: ConnectionProfile) -> Bool {
+    package func updateProfile(_ profile: ConnectionProfile) -> Bool {
         guard attachments[profile.id] == nil else {
             operationError = "This profile is attached to a file. Edit and save that file in Settings, or save a local copy."
             return false
@@ -104,7 +107,7 @@ public final class ProfileStore {
 
     /// Duplicate a profile (new id, " Copy" suffix) and return the copy.
     @discardableResult
-    func duplicateProfile(_ id: UUID) -> ConnectionProfile? {
+    package func duplicateProfile(_ id: UUID) -> ConnectionProfile? {
         guard let original = profiles.first(where: { $0.id == id }) else { return nil }
         var copy = original
         copy.id = UUID()
@@ -118,7 +121,7 @@ public final class ProfileStore {
         return copy
     }
 
-    func deleteProfile(_ id: UUID) {
+    package func deleteProfile(_ id: UUID) {
         attachments.removeValue(forKey: id)
         documents.removeValue(forKey: id)
         pendingFiles.removeValue(forKey: id)
@@ -136,7 +139,7 @@ public final class ProfileStore {
     /// Profiles available to import from `~/.aws/config` (SSO start URL + regions/account/role
     /// pre-filled; instance tag value + secret left for the user). Nothing is auto-seeded — the
     /// user explicitly picks one. Returns an empty list if there's no usable config.
-    func importableProfiles(parser: AWSConfigParser? = AWSConfigParser.loadDefault()) -> [ConnectionProfile] {
+    package func importableProfiles(parser: AWSConfigParser? = AWSConfigParser.loadDefault()) -> [ConnectionProfile] {
         guard let parser else { return [] }
         return parser.resolvedProfiles().map { ConnectionProfile(name: $0.name, awsConfig: $0.resolved) }
     }
@@ -167,7 +170,7 @@ public final class ProfileStore {
 
 extension ProfileStore {
     @discardableResult
-    func saveLocalCopy(_ profile: ConnectionProfile, preservingFrom originalID: UUID) throws -> ConnectionProfile {
+    package func saveLocalCopy(_ profile: ConnectionProfile, preservingFrom originalID: UUID) throws -> ConnectionProfile {
         var copy = profile
         copy.id = UUID()
         copy.name += " Copy"
@@ -179,7 +182,7 @@ extension ProfileStore {
     }
 
     @discardableResult
-    func importFile(_ preview: ProfileFileSnapshot, attach: Bool) throws -> ConnectionProfile {
+    package func importFile(_ preview: ProfileFileSnapshot, attach: Bool) throws -> ConnectionProfile {
         let current = try ProfileFileIO.read(preview.url)
         guard current.revision == preview.revision else { throw PortableProfileError.conflict }
         if attach, attachments.values.contains(where: { $0.url == current.url }) {
@@ -193,7 +196,7 @@ extension ProfileStore {
         return profile
     }
 
-    func saveEditedProfile(_ profile: ConnectionProfile, expected: ProfileFileRevision?,
+    package func saveEditedProfile(_ profile: ConnectionProfile, expected: ProfileFileRevision?,
                            acceptCanonicalFormatting: Bool) throws {
         guard var attachment = attachments[profile.id] else {
             guard updateProfile(profile) else { throw PortableProfileError.invalid("The local profile no longer exists.") }
@@ -218,7 +221,7 @@ extension ProfileStore {
         save()
     }
 
-    func exportDocument(_ id: UUID) throws -> PortableProfileDocument {
+    package func exportDocument(_ id: UUID) throws -> PortableProfileDocument {
         guard let profile = profiles.first(where: { $0.id == id }) else {
             throw PortableProfileError.invalid("Select a local profile to export.")
         }
@@ -228,14 +231,14 @@ extension ProfileStore {
         return document
     }
 
-    func detachFile(_ id: UUID) {
+    package func detachFile(_ id: UUID) {
         attachments.removeValue(forKey: id)
         pendingFiles.removeValue(forKey: id)
         fileErrors.removeValue(forKey: id)
         save()
     }
 
-    func locateFile(_ id: UUID, at url: URL) throws {
+    package func locateFile(_ id: UUID, at url: URL) throws {
         guard var attachment = attachments[id], let original = documents[id] else {
             throw PortableProfileError.invalid("Select an attached profile first.")
         }
@@ -253,7 +256,7 @@ extension ProfileStore {
         save()
     }
 
-    func refreshAttachedFiles() {
+    package func refreshAttachedFiles() {
         for (id, attachment) in attachments {
             do {
                 let current = try ProfileFileIO.read(attachment.url)
@@ -270,7 +273,7 @@ extension ProfileStore {
         }
     }
 
-    func applyPendingFile(_ id: UUID) throws {
+    package func applyPendingFile(_ id: UUID) throws {
         guard let pending = pendingFiles[id], var attachment = attachments[id],
               let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw PortableProfileError.invalid("There are no validated external changes to apply.")

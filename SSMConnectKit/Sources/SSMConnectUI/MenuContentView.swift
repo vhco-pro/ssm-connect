@@ -1,13 +1,16 @@
 import SwiftUI
+import SSMConnectDomain
+import SSMConnectMacOS
+import SSMConnectWorkflow
 
 /// The MenuBarExtra dropdown content (H7, F-01/F-12). Factored into its own `View` so it can use
 /// `@Environment(\.openWindow)` (Show Log) and `SettingsLink`. Re-applies the active profile /
 /// settings each time it appears so a change in the Settings window takes effect on next connect.
 public struct MenuContentView: View {
-    @Bindable var machine: ConnectionStateMachine
-    let store: ProfileStore
-    let webForwards: WebForwardsStateMachine?
-    let remoteDevelopment: RemoteDevelopmentStateMachine?
+    @Bindable package var machine: ConnectionStateMachine
+    package let store: ProfileStore
+    package let webForwards: WebForwardsStateMachine?
+    package let remoteDevelopment: RemoteDevelopmentStateMachine?
     @Environment(\.openWindow) private var openWindow
     @State private var browserBootstrap = BrowserBootstrap()
 

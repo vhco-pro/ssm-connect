@@ -1,9 +1,12 @@
 import AppKit
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Default `DCVLaunching`: writes a transient `0600` `.dcv` connection file, opens it with DCV
 /// Viewer for auto-login, then deletes it immediately (F-10, ADR-8).
-final class DCVLauncher: DCVLaunching {
+package final class DCVLauncher: DCVLaunching {
     private let locator: DCVViewerLocating
     private let store: DCVConnectionFileStore
     private let opener: DCVViewerOpening
@@ -17,7 +20,7 @@ final class DCVLauncher: DCVLaunching {
     /// startup sweep (ADR-8).
     private let cleanupDelay: Duration
 
-    init(
+    package init(
         locator: DCVViewerLocating = SystemDCVViewerLocator(),
         store: DCVConnectionFileStore = TempDCVConnectionFileStore(),
         opener: DCVViewerOpening = WorkspaceDCVViewerOpener(),
@@ -31,9 +34,9 @@ final class DCVLauncher: DCVLaunching {
         self.cleanupDelay = cleanupDelay
     }
 
-    func isViewerInstalled() -> Bool { locator.viewerAppURL() != nil }
+    package func isViewerInstalled() -> Bool { locator.viewerAppURL() != nil }
 
-    func launch(connectionFile: DCVConnectionFile) async throws {
+    package func launch(connectionFile: DCVConnectionFile) async throws {
         guard let appURL = locator.viewerAppURL() else { throw DCVError.viewerNotInstalled }
 
         // CL-06: enable Viewer HiDPI before launch on a Retina client (best-effort, never blocks).
@@ -54,29 +57,31 @@ final class DCVLauncher: DCVLaunching {
         store.remove(fileURL)
     }
 
-    func sweepOrphanedFiles() { store.sweepOrphans() }
+    package func sweepOrphanedFiles() { store.sweepOrphans() }
 }
 
 // MARK: - Real seam implementations
 
 /// Detects DCV Viewer at the standard path or via its bundle identifier.
-struct SystemDCVViewerLocator: DCVViewerLocating {
-    static let standardPath = "/Applications/DCV Viewer.app"
-    static let bundleIdentifier = "com.amazon.dcvviewer"
+package struct SystemDCVViewerLocator: DCVViewerLocating {
+    package static let standardPath = "/Applications/DCV Viewer.app"
+    package static let bundleIdentifier = "com.amazon.dcvviewer"
 
-    func viewerAppURL() -> URL? {
+    package func viewerAppURL() -> URL? {
         if FileManager.default.fileExists(atPath: Self.standardPath) {
             return URL(fileURLWithPath: Self.standardPath)
         }
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundleIdentifier)
     }
+
+    package init() {}
 }
 
 /// Writes the connection file `0600` in the per-user temp directory and sweeps orphans.
-struct TempDCVConnectionFileStore: DCVConnectionFileStore {
-    var directory: URL = FileManager.default.temporaryDirectory
+package struct TempDCVConnectionFileStore: DCVConnectionFileStore {
+    package var directory: URL = FileManager.default.temporaryDirectory
 
-    func write(_ contents: String) throws -> URL {
+    package func write(_ contents: String) throws -> URL {
         let name = "\(DCVConnectionFile.tempFilePrefix)\(UUID().uuidString).\(DCVConnectionFile.fileExtension)"
         let url = directory.appendingPathComponent(name)
         let created = FileManager.default.createFile(
@@ -88,9 +93,9 @@ struct TempDCVConnectionFileStore: DCVConnectionFileStore {
         return url
     }
 
-    func remove(_ url: URL) { try? FileManager.default.removeItem(at: url) }
+    package func remove(_ url: URL) { try? FileManager.default.removeItem(at: url) }
 
-    func sweepOrphans() {
+    package func sweepOrphans() {
         let fm = FileManager.default
         guard let items = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
         for item in items
@@ -99,13 +104,19 @@ struct TempDCVConnectionFileStore: DCVConnectionFileStore {
             try? fm.removeItem(at: item)
         }
     }
+
+    package init(directory: URL = FileManager.default.temporaryDirectory) {
+        self.directory = directory
+    }
 }
 
 /// Opens the connection file with DCV Viewer via `NSWorkspace`.
-struct WorkspaceDCVViewerOpener: DCVViewerOpening {
-    func open(fileURL: URL, withApp appURL: URL) async throws {
+package struct WorkspaceDCVViewerOpener: DCVViewerOpening {
+    package func open(fileURL: URL, withApp appURL: URL) async throws {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         _ = try await NSWorkspace.shared.open([fileURL], withApplicationAt: appURL, configuration: configuration)
     }
+
+    package init() {}
 }

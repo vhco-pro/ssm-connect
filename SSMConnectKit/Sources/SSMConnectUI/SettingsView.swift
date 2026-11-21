@@ -1,11 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import SSMConnectDomain
+import SSMConnectMacOS
+import SSMConnectWorkflow
 
 /// App settings window (G6, F-18, ADR-3/ADR-5). Two tabs: **General** (login item + global
 /// toggles) and **Profiles** (multi-profile management, collapses gracefully to one profile).
 public struct SettingsView: View {
-    @Bindable var store: ProfileStore
-    let loginItem: LoginItemControlling
+    @Bindable package var store: ProfileStore
+    package let loginItem: LoginItemControlling
 
     public init(store: ProfileStore, loginItem: LoginItemControlling) {
         self.store = store
@@ -27,13 +30,13 @@ public struct SettingsView: View {
 // MARK: - General
 
 private struct GeneralSettingsTab: View {
-    @Bindable var store: ProfileStore
-    let loginItem: LoginItemControlling
+    @Bindable package var store: ProfileStore
+    package let loginItem: LoginItemControlling
 
     @State private var launchAtLogin = false
     @State private var loginItemError: String?
 
-    var body: some View {
+    package var body: some View {
         Form {
             Section("Startup") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
@@ -83,7 +86,7 @@ private struct GeneralSettingsTab: View {
 // MARK: - Profiles
 
 private struct ProfilesSettingsTab: View {
-    @Bindable var store: ProfileStore
+    @Bindable package var store: ProfileStore
     @State private var selection: UUID?
     @State private var editingProfile: ConnectionProfile?
     @State private var isAdding = false
@@ -92,7 +95,7 @@ private struct ProfilesSettingsTab: View {
     @State private var editingFileWritable = true
     @State private var fileError: String?
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             List(selection: $selection) {
                 ForEach(store.profiles) { profile in

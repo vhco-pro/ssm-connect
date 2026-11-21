@@ -1,30 +1,54 @@
 import CryptoKit
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
-struct ProfileFileRevision: Codable, Equatable {
-    let digest: String
-    let inode: UInt64
-    let device: Int32
-    let permissions: UInt16
-    let metadataVersion: String
+package struct ProfileFileRevision: Codable, Equatable {
+    package let digest: String
+    package let inode: UInt64
+    package let device: Int32
+    package let permissions: UInt16
+    package let metadataVersion: String
+
+    package init(digest: String, inode: UInt64, device: Int32, permissions: UInt16, metadataVersion: String) {
+        self.digest = digest
+        self.inode = inode
+        self.device = device
+        self.permissions = permissions
+        self.metadataVersion = metadataVersion
+    }
 }
 
-struct ProfileFileSnapshot {
-    let url: URL
-    let document: PortableProfileDocument
-    let revision: ProfileFileRevision
-    let isWritable: Bool
+package struct ProfileFileSnapshot {
+    package let url: URL
+    package let document: PortableProfileDocument
+    package let revision: ProfileFileRevision
+    package let isWritable: Bool
+
+    package init(url: URL, document: PortableProfileDocument, revision: ProfileFileRevision, isWritable: Bool) {
+        self.url = url
+        self.document = document
+        self.revision = revision
+        self.isWritable = isWritable
+    }
 }
 
-struct ProfileAttachment: Codable, Equatable {
-    var url: URL
-    var revision: ProfileFileRevision
-    var canonicalSaveAccepted = false
+package struct ProfileAttachment: Codable, Equatable {
+    package var url: URL
+    package var revision: ProfileFileRevision
+    package var canonicalSaveAccepted = false
+
+    package init(url: URL, revision: ProfileFileRevision, canonicalSaveAccepted: Bool = false) {
+        self.url = url
+        self.revision = revision
+        self.canonicalSaveAccepted = canonicalSaveAccepted
+    }
 }
 
-enum ProfileFileIO {
-    static func read(_ url: URL) throws -> ProfileFileSnapshot {
+package enum ProfileFileIO {
+    package static func read(_ url: URL) throws -> ProfileFileSnapshot {
         let url = canonicalURL(url)
         let raw = try readRaw(url)
         return ProfileFileSnapshot(url: url,
@@ -32,7 +56,7 @@ enum ProfileFileIO {
             revision: raw.revision, isWritable: raw.isWritable)
     }
 
-    static func save(_ document: PortableProfileDocument, to url: URL, expected: ProfileFileRevision?,
+    package static func save(_ document: PortableProfileDocument, to url: URL, expected: ProfileFileRevision?,
                      beforeCommit: () throws -> Void = {}) throws -> ProfileFileRevision {
         let url = canonicalURL(url)
         let data = try ProfileDocumentCodec.write(document, format: ProfileFileFormat(url: url))
@@ -100,7 +124,7 @@ enum ProfileFileIO {
         return revision
     }
 
-    static func existingRevision(_ url: URL) throws -> ProfileFileRevision? {
+    package static func existingRevision(_ url: URL) throws -> ProfileFileRevision? {
         let url = canonicalURL(url)
         var status = stat()
         if lstat(url.path, &status) != 0 {

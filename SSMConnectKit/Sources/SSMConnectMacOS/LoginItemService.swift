@@ -1,5 +1,8 @@
 import Foundation
 import ServiceManagement
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Controls "Launch at Login" via `SMAppService.mainApp` (G8, F-02, ADR-3).
 public protocol LoginItemControlling: Sendable {

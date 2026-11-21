@@ -1,5 +1,8 @@
 import Foundation
 import UserNotifications
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// `UNUserNotificationCenter`-backed implementation (F-20).
 package struct UserNotificationService: Notifying {
@@ -19,4 +22,6 @@ package struct UserNotificationService: Notifying {
         )
         try? await UNUserNotificationCenter.current().add(request)
     }
+
+    package init() {}
 }

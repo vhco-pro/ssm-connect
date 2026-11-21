@@ -1,8 +1,11 @@
 import AppKit
 import Carbon
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 extension AppLaunchHandler {
-    static func isExplicit(eventID: AEEventID?, loginFlag: Bool, propertyData: OSType?) -> Bool {
+    package static func isExplicit(eventID: AEEventID?, loginFlag: Bool, propertyData: OSType?) -> Bool {
         eventID == kAEOpenApplication && !loginFlag && propertyData != keyAELaunchedAsLogInItem
     }
 }

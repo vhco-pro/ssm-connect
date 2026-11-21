@@ -1,18 +1,21 @@
 import SwiftUI
+import SSMConnectDomain
+import SSMConnectMacOS
+import SSMConnectWorkflow
 
-struct AboutAppInfo: Equatable {
-    let name: String
-    let version: String?
-    let build: String?
+package struct AboutAppInfo: Equatable {
+    package let name: String
+    package let version: String?
+    package let build: String?
 
-    init(dictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]) {
+    package init(dictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]) {
         name = Self.text(dictionary["CFBundleDisplayName"])
             ?? Self.text(dictionary["CFBundleName"]) ?? "SSM Connect"
         version = Self.text(dictionary["CFBundleShortVersionString"])
         build = Self.text(dictionary["CFBundleVersion"])
     }
 
-    var versionLabel: String {
+    package var versionLabel: String {
         switch (version, build) {
         case let (.some(version), .some(build)): return "Version \(version) (Build \(build))"
         case let (.some(version), .none): return "Version \(version)"

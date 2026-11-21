@@ -1,9 +1,12 @@
 import SwiftUI
+import SSMConnectDomain
+import SSMConnectMacOS
+import SSMConnectWorkflow
 
 /// Connection-log window (H3, F-19): timestamped, category-tagged entries from the in-memory
 /// ring buffer. Opened from the "Show Log" menu item. Not persisted to disk.
 public struct LogView: View {
-    let log: ConnectionLog
+    package let log: ConnectionLog
 
     public init(log: ConnectionLog) {
         self.log = log

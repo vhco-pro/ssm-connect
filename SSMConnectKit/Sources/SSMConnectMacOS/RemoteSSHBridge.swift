@@ -1,21 +1,24 @@
 import AppKit
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// The owning-app checks a lease needs on macOS: the owner process and file ownership.
 extension RemoteSSHLease {
-    var ownerIsActive: Bool {
+    package var ownerIsActive: Bool {
         expiresAt > Date() && ownerProcessIsActive
     }
 
-    var ownerProcessIsActive: Bool {
+    package var ownerProcessIsActive: Bool {
         guard let application = NSRunningApplication(processIdentifier: ownerPID),
               !application.isTerminated, application.bundleIdentifier == ownerBundleID,
               application.launchDate == ownerLaunchDate else { return false }
         return true
     }
 
-    func validate(path: String, ownerActive: Bool) throws {
+    package func validate(path: String, ownerActive: Bool) throws {
         try validate(path: path, ownerActive: ownerActive, files: .posix)
     }
 }
@@ -27,7 +30,7 @@ public enum RemoteSSHProxyRuntime {
         return current.continues(lease, ownerActive: current.ownerIsActive)
     }
 
-    static func authorizeChannel(_ lease: RemoteSSHLease, auth: AuthProviding = AWSAuthProvider(),
+    package static func authorizeChannel(_ lease: RemoteSSHLease, auth: AuthProviding = AWSAuthProvider(),
                                  ec2: EC2Providing = EC2Service(),
                                  instanceConnect: InstanceConnectProviding = InstanceConnectService(),
                                  ssm: SSMProviding = SSMService()) async throws -> SSMSessionResponse {
@@ -81,7 +84,7 @@ public enum RemoteSSHProxyRuntime {
         return try await waitForOwnedProcess(process, isCurrent: { current(lease, path: configurationPath) })
     }
 
-    static func waitForOwnedProcess(_ process: Process, isCurrent: () -> Bool,
+    package static func waitForOwnedProcess(_ process: Process, isCurrent: () -> Bool,
                                    pollInterval: Duration = .milliseconds(250),
                                    terminationGrace: Duration = .seconds(5)) async throws -> Int32 {
         var stopDeadline: ContinuousClock.Instant?

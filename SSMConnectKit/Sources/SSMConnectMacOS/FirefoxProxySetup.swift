@@ -2,11 +2,14 @@ import CryptoKit
 import CFNetwork
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
-enum ProxyPreference: Equatable, Codable {
+package enum ProxyPreference: Equatable, Codable {
     case bool(Bool), integer(Int), string(String)
 
-    var json: String {
+    package var json: String {
         get throws {
             let object: Any
             switch self {
@@ -18,10 +21,10 @@ enum ProxyPreference: Equatable, Codable {
                 options: [.fragmentsAllowed, .withoutEscapingSlashes]), as: UTF8.self)
         }
     }
-    static func render(_ values: [String: ProxyPreference]) throws -> String {
+    package static func render(_ values: [String: ProxyPreference]) throws -> String {
         try values.keys.sorted().map { "user_pref(\"\($0)\", \(try values[$0]!.json));" }.joined(separator: "\n") + "\n"
     }
-    static func parse(_ contents: String) throws -> [String: ProxyPreference] {
+    package static func parse(_ contents: String) throws -> [String: ProxyPreference] {
         let pattern = #"(?m)^user_pref\("(network\.proxy\.[a-zA-Z0-9_\.]+|network\.dns\.disablePrefetch)", (.+)\);$"#
         let expression = try NSRegularExpression(pattern: pattern)
         let string = contents as NSString
@@ -45,7 +48,7 @@ enum ProxyPreference: Equatable, Codable {
         return values
     }
 
-    static func replacing(_ keys: Set<String>, with values: [String: ProxyPreference], in contents: String) throws -> String {
+    package static func replacing(_ keys: Set<String>, with values: [String: ProxyPreference], in contents: String) throws -> String {
         _ = try parse(contents)
         let lines = contents.components(separatedBy: .newlines).filter { line in
             !keys.contains(where: { line.hasPrefix("user_pref(\"\($0)\",") })
@@ -54,21 +57,29 @@ enum ProxyPreference: Equatable, Codable {
     }
 }
 
-struct FirefoxProxySetup {
-    enum WriteStage: CaseIterable { case transaction, user, preferences, journal, complete }
-    struct Journal: Codable {
-        let routing: BrowserRouting
-        let previous: [String: ProxyPreference]
-        let installed: [String: ProxyPreference]
-        let originalUserDigest: String
-        let userFileExisted: Bool
+package struct FirefoxProxySetup {
+    package enum WriteStage: CaseIterable { case transaction, user, preferences, journal, complete }
+    package struct Journal: Codable {
+        package let routing: BrowserRouting
+        package let previous: [String: ProxyPreference]
+        package let installed: [String: ProxyPreference]
+        package let originalUserDigest: String
+        package let userFileExisted: Bool
+
+        package init(routing: BrowserRouting, previous: [String: ProxyPreference], installed: [String: ProxyPreference], originalUserDigest: String, userFileExisted: Bool) {
+            self.routing = routing
+            self.previous = previous
+            self.installed = installed
+            self.originalUserDigest = originalUserDigest
+            self.userFileExisted = userFileExisted
+        }
     }
     private struct Transaction: Codable {
-        let before: Journal?
-        let after: Journal?
+        package let before: Journal?
+        package let after: Journal?
     }
-    let root: URL
-    var beforeWrite: (WriteStage) throws -> Void = { _ in }
+    package let root: URL
+    package var beforeWrite: (WriteStage) throws -> Void = { _ in }
     private static let start = "// SSM Connect proxy settings begin\n"
     private static let end = "// SSM Connect proxy settings end\n"
 
@@ -97,7 +108,7 @@ struct FirefoxProxySetup {
     private func journal(_ routing: BrowserRouting) throws -> Journal {
         try JSONDecoder().decode(Journal.self, from: Data(contentsOf: journalURL(routing)))
     }
-    func isInstalled(_ routing: BrowserRouting) throws -> Bool {
+    package func isInstalled(_ routing: BrowserRouting) throws -> Bool {
         guard !FileManager.default.fileExists(atPath: transactionURL(routing).path) else {
             throw BrowserBootstrapError.interruptedSetup
         }
@@ -105,7 +116,7 @@ struct FirefoxProxySetup {
         try verify(routing)
         return true
     }
-    func inspect(_ routing: BrowserRouting) throws {
+    package func inspect(_ routing: BrowserRouting) throws {
         try requireUnlocked(routing)
         try inspectUnlocked(routing)
     }
@@ -142,7 +153,7 @@ struct FirefoxProxySetup {
             }) { throw BrowserBootstrapError.conflict }
         }
     }
-    func verify(_ routing: BrowserRouting) throws {
+    package func verify(_ routing: BrowserRouting) throws {
         try checkProxyExtensions(routing)
         let record = try journal(routing)
         guard record.routing == routing else { throw BrowserBootstrapError.conflict }
@@ -156,7 +167,7 @@ struct FirefoxProxySetup {
             return effective == entry.value
         }) else { throw BrowserBootstrapError.conflict }
     }
-    func install(_ routing: BrowserRouting) throws {
+    package func install(_ routing: BrowserRouting) throws {
         try withProfileLock(routing) { try installUnlocked(routing) }
     }
     private func installUnlocked(_ routing: BrowserRouting) throws {
@@ -185,7 +196,7 @@ struct FirefoxProxySetup {
         try beforeWrite(.complete)
         try FileManager.default.removeItem(at: transactionURL(routing))
     }
-    func inspectUpdate(_ routing: BrowserRouting) throws {
+    package func inspectUpdate(_ routing: BrowserRouting) throws {
         try requireUnlocked(routing)
         guard !FileManager.default.fileExists(atPath: transactionURL(routing).path) else {
             throw BrowserBootstrapError.interruptedSetup
@@ -194,7 +205,7 @@ struct FirefoxProxySetup {
             try verify(journal(routing).routing)
         } else { try inspect(routing) }
     }
-    func update(_ routing: BrowserRouting) throws {
+    package func update(_ routing: BrowserRouting) throws {
         try withProfileLock(routing) { try updateUnlocked(routing) }
     }
     private func updateUnlocked(_ routing: BrowserRouting) throws {
@@ -223,7 +234,7 @@ struct FirefoxProxySetup {
         try beforeWrite(.complete)
         try FileManager.default.removeItem(at: transactionURL(routing))
     }
-    func restore(_ routing: BrowserRouting) throws {
+    package func restore(_ routing: BrowserRouting) throws {
         try withProfileLock(routing) { try restoreUnlocked(routing) }
     }
     private func restoreUnlocked(_ routing: BrowserRouting) throws {
@@ -328,5 +339,10 @@ struct FirefoxProxySetup {
             _ = fcntl(descriptor, F_SETLK, &lock)
         }
         try perform()
+    }
+
+    package init(root: URL, beforeWrite: @escaping (WriteStage) throws -> Void = { _ in }) {
+        self.root = root
+        self.beforeWrite = beforeWrite
     }
 }

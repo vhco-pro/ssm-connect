@@ -1,5 +1,8 @@
 import Foundation
 import Network
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// Default tunnel-liveness probe: a single raw TCP connect via `NWConnection`. `.ready` means the
 /// local listener accepted the connection; `.failed`/`.waiting`/`.cancelled` (e.g. connection
@@ -29,6 +32,8 @@ package final class TCPListenerProbe: TunnelListenerProbing, @unchecked Sendable
             }
         }
     }
+
+    package init() {}
 }
 
 /// One-shot guard so the `NWConnection` callback and the timeout task can't double-resume the
@@ -91,4 +96,6 @@ package final class HTTPSReadinessProbe: NSObject, WorkstationReadinessProbing, 
             completionHandler(.performDefaultHandling, nil)
         }
     }
+
+    package override init() { super.init() }
 }

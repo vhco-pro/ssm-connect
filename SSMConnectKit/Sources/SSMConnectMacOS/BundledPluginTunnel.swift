@@ -1,11 +1,14 @@
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// `TunnelProvider` that shells out to the bundled AWS `session-manager-plugin` (D4, ADR-1).
 ///
 /// Constructs the 5-argument plugin command line (spec §6.4), checks the local port is free,
 /// launches the child process, and returns a `BundledPluginTunnelHandle` for lifecycle control.
-final class BundledPluginTunnel: TunnelProvider {
+package final class BundledPluginTunnel: TunnelProvider {
     private let pluginPath: @Sendable () -> String?
     private let spawner: PluginSpawning
     private let portProbe: PortProbing
@@ -13,7 +16,7 @@ final class BundledPluginTunnel: TunnelProvider {
     private let terminationGracePeriod: Duration
     private let terminationPollInterval: Duration
 
-    init(
+    package init(
         pluginPath: @escaping @Sendable () -> String? = { BundledPluginTunnel.defaultPluginPath() },
         spawner: PluginSpawning = ProcessPluginSpawner(),
         portProbe: PortProbing = SystemPortProbe(),
@@ -30,7 +33,7 @@ final class BundledPluginTunnel: TunnelProvider {
     }
 
     /// The bundled plugin lives in `Contents/Helpers/` (embedded by the build phase, ADR-7).
-    static func defaultPluginPath() -> String? {
+    package static func defaultPluginPath() -> String? {
         Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/session-manager-plugin")
             .path
@@ -38,7 +41,7 @@ final class BundledPluginTunnel: TunnelProvider {
 
     // MARK: - TunnelProvider
 
-    func checkAvailability() -> TunnelProviderStatus {
+    package func checkAvailability() -> TunnelProviderStatus {
         guard let path = pluginPath() else { return .pluginMissing(path: "<unknown>") }
         let fm = FileManager.default
         guard fm.fileExists(atPath: path) else { return .pluginMissing(path: path) }
@@ -46,7 +49,7 @@ final class BundledPluginTunnel: TunnelProvider {
         return .available
     }
 
-    func startTunnel(
+    package func startTunnel(
         session: SSMSessionResponse,
         region: String,
         instanceId: String,
@@ -95,7 +98,7 @@ final class BundledPluginTunnel: TunnelProvider {
     }
 
     /// Build the 5-arg plugin invocation (spec §6.4).
-    static func pluginArguments(
+    package static func pluginArguments(
         session: SSMSessionResponse,
         region: String,
         instanceId: String,
@@ -119,18 +122,18 @@ final class BundledPluginTunnel: TunnelProvider {
 
 /// A live bundled-plugin tunnel (D5). Monitors the child process, emits on drop, tears down with
 /// SIGTERM → grace period → SIGKILL.
-final class BundledPluginTunnelHandle: TunnelHandle, @unchecked Sendable {
+package final class BundledPluginTunnelHandle: TunnelHandle, @unchecked Sendable {
     private let process: SpawnedPluginProcess
     private let gracePeriod: Duration
     private let pollInterval: Duration
     private let continuation: AsyncStream<TunnelDropReason>.Continuation
-    let onDisconnect: AsyncStream<TunnelDropReason>
+    package let onDisconnect: AsyncStream<TunnelDropReason>
 
     private let lock = NSLock()
     private var userInitiated = false
     private var finished = false
 
-    init(process: SpawnedPluginProcess, gracePeriod: Duration, pollInterval: Duration) {
+    package init(process: SpawnedPluginProcess, gracePeriod: Duration, pollInterval: Duration) {
         self.process = process
         self.gracePeriod = gracePeriod
         self.pollInterval = pollInterval
@@ -141,21 +144,21 @@ final class BundledPluginTunnelHandle: TunnelHandle, @unchecked Sendable {
         process.onExit = { [weak self] code in self?.handleExit(code: code) }
     }
 
-    func start() throws {
+    package func start() throws {
         try process.start()
     }
 
-    var isActive: Bool {
+    package var isActive: Bool {
         lock.lock(); defer { lock.unlock() }
         return !finished && process.isRunning
     }
 
-    var processIdentifier: Int32? {
+    package var processIdentifier: Int32? {
         let pid = process.processIdentifier
         return pid > 0 ? pid : nil
     }
 
-    func terminate() async {
+    package func terminate() async {
         lock.lock()
         let alreadyDone = finished
         if !finished { userInitiated = true }

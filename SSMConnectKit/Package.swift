@@ -49,12 +49,28 @@ let package = Package(
                 .product(name: "AWSSecretsManager", package: "aws-sdk-swift", condition: .when(platforms: [.macOS])),
             ]
         ),
+        // The macOS platform adapters: AppKit, persistence, DCV, the plugin and SSH processes,
+        // browsers and editors.
+        .target(
+            name: "SSMConnectMacOS",
+            dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectAWS"]
+        ),
+        // The macOS SwiftUI presentation: it observes workflow state and issues commands, and
+        // holds no connection rules of its own.
+        .target(
+            name: "SSMConnectUI",
+            dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectMacOS"]
+        ),
+        // The umbrella: re-exports the layers and holds the composition root that wires the
+        // macOS adapters and AWS services into the workflows.
         .target(
             name: "SSMConnectKit",
             dependencies: [
                 "SSMConnectDomain",
                 "SSMConnectWorkflow",
                 "SSMConnectAWS",
+                "SSMConnectMacOS",
+                "SSMConnectUI",
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "SSMConnectAWSClient", package: "AWSClient"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
@@ -73,6 +89,8 @@ let package = Package(
                 "SSMConnectDomain",
                 "SSMConnectWorkflow",
                 "SSMConnectAWS",
+                "SSMConnectMacOS",
+                "SSMConnectUI",
                 // The tests construct AWS SDK response types directly. AWSClientRuntime is
                 // explicit because the error-rendering tests build a real
                 // `UnknownAWSHTTPServiceError` rather than a look-alike stub (#20).

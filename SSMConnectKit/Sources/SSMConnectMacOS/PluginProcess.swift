@@ -1,9 +1,12 @@
 import Darwin
 import Foundation
+import SSMConnectAWS
+import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// A spawned (but possibly not-yet-started) `session-manager-plugin` child process.
 /// Abstracted so `BundledPluginTunnel`'s lifecycle logic is unit-testable without a real binary (D8).
-protocol SpawnedPluginProcess: AnyObject {
+package protocol SpawnedPluginProcess: AnyObject {
     var processIdentifier: Int32 { get }
     var isRunning: Bool { get }
     /// Invoked once when the process exits, with its exit code. Wired by the tunnel handle
@@ -18,18 +21,23 @@ protocol SpawnedPluginProcess: AnyObject {
 }
 
 /// Spawns plugin child processes. Real impl wraps `Foundation.Process`; mocked in tests.
-protocol PluginSpawning: Sendable {
+package protocol PluginSpawning: Sendable {
     func spawn(executablePath: String, arguments: [String]) -> SpawnedPluginProcess
 }
 
 /// Describes a process occupying a TCP port (spec §8 port-in-use handling).
-struct PortOccupant: Equatable, Sendable {
-    let pid: Int32?
-    let processName: String?
+package struct PortOccupant: Equatable, Sendable {
+    package let pid: Int32?
+    package let processName: String?
+
+    package init(pid: Int32?, processName: String?) {
+        self.pid = pid
+        self.processName = processName
+    }
 }
 
 /// Probes whether a local TCP port is already in use. Mocked in tests.
-protocol PortProbing: Sendable {
+package protocol PortProbing: Sendable {
     /// Returns occupant info if `port` on `127.0.0.1` is accepting connections, else `nil`.
     func occupant(of port: Int) -> PortOccupant?
 }
@@ -37,14 +45,14 @@ protocol PortProbing: Sendable {
 // MARK: - Real implementations
 
 /// `Foundation.Process`-backed plugin process.
-final class ProcessPluginProcess: SpawnedPluginProcess, @unchecked Sendable {
+package final class ProcessPluginProcess: SpawnedPluginProcess, @unchecked Sendable {
     private let process = Process()
     private let stderrPipe = Pipe()
     private let lock = NSLock()
     private var stderrBuffer = Data()
-    var onExit: (@Sendable (Int32) -> Void)?
+    package var onExit: (@Sendable (Int32) -> Void)?
 
-    init(executablePath: String, arguments: [String]) {
+    package init(executablePath: String, arguments: [String]) {
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
         process.standardError = stderrPipe
@@ -54,7 +62,7 @@ final class ProcessPluginProcess: SpawnedPluginProcess, @unchecked Sendable {
         process.standardOutput = FileHandle.nullDevice
     }
 
-    func start() throws {
+    package func start() throws {
         stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
@@ -73,30 +81,32 @@ final class ProcessPluginProcess: SpawnedPluginProcess, @unchecked Sendable {
         }
     }
 
-    var processIdentifier: Int32 { process.processIdentifier }
-    var isRunning: Bool { process.isRunning }
-    func setEnvironment(_ environment: [String: String]) {
+    package var processIdentifier: Int32 { process.processIdentifier }
+    package var isRunning: Bool { process.isRunning }
+    package func setEnvironment(_ environment: [String: String]) {
         process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
     }
-    func sendSIGTERM() { kill(process.processIdentifier, SIGTERM) }
-    func sendSIGKILL() { kill(process.processIdentifier, SIGKILL) }
+    package func sendSIGTERM() { kill(process.processIdentifier, SIGTERM) }
+    package func sendSIGKILL() { kill(process.processIdentifier, SIGKILL) }
 
-    func capturedStderr() -> String {
+    package func capturedStderr() -> String {
         lock.lock(); defer { lock.unlock() }
         return String(decoding: stderrBuffer, as: UTF8.self)
     }
 }
 
-struct ProcessPluginSpawner: PluginSpawning {
-    func spawn(executablePath: String, arguments: [String]) -> SpawnedPluginProcess {
+package struct ProcessPluginSpawner: PluginSpawning {
+    package func spawn(executablePath: String, arguments: [String]) -> SpawnedPluginProcess {
         ProcessPluginProcess(executablePath: executablePath, arguments: arguments)
     }
+
+    package init() {}
 }
 
 /// BSD-socket port probe: a successful `connect()` to `127.0.0.1:port` means the port is in use.
 /// PID/process-name are looked up best-effort via `lsof`.
-struct SystemPortProbe: PortProbing {
-    func occupant(of port: Int) -> PortOccupant? {
+package struct SystemPortProbe: PortProbing {
+    package func occupant(of port: Int) -> PortOccupant? {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         defer { close(fd) }
@@ -143,4 +153,6 @@ struct SystemPortProbe: PortProbing {
         guard pid != nil || name != nil else { return nil }
         return PortOccupant(pid: pid, processName: name)
     }
+
+    package init() {}
 }
