@@ -1,6 +1,6 @@
 ---
 status: draft
-status_description: "Revised for clock-skew correction matching the SDK (T42, T43); R-21 to R-24 applied (retry quota, T5 reopened with T44). Needs a fresh review and re-acceptance."
+status_description: "Revised for clock-skew correction matching the SDK (T42, T43); R-21 to R-24 applied; spec review R-25 is clean. Awaiting owner re-acceptance."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -794,6 +794,7 @@ None.
 | 2026-11-21 | R-22 | spec | `8d04477` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-21 | R-23 | spec | `da7d96c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix and one nit |
 | 2026-11-21 | R-24 | spec | `b079c3b` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
+| 2026-11-21 | R-25 | spec | `e74903d` | gpt-6.1-sol | procedural | NO FINDINGS |
 
 ### R-1
 
@@ -1322,6 +1323,10 @@ SEVERITY: should-fix
 WHERE: Design / AWS client, direct STS request; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T35, T36
 EVIDENCE: T35 is checked and explicitly includes moving STSIdentityResolver onto the shared client. However, SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-25 still owns its URLSession transport, and lines 42-46 still send through that transport. STSPresigner.swift:16 also retains the hardcoded amazonaws.com host. Only its signer delegates to SSMConnectAWSClient. The standalone package checks cited under T35 cannot exercise this production resolver. T36 describes switching the SDK adapters but does not explicitly carry this unfinished direct-request migration.
 PROPOSAL: Preserve the standalone client results while recording the production STS adapter migration as unfinished and assigning it an unchecked task. Require a production-resolver transport test establishing shared-client use, the China endpoint and the preserved single-attempt behavior.
+
+### R-25
+
+NO FINDINGS
 
 ## Sources
 
