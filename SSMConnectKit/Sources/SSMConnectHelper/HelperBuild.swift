@@ -1,5 +1,7 @@
-/// The build identity the helper presents at handshake. The shell refuses a helper whose build
-/// differs from its own; the release jobs stamp both with the same value.
+import SSMConnectWorkflow
+
+/// The build identity the helper presents at handshake: the installation's build. The shell
+/// refuses a helper whose build differs from its own.
 enum HelperBuild {
-    static let current = "dev"
+    static let current = InstalledBuild.current
 }

@@ -348,13 +348,25 @@ not a clean working-day result. Logs contain health data, not credentials or pri
 
 ### Releasing
 
-```bash
-./scripts/release.sh   # Release build -> dist/SSMConnect-<version>.zip + sha256
-```
+A push to `main` runs [release.yml](.github/workflows/release.yml). GitVersion computes the
+version from conventional commits, the workflow tags it and creates the GitHub Release, and then
+separate jobs build and upload each platform's assets:
 
-Upload the zip as the GitHub release asset. The Homebrew cask
-(`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest release version +
-sha256 via a scheduled workflow in that tap (no manual cask edit needed).
+- **macOS:** `scripts/release.sh` builds `SSMConnect-<version>.zip` and its SHA-256. After the
+  upload, the newest release that has a macOS ZIP is marked as the latest release.
+- **Windows:** `packaging/windows/Build-Release.ps1` builds the per-user
+  `SSMConnect-<version>-x64.msi`, its SHA-256 and the WinGet manifest for `VHCo.SSMConnect`.
+  `packaging/windows/Test-Package.ps1` inspects and installs the MSI before upload.
+
+A failed platform job leaves only its own asset missing. Rerunning it uploads assets that are still
+missing and never replaces a published one; fix a bad asset by releasing a new version. To try the
+release path, run the workflow manually with `test_tag` set to a prerelease tag such as
+`v0.0.0-test.1`.
+
+The Homebrew cask (`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest
+release version + sha256 via a scheduled workflow in that tap (no manual cask edit needed). WinGet
+submission runs when the `WINGET_TOKEN` secret is set; otherwise the validated manifest is kept as
+a run artifact.
 
 ### Notarization (upgrade path)
 

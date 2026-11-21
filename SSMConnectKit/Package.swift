@@ -68,7 +68,7 @@ var targets: [Target] = [
     // on stderr, exiting on stdin EOF.
     .executableTarget(
         name: "SSMConnectHelper",
-        dependencies: ["SSMConnectHelperProtocol", "SSMConnectHelperCore"]
+        dependencies: ["SSMConnectHelperProtocol", "SSMConnectHelperCore", "SSMConnectWorkflow"]
     ),
     // The AWS boundary's client path; runs on macOS, Linux and Windows.
     .testTarget(name: "SSMConnectAWSTests", dependencies: [

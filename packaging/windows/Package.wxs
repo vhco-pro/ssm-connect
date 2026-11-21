@@ -1,0 +1,178 @@
+<!-- Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!--
+    SSM Connect for Windows: a per-user, non-elevated MSI built by Build-Release.ps1.
+
+    One folder under %LOCALAPPDATA%\Programs\SSM Connect holds the WPF shell (SSMConnect.exe,
+    self-contained .NET), the Swift helper and editor proxy with the Swift runtime DLLs they import,
+    and the Session Manager plugin, which the helper expects beside itself. The plugin is
+    redistributed under the Apache License 2.0 with its LICENSE, NOTICE and THIRD-PARTY files.
+
+    A running SSM Connect is never closed without the user agreeing. With the full UI, Restart
+    Manager's files-in-use prompt offers only closing it, which ends its connections cleanly, or
+    cancelling, which ends the install with nothing changed. Without the full UI (WinGet's silent
+    modes, msiexec /qn or /passive) there is nobody to ask, so the install refuses while SSM Connect
+    runs and asks the user to quit it first.
+  -->
+  <Package
+    Name="SSM Connect"
+    Manufacturer="VHCo"
+    Version="$(PackageVersion)"
+    UpgradeCode="C3B41D22-9E5F-4C0A-9E7B-6D9E4F1A2B77"
+    Scope="perUser"
+    Compressed="yes">
+
+    <SummaryInformation
+      Description="Connect to EC2 workstations through AWS Systems Manager. From vhco-pro."
+      Manufacturer="VHCo" />
+
+    <!-- Removing the old product right after InstallInitialize: the default late removal deletes
+         files the upgrade just laid down when components keep their derived GUIDs. -->
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      Schedule="afterInstallInitialize"
+      DowngradeErrorMessage="A newer version of SSM Connect is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Windows 11 24H2 (build 26100) is the baseline. msiexec is not manifested for Windows 10+, so
+         VersionNT reads as Windows 8.1; the build comes from the registry instead, compared as a
+         quoted string because RegistrySearch returns one. -->
+    <Launch
+      Condition="Installed OR WINDOWSBUILD &gt;= &quot;26100&quot;"
+      Message="SSM Connect requires Windows 11 version 24H2 (build 26100) or newer." />
+    <Property Id="WINDOWSBUILD" Secure="yes" Value="0">
+      <RegistrySearch Id="WindowsBuildSearch" Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber" Type="raw" />
+    </Property>
+
+    <Property Id="ARPHELPLINK" Value="https://github.com/vhco-pro/ssm-connect" />
+    <Property Id="ARPCONTACT" Value="vhco-pro" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/vhco-pro/ssm-connect/releases" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/vhco-pro/ssm-connect" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SSM Connect">
+          <Directory Id="PLUGINNOTICES" Name="session-manager-plugin" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="SSM Connect" />
+    </StandardDirectory>
+
+    <!-- Everything Build-Release.ps1 staged: the shell, helper, proxy, runtime DLLs, plugin and
+         notices. Each file gets its own component. -->
+    <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
+      <Files Include="$(PayloadDirectory)\*" />
+      <Component Id="InstallFolderRemoval" Guid="*">
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemovePluginNotices" Directory="PLUGINNOTICES" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\VHCo\SSM Connect" Name="InstallFolder" Type="string"
+                       Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="PluginNotices" Directory="PLUGINNOTICES">
+      <Files Include="$(PayloadDirectory)\session-manager-plugin\*" />
+    </ComponentGroup>
+
+    <ComponentGroup Id="ShortcutComponents" Directory="ShortcutFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="AppShortcut"
+                  Name="SSM Connect"
+                  Description="Connect to EC2 workstations through AWS Systems Manager."
+                  Target="[INSTALLFOLDER]SSMConnect.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveShortcutFolder" On="uninstall" />
+        <!-- A per-user component needs a per-user key path. -->
+        <RegistryValue Root="HKCU" Key="Software\VHCo\SSM Connect"
+                       Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Records whether SSM Connect is running, without closing it. Without the full UI nobody can
+         be asked, so the install then ends before changing anything. -->
+    <util:CloseApplication Id="DetectRunningShell" Target="SSMConnect.exe" Property="SSMCONNECTRUNNING"
+                           CloseMessage="no" EndSessionMessage="no" RebootPrompt="no" />
+    <CustomAction Id="RefuseWhileRunning"
+                  Error="SSM Connect is running. Quit it from its tray menu, then run the installer again." />
+    <InstallExecuteSequence>
+      <Custom Action="override Wix4CloseApplications_X64" Before="InstallValidate" Condition="VersionNT &gt; 400" />
+      <Custom Action="RefuseWhileRunning" After="Wix4CloseApplications_X64" Condition="SSMCONNECTRUNNING AND UILevel &lt; 5" />
+    </InstallExecuteSequence>
+
+    <Feature Id="Complete" Title="SSM Connect" Level="1">
+      <ComponentGroupRef Id="Payload" />
+      <ComponentGroupRef Id="PluginNotices" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+    </Feature>
+
+    <WixVariable Id="WixUILicenseRtf" Value="$(LicenseRtf)" />
+    <UIRef Id="SSMConnectUI" />
+  </Package>
+
+  <!--
+    WiX's minimal UI with one change: Restart Manager's files-in-use dialog offers closing SSM
+    Connect or cancelling. The stock dialog's third choice, keeping it running and replacing files
+    at the next restart, would change the installation while the user declined.
+  -->
+  <Fragment>
+    <UI Id="SSMConnectUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="WelcomeDlg" />
+      <DialogRef Id="WelcomeEulaDlg" />
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <InstallUISequence>
+        <Show Dialog="override WelcomeDlg" Before="WelcomeEulaDlg" Condition="Installed AND PATCH" />
+      </InstallUISequence>
+
+      <Property Id="ARPNOMODIFY" Value="1" />
+
+      <Dialog Id="MsiRMFilesInUse" Width="370" Height="270" Title="!(loc.MsiRMFilesInUse_Title)" KeepModeless="yes">
+        <Control Id="OK" Type="PushButton" X="200" Y="243" Width="96" Height="17" Default="yes" Text="Close SSM Connect">
+          <Publish Event="EndDialog" Value="Return" />
+          <Publish Event="RMShutdownAndRestart" Value="0" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="EndDialog" Value="Exit" />
+        </Control>
+        <Control Id="List" Type="ListBox" X="20" Y="120" Width="330" Height="100" Property="FileInUseProcess" Sunken="yes" TabSkip="yes" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.MsiRMFilesInUseBannerBitmap)" />
+        <Control Id="Text" Type="Text" X="20" Y="55" Width="330" Height="60" Text="SSM Connect is running. Closing it ends its connections cleanly, and setup then continues. Cancel ends setup without changing anything." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="373" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="373" Height="0" />
+        <Control Id="Description" Type="Text" X="20" Y="23" Width="280" Height="20" Transparent="yes" NoPrefix="yes" Text="!(loc.MsiRMFilesInUseDescription)" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.MsiRMFilesInUseTitle)" />
+      </Dialog>
+    </UI>
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

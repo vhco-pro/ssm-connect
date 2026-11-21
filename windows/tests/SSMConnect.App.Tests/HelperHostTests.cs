@@ -159,6 +159,21 @@ public sealed class HelperHostTests
     }
 
     [Fact]
+    public async Task ShutdownAsksTheHelperToEndThenEmptiesItsJobAndStartsNoReplacement()
+    {
+        var time = new FakeTimeProvider();
+        var spawner = new FakeSpawner(() => new FakeHelper());
+        var host = Host(spawner, time);
+        await host.StartAsync();
+        await host.ShutdownAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(spawner.Started[0].Received, frame => (string)frame["type"]! == "shutdown");
+        Assert.Equal(HelperHostStatus.Stopped, host.Status);
+        await host.RetryAsync();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        Assert.Equal(["start 1", "terminate 1", "empty 1"], spawner.Log);
+    }
+
+    [Fact]
     public async Task ABuildMismatchShowsTheUpdatedMessageAndStartsNoReplacement()
     {
         var time = new FakeTimeProvider();

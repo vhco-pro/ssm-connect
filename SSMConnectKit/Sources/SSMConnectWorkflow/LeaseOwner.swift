@@ -4,14 +4,6 @@ import SSMConnectDomain
 import WinSDK
 #endif
 
-/// The build of SSM Connect this binary belongs to. The shells, helper and editor proxy of one
-/// installation share it; the release jobs stamp it. A helper of another build is refused at
-/// handshake, and a lease records its owner's build so a proxy of another build refuses new
-/// channels (AC-17).
-package enum InstalledBuild {
-    package static let current = "dev"
-}
-
 /// The process that owns editor leases: the app on macOS, the helper on Windows and Linux.
 /// `launchDate` is the process's start time, so a reused PID never matches.
 package struct LeaseOwnerIdentity: Equatable, Sendable {

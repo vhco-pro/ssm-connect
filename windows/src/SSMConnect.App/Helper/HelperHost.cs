@@ -29,7 +29,7 @@ public interface IHelperSpawner
     Task TerminateAndWaitEmptyAsync(IHelperConnection connection, CancellationToken cancellationToken);
 }
 
-public enum HelperHostStatus { Starting, Ready, Unavailable, Updated }
+public enum HelperHostStatus { Starting, Ready, Unavailable, Updated, Stopped }
 
 public enum HelperOutcome { Completed, Failed, Cancelled, Rejected, CoreStopped }
 
@@ -76,6 +76,7 @@ public sealed class HelperHost
     int heartbeatSent;
     int heartbeatAnswered;
     long nextCommand;
+    bool shuttingDown;
     DateTimeOffset healthySince;
 
     public HelperHost(IHelperSpawner spawner, string build, HelperHostLimits limits, TimeProvider time)
@@ -101,12 +102,33 @@ public sealed class HelperHost
 
     public Task StartAsync() => LaunchAsync();
 
+    /// <summary>
+    /// Ends the helper for good, as when the user quits or an installer closes the app: asks it to
+    /// shut down, which cancels its running commands, waits up to <paramref name="grace"/> for it to
+    /// exit, then ends its job. No replacement starts afterwards.
+    /// </summary>
+    public async Task ShutdownAsync(TimeSpan grace)
+    {
+        IHelperConnection? connection;
+        lock (gate)
+        {
+            shuttingDown = true;
+            connection = current;
+            heartbeatTimer?.Dispose();
+            heartbeatTimer = null;
+        }
+        if (connection is null) return;
+        await WriteAsync(connection, new JsonObject { ["type"] = "shutdown" });
+        await Task.WhenAny(connection.Exited, Task.Delay(grace, time));
+        await StopAsync(connection);
+    }
+
     /// <summary>Starts one new helper under the same rules, restoring the automatic restart.</summary>
     public Task RetryAsync()
     {
         lock (gate)
         {
-            if (Status is HelperHostStatus.Ready or HelperHostStatus.Updated) return Task.CompletedTask;
+            if (shuttingDown || Status is HelperHostStatus.Ready or HelperHostStatus.Updated) return Task.CompletedTask;
             AutomaticRestartsAvailable = 1;
         }
         return LaunchAsync();
@@ -296,10 +318,11 @@ public sealed class HelperHost
             if (current == connection) { heartbeatTimer?.Dispose(); heartbeatTimer = null; }
             // Only a helper that completed its handshake earns the automatic replacement: a first
             // helper, or a replacement, that never handshakes leads straight to "unavailable".
-            restart = current == connection && Status != HelperHostStatus.Updated && AutomaticRestartsAvailable > 0
+            restart = current == connection && !shuttingDown && Status != HelperHostStatus.Updated && AutomaticRestartsAvailable > 0
                 && handshaken.Contains(connection);
             if (restart) AutomaticRestartsAvailable -= 1;
-            if (current == connection && Status != HelperHostStatus.Updated) SetStatus(HelperHostStatus.Starting, null);
+            if (current == connection && Status != HelperHostStatus.Updated)
+                SetStatus(shuttingDown ? HelperHostStatus.Stopped : HelperHostStatus.Starting, null);
         }
         foreach (var entry in failed) entry.Completion.TrySetResult(HelperResult.CoreStopped);
         await spawner.TerminateAndWaitEmptyAsync(connection, CancellationToken.None);
@@ -308,7 +331,7 @@ public sealed class HelperHost
         lock (gate) isCurrent = current == connection;
         if (!isCurrent) return;
         if (restart) await LaunchAsync();
-        else lock (gate) if (Status != HelperHostStatus.Updated) SetStatus(HelperHostStatus.Unavailable, UnavailableMessage);
+        else lock (gate) if (Status != HelperHostStatus.Updated && !shuttingDown) SetStatus(HelperHostStatus.Unavailable, UnavailableMessage);
     }
 
     static readonly UTF8Encoding Utf8 = new(false);

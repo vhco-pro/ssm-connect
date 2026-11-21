@@ -7,6 +7,7 @@
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
     <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

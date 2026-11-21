@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="SSMConnect.App.Tests" />
+    <AssemblyMetadata Include="SSMConnectBuild" Value="$(SSMConnectBuild)" Condition="'$(SSMConnectBuild)' != ''" />
   </ItemGroup>
 
 </Project>

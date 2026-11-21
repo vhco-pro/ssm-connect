@@ -171,3 +171,41 @@ public sealed class StartupRegistrationTests
         finally { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\SSMConnectTests", throwOnMissingSubKey: false); }
     }
 }
+
+/// <summary>Restart Manager's close request reaches the shell (T21).</summary>
+public sealed partial class SessionEndWindowTests
+{
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static partial IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+    private static partial IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    [Fact]
+    public void TheCloseRequestIsAgreedAndClosesTheShellOnceTheSessionEnds()
+    {
+        var closed = 0;
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var window = new SessionEndWindow(() => closed++);
+                // Top-level, so Restart Manager's broadcast reaches it: its root is itself.
+                Assert.Equal(window.Handle, GetAncestor(window.Handle, 2));
+                const int EndSessionCloseApp = 0x1;
+                Assert.Equal(1, (int)SendMessage(window.Handle, 0x0011, IntPtr.Zero, EndSessionCloseApp));
+                Assert.Equal(0, closed);
+                SendMessage(window.Handle, 0x0016, IntPtr.Zero, EndSessionCloseApp); // session not ending
+                Assert.Equal(0, closed);
+                SendMessage(window.Handle, 0x0016, 1, EndSessionCloseApp);
+                Assert.Equal(1, closed);
+            }
+            catch (Exception error) { failure = error; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null) throw failure;
+    }
+}

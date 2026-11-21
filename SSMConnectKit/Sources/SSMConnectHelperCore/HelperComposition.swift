@@ -40,7 +40,7 @@ package enum HelperComposition {
             },
             ownerOnlyFiles: .windows)
         let dcvViewer = environment["ProgramFiles"].map {
-            URL(fileURLWithPath: $0).appendingPathComponent("NICE/DCV/Client/bin/dcvviewer.exe").path
+            URL(fileURLWithPath: $0).appendingPathComponent("NICE/DCV/Client/bin/dcvviewer.exe").nativePath
         }
         return HelperServices(
             platform: platform, auth: ClientAuthProvider(openURL: { requests.openURL($0) }),
@@ -63,7 +63,7 @@ package enum HelperComposition {
             },
             editor: .init(root: local.appendingPathComponent("RemoteAccess", isDirectory: true),
                           sshConfig: home.appendingPathComponent(".ssh/config"),
-                          helperPath: { tools.helperDirectory.appendingPathComponent("ssm-connect-proxy.exe").path },
+                          helperPath: { tools.helperDirectory.appendingPathComponent("ssm-connect-proxy.exe").nativePath },
                           pluginPath: { tools.pluginPath }, editorPath: { tools.vsCodePath }, editorPreflight: { _ in },
                           owner: ProcessLeaseOwner(), sshAvailable: { tools.sshPath != nil && tools.sshKeygenPath != nil }),
             browserSupported: { profile in

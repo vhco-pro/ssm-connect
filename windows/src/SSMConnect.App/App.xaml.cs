@@ -17,6 +17,7 @@ public partial class App : Application
     ShellController? controller;
     TrayIcon? tray;
     System.Windows.Controls.ContextMenu? menu;
+    SessionEndWindow? sessionEnd;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -26,6 +27,7 @@ public partial class App : Application
         var helperPath = Path.Combine(AppContext.BaseDirectory, "SSMConnectHelper.exe");
         host = new HelperHost(new JobHelperSpawner(helperPath), HelperBuild.Current, HelperHostLimits.Default, TimeProvider.System);
         tray = new TrayIcon();
+        sessionEnd = new SessionEndWindow(() => { StopHelper(); Shutdown(); });
         var platform = new WindowsShellPlatform(
             notify: (title, body) => tray.ShowNotification(title, body, TrayNotificationKind.Information),
             showError: (action, message) => tray.ShowNotification(action, message, TrayNotificationKind.Error),
@@ -61,14 +63,31 @@ public partial class App : Application
 
     void Quit()
     {
+        StopHelper();
+        Shutdown();
+    }
+
+    /// <summary>
+    /// Ends the helper cleanly before the shell exits: it cancels its running commands and ends its
+    /// connections, and its job is emptied after a short grace. Runs off the dispatcher, because the
+    /// installer's close request arrives on it and waits for this to finish.
+    /// </summary>
+    void StopHelper()
+    {
+        if (host is { } running) Task.Run(() => running.ShutdownAsync(TimeSpan.FromSeconds(5))).Wait(TimeSpan.FromSeconds(10));
         tray?.Dispose();
         instance?.Dispose();
-        Shutdown();
     }
 }
 
-/// <summary>The build this shell and its helper share; the release job stamps both.</summary>
+/// <summary>
+/// The build this shell and its helper share. The release build passes it as the
+/// <c>SSMConnectBuild</c> MSBuild property, recorded as assembly metadata; a development build is "dev".
+/// </summary>
 static class HelperBuild
 {
-    public const string Current = "dev";
+    public static string Current { get; } =
+        typeof(HelperBuild).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+            .OfType<System.Reflection.AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "SSMConnectBuild")?.Value ?? "dev";
 }
