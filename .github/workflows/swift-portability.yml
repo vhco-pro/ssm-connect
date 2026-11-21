@@ -17,6 +17,7 @@ on:
       - SSMConnectKit/Sources/SSMConnectHelperProtocol/**
       - SSMConnectKit/Sources/SSMConnectHelper/**
       - SSMConnectKit/Tests/SSMConnectHelperTests/**
+      - SSMConnectKit/Tests/SSMConnectWorkflowTests/**
   workflow_dispatch:
 
 permissions:
@@ -123,17 +124,17 @@ jobs:
         with:
           swift-version: swift-6.4.2-release
           swift-build: 6.4.2-RELEASE
-      - name: Test the helper protocol and executable
+      - name: Test the helper and the portable workflow rules
         shell: bash
         run: |
           # On Windows and Linux the manifest holds only the shared layers and the helper; on
           # macOS it also builds the app's targets, so use the build system that handles the
           # aws-sdk-swift build-tool plugin.
           if [ "$RUNNER_OS" = "Windows" ]; then
-            swift test --package-path SSMConnectKit --filter SSMConnectHelperTests -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests' -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            swift test --package-path SSMConnectKit --filter SSMConnectHelperTests
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests'
           else
-            swift test --package-path SSMConnectKit --filter SSMConnectHelperTests
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests'
           fi
 

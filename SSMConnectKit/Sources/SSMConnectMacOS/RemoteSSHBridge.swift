@@ -5,18 +5,32 @@ import SSMConnectAWS
 import SSMConnectDomain
 import SSMConnectWorkflow
 
+/// The app as lease owner on macOS: the running application with the recorded PID, bundle ID
+/// and launch date.
+package struct ApplicationLeaseOwner: LeaseOwnerProbing {
+    package init() {}
+
+    package func current() -> LeaseOwnerIdentity? {
+        guard let launchDate = NSRunningApplication.current.launchDate,
+              let bundleID = NSRunningApplication.current.bundleIdentifier else { return nil }
+        return LeaseOwnerIdentity(pid: NSRunningApplication.current.processIdentifier, launchDate: launchDate, bundleID: bundleID)
+    }
+
+    package func isActive(_ owner: LeaseOwnerIdentity) -> Bool {
+        guard let application = NSRunningApplication(processIdentifier: owner.pid),
+              !application.isTerminated, application.bundleIdentifier == owner.bundleID,
+              application.launchDate == owner.launchDate else { return false }
+        return true
+    }
+}
+
 /// The owning-app checks a lease needs on macOS: the owner process and file ownership.
 extension RemoteSSHLease {
     package var ownerIsActive: Bool {
         expiresAt > Date() && ownerProcessIsActive
     }
 
-    package var ownerProcessIsActive: Bool {
-        guard let application = NSRunningApplication(processIdentifier: ownerPID),
-              !application.isTerminated, application.bundleIdentifier == ownerBundleID,
-              application.launchDate == ownerLaunchDate else { return false }
-        return true
-    }
+    package var ownerProcessIsActive: Bool { ApplicationLeaseOwner().isActive(owner) }
 
     package func validate(path: String, ownerActive: Bool) throws {
         try validate(path: path, ownerActive: ownerActive, files: .posix)
@@ -50,6 +64,8 @@ public enum RemoteSSHProxyRuntime {
         guard data.count < 128 * 1024 else { throw RemoteSSHError.invalidLease }
         let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: data)
         try lease.validate(path: configurationPath, ownerActive: lease.ownerProcessIsActive)
+        // A proxy of another build than the lease's owner refuses before any AWS call (AC-17).
+        try lease.requireSameBuild()
         let leaseURL = URL(fileURLWithPath: configurationPath)
         guard lease.expiresAt > Date() else {
             try EditorRecoveryRequest(lease: lease, reason: .expired).write(for: leaseURL)
@@ -123,6 +139,8 @@ public enum RemoteSSHProxyRuntime {
         switch error {
         case .targetChanged, .replacementApprovalRequired:
             return "SSM Connect refused a changed or unavailable workstation. For an expected replacement, choose Review Replacement Workstation in the app, verify the instance and user, then Continue and retry the existing VS Code window. Do not approve an unexpected target; no new editor window is required.\n"
+        case .updated:
+            return "SSM Connect was updated; restart it.\n"
         case .invalidLease:
             return "SSM Connect editor access is unavailable or expired. Choose Reconnect Existing Workspace in the app; if replacement review or sign-in is requested, complete that action, then retry the existing VS Code window. No new editor window is required.\n"
         case .configurationConflict:

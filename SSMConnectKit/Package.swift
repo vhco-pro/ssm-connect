@@ -51,6 +51,8 @@ var targets: [Target] = [
         name: "SSMConnectHelper",
         dependencies: ["SSMConnectHelperProtocol", "SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectAWS"]
     ),
+    // The shared workflows' portable rules; runs on macOS, Linux and Windows.
+    .testTarget(name: "SSMConnectWorkflowTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow"]),
     // The helper protocol and executable, with fake ports; runs on macOS, Linux and Windows.
     .testTarget(
         name: "SSMConnectHelperTests",

@@ -311,7 +311,7 @@ import Observation
             guard let owner = ownerIdentity() else { throw RemoteSSHError.invalidLease }
             let lease = RemoteSSHLease(profile: profile, instanceID: instance.id, user: user, keyPath: key.privateKeyPath,
                 pluginPath: pluginPath() ?? "", ownerPID: owner.pid,
-                ownerLaunchDate: owner.launchDate, ownerBundleID: owner.bundleID, generation: UUID(), expiresAt: now().addingTimeInterval(24 * 60 * 60))
+                ownerLaunchDate: owner.launchDate, ownerBundleID: owner.bundleID, generation: UUID(), expiresAt: now().addingTimeInterval(24 * 60 * 60), ownerBuild: InstalledBuild.current)
             let contents = try RemoteSSHConfiguration.contents(lease: lease, leasePath: leaseURL.path,
                 helperPath: helperPath(), knownHostsPath: root.appendingPathComponent("known-hosts").path)
             try withPublicationLock {

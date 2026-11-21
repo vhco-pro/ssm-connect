@@ -161,9 +161,7 @@ extension RemoteDevelopmentStateMachine {
                  .appendingPathComponent("Contents/Resources/app/bin/code").path
          }, editorPreflight: @escaping (String) async throws -> Void = RemoteEditorPreflight.check,
          ownerIdentity: @escaping () -> (pid: Int32, launchDate: Date, bundleID: String)? = {
-             guard let launchDate = NSRunningApplication.current.launchDate,
-                   let bundleID = NSRunningApplication.current.bundleIdentifier else { return nil }
-             return (NSRunningApplication.current.processIdentifier, launchDate, bundleID)
+             ApplicationLeaseOwner().current().map { ($0.pid, $0.launchDate, $0.bundleID) }
          },
          now: @escaping () -> Date = { Date() },
          renewalSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },

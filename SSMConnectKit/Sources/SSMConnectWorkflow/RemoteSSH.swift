@@ -3,7 +3,7 @@ import SSMConnectDomain
 
 package enum RemoteSSHError: LocalizedError {
     case invalidLease, unavailable, targetChanged, invalidFolder, configurationConflict
-    case invalidRecoveryState, replacementApprovalRequired, workstationNotReady
+    case invalidRecoveryState, replacementApprovalRequired, workstationNotReady, updated
     package var errorDescription: String? {
         switch self {
         case .invalidLease: "Remote access is off or its owned session expired. Open VS Code from SSM Connect again."
@@ -14,6 +14,7 @@ package enum RemoteSSHError: LocalizedError {
         case .invalidRecoveryState: "Saved editor recovery state is invalid. Existing access was not replaced; review the profile and recovery settings."
         case .replacementApprovalRequired: "A different workstation instance requires confirmation in SSM Connect before this workspace can reconnect."
         case .workstationNotReady: "The workstation is not ready. Recovery can wait without starting or replacing it."
+        case .updated: "SSM Connect was updated; restart it."
         }
     }
 }
@@ -29,6 +30,8 @@ package struct RemoteSSHLease: Codable, Equatable, Sendable {
     package let ownerBundleID: String
     package let generation: UUID
     package let expiresAt: Date
+    /// The owner's build (`InstalledBuild`); nil in leases written before builds were recorded.
+    package let ownerBuild: String?
 
     package func canReuse(profile: ConnectionProfile, instanceID: String, user: String, now: Date = Date()) throws -> Bool {
         guard self.profile.hasSameWorkstation(as: profile),
@@ -40,7 +43,7 @@ package struct RemoteSSHLease: Codable, Equatable, Sendable {
         guard ownerActive, generation == original.generation,
               ownerPID == original.ownerPID, ownerBundleID == original.ownerBundleID,
               ownerLaunchDate == original.ownerLaunchDate, keyPath == original.keyPath,
-              pluginPath == original.pluginPath else { return false }
+              pluginPath == original.pluginPath, ownerBuild == original.ownerBuild else { return false }
         return (try? canReuse(profile: original.profile, instanceID: original.instanceID,
                               user: original.user, now: now)) == true
     }
@@ -48,7 +51,7 @@ package struct RemoteSSHLease: Codable, Equatable, Sendable {
     package func extending(until expiry: Date) -> RemoteSSHLease {
         RemoteSSHLease(profile: profile, instanceID: instanceID, user: user, keyPath: keyPath,
             pluginPath: pluginPath, ownerPID: ownerPID, ownerLaunchDate: ownerLaunchDate,
-            ownerBundleID: ownerBundleID, generation: generation, expiresAt: expiry)
+            ownerBundleID: ownerBundleID, generation: generation, expiresAt: expiry, ownerBuild: ownerBuild)
     }
 
     package func validate(path: String, ownerActive: Bool, files: OwnerOnlyFiles) throws {
@@ -66,7 +69,7 @@ package struct RemoteSSHLease: Codable, Equatable, Sendable {
         guard FileManager.default.isExecutableFile(atPath: pluginPath) else { throw RemoteSSHError.invalidLease }
     }
 
-    package init(profile: ConnectionProfile, instanceID: String, user: String, keyPath: String, pluginPath: String, ownerPID: Int32, ownerLaunchDate: Date, ownerBundleID: String, generation: UUID, expiresAt: Date) {
+    package init(profile: ConnectionProfile, instanceID: String, user: String, keyPath: String, pluginPath: String, ownerPID: Int32, ownerLaunchDate: Date, ownerBundleID: String, generation: UUID, expiresAt: Date, ownerBuild: String? = nil) {
         self.profile = profile
         self.instanceID = instanceID
         self.user = user
@@ -77,6 +80,7 @@ package struct RemoteSSHLease: Codable, Equatable, Sendable {
         self.ownerBundleID = ownerBundleID
         self.generation = generation
         self.expiresAt = expiresAt
+        self.ownerBuild = ownerBuild
     }
 }
 
