@@ -131,7 +131,7 @@ public sealed class HelperHostTests
         {
             if (DateTime.UtcNow > deadline) throw new TimeoutException("condition not reached");
             if (time is not null && step is not null) time.Advance(step.Value);
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
         }
     }
 
@@ -145,7 +145,7 @@ public sealed class HelperHostTests
         var host = Host(spawner, time);
         await host.StartAsync();
         Assert.Equal(HelperHostStatus.Ready, host.Status);
-        var result = await host.SendAsync("connect", new Dictionary<string, string>(), CancellationToken.None);
+        var result = await host.SendAsync("connect", new Dictionary<string, string>(), TestContext.Current.CancellationToken);
         Assert.Equal(HelperOutcome.Completed, result.Outcome);
         Assert.Equal("connected", result.Value["state"]);
         var hello = spawner.Started[0].Received.First();
@@ -162,7 +162,7 @@ public sealed class HelperHostTests
         await host.StartAsync();
         Assert.Equal(HelperHostStatus.Updated, host.Status);
         Assert.Equal("SSM Connect was updated; restart it.", host.StatusMessage);
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.Single(spawner.Started);
     }
 
@@ -173,7 +173,7 @@ public sealed class HelperHostTests
         var spawner = new FakeSpawner(() => new FakeHelper { Handshakes = false });
         var host = Host(spawner, time);
         var start = host.StartAsync();
-        await Eventually(() => spawner.Started.Count == 1);
+        await Eventually(() => spawner.Started.Count == 1 && spawner.Started[0].Received.Count > 0);
         time.Advance(TimeSpan.FromSeconds(11));
         await start;
         Assert.Equal(HelperHostStatus.Unavailable, host.Status);
@@ -211,7 +211,12 @@ public sealed class HelperHostTests
         spawner.Started[0].Exit();
         await Eventually(() => spawner.Started.Count == 2 && host.Status == HelperHostStatus.Ready);
         Assert.Equal(0, host.AutomaticRestartsAvailable);
-        for (var i = 0; i < 41; i++) { time.Advance(TimeSpan.FromSeconds(15)); await Task.Delay(5); }
+        for (var i = 1; i <= 41; i++)
+        {
+            time.Advance(TimeSpan.FromSeconds(15));
+            var expected = i;
+            await Eventually(() => host.HeartbeatsAnswered >= expected);
+        }
         await Eventually(() => host.AutomaticRestartsAvailable == 1);
         spawner.Started[1].Exit();
         await Eventually(() => spawner.Started.Count == 3 && host.Status == HelperHostStatus.Ready);
@@ -236,7 +241,7 @@ public sealed class HelperHostTests
         var spawner = new FakeSpawner(() => new FakeHelper());
         var host = Host(spawner, time);
         await host.StartAsync();
-        var pending = host.SendAsync("startSession", new Dictionary<string, string>(), CancellationToken.None);
+        var pending = host.SendAsync("startSession", new Dictionary<string, string>(), TestContext.Current.CancellationToken);
         await Eventually(() => spawner.Started[0].Received.Any(f => (string)f["type"]! == "command"));
         spawner.Started[0].Exit();
         var result = await pending;
@@ -288,8 +293,8 @@ public sealed class HelperHostTests
         var grandchild = Process.Start(new ProcessStartInfo(SystemExe("cmd.exe"), "/c ping -n 60 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false })!;
         job.Assign(grandchild);
         Assert.True(job.Contains(helper) && job.Contains(grandchild));
-        Assert.Equal(2, job.ActiveProcessCount);
-        await job.TerminateAndWaitEmptyAsync(CancellationToken.None);
+        Assert.True(job.ActiveProcessCount >= 2); // cmd.exe's own ping child joins the job too
+        await job.TerminateAndWaitEmptyAsync(TestContext.Current.CancellationToken);
         Assert.Equal(0, job.ActiveProcessCount);
         Assert.True(helper.HasExited && grandchild.HasExited);
     }
@@ -312,7 +317,7 @@ public sealed class HelperHostTests
         var activated = new ManualResetEventSlim();
         first!.Activated += activated.Set;
         Assert.Null(SingleInstance.TryAcquire(name));
-        Assert.True(activated.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(activated.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
     }
 
     static string SystemExe(string name) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), name);
