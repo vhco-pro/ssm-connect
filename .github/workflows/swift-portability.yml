@@ -16,6 +16,8 @@ on:
       - SSMConnectKit/Sources/SSMConnectAWS/**
       - SSMConnectKit/Sources/SSMConnectHelperProtocol/**
       - SSMConnectKit/Sources/SSMConnectHelper/**
+      - SSMConnectKit/Sources/SSMConnectHelperCore/**
+      - SSMConnectKit/Sources/SSMConnectProxy/**
       - SSMConnectKit/Tests/SSMConnectHelperTests/**
       - SSMConnectKit/Tests/SSMConnectWorkflowTests/**
       - SSMConnectKit/Tests/SSMConnectAWSTests/**

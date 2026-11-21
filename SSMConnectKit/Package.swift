@@ -15,6 +15,7 @@ let sdkProducts = ["AWSSSOOIDC", "AWSSSO", "AWSEC2", "AWSEC2InstanceConnect", "A
 
 var products: [Product] = [
     .executable(name: "SSMConnectHelper", targets: ["SSMConnectHelper"]),
+    .executable(name: "ssm-connect-proxy", targets: ["SSMConnectProxy"]),
 ]
 
 var dependencies: [Package.Dependency] = [
@@ -96,13 +97,11 @@ targets += [
 #if os(macOS)
 products += [
     .library(name: "SSMConnectKit", targets: ["SSMConnectKit"]),
-    .executable(name: "ssm-connect-proxy", targets: ["SSMConnectProxy"]),
 ]
 dependencies.append(.package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.7.13"))
 // On macOS the AWS boundary also holds the aws-sdk-swift services until T36 switches it over.
 awsDependencies += sdkProducts.map { .product(name: $0, package: "aws-sdk-swift") }
 targets += [
-    .executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectKit"]),
     // The macOS platform adapters: AppKit, persistence, DCV, the plugin and SSH processes,
     // browsers and editors.
     .target(
@@ -155,6 +154,14 @@ targets += [
 // The AWS boundary: SSM Connect's own client and the service ports built on it, shared by
 // every platform.
 targets.append(.target(name: "SSMConnectAWS", dependencies: awsDependencies))
+
+// The editor's SSH proxy: the macOS composition through the umbrella, the client services on
+// Windows and Linux.
+#if os(macOS)
+targets.append(.executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectKit"]))
+#else
+targets.append(.executableTarget(name: "SSMConnectProxy", dependencies: ["SSMConnectWorkflow", "SSMConnectAWS"]))
+#endif
 
 let package = Package(
     name: "SSMConnectKit",
