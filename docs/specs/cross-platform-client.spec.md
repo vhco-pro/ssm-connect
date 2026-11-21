@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Re-accepted on 2026-11-21 after clean review R-25."
+status: in-progress
+status_description: "Implementing from T42 (clock skew), then T45, T43, T44 and the T5 rerun."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
