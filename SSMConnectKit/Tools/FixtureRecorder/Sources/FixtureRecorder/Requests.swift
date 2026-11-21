@@ -40,8 +40,13 @@ struct RequestFixture: Codable {
 final class Exchange: @unchecked Sendable {
     private let lock = NSLock()
     private var queue: [CannedResponse] = []
+    private var dated: [(CannedResponse, Double?)] = []
     private var seen: [RecordedRequest] = []
     private var times: [Date] = []
+
+    /// Responses in order, the last repeating, each given a Date header at the moment it is
+    /// served: local time plus the offset, or no Date header when the offset is nil.
+    func armDated(_ responses: [(CannedResponse, Double?)]) { lock.withLock { dated = responses; queue = []; seen = []; times = [] } }
 
     /// One response for every request.
     func arm(_ response: CannedResponse) { arm([response]) }
@@ -51,6 +56,13 @@ final class Exchange: @unchecked Sendable {
         lock.withLock {
             seen.append(request)
             times.append(Date())
+            if !dated.isEmpty {
+                let (response, offset) = dated.count > 1 ? dated.removeFirst() : dated[0]
+                var served = response
+                served.headers.removeAll { $0[0].lowercased() == "date" }
+                if let offset { served.headers.append(["Date", httpDate(Date().addingTimeInterval(offset))]) }
+                return served
+            }
             guard !queue.isEmpty else { return CannedResponse(status: 500, headers: [], body: "unarmed") }
             return queue.count > 1 ? queue.removeFirst() : queue[0]
         }
@@ -121,7 +133,7 @@ func stateChangeXML(_ action: String, current: (Int, String), previous: (Int, St
 }
 
 /// A loopback HTTP server that records requests into `exchange`.
-func startServer(_ exchange: Exchange) async throws -> (channel: Channel, group: MultiThreadedEventLoopGroup, endpoint: String) {
+func startServer(_ exchange: Exchange, host: String = "127.0.0.1") async throws -> (channel: Channel, group: MultiThreadedEventLoopGroup, endpoint: String) {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     let channel = try await ServerBootstrap(group: group)
         .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -130,8 +142,8 @@ func startServer(_ exchange: Exchange) async throws -> (channel: Channel, group:
                 channel.pipeline.addHandler(RecordingHandler(exchange: exchange))
             }
         }
-        .bind(host: "127.0.0.1", port: 0).get()
-    return (channel, group, "http://127.0.0.1:\(channel.localAddress!.port!)")
+        .bind(host: host, port: 0).get()
+    return (channel, group, "http://\(host):\(channel.localAddress!.port!)")
 }
 
 func recordRequests(to directory: String) async throws {

@@ -1,0 +1,53 @@
+{
+  "calls" : [
+    {
+      "attempts" : [
+        {
+          "signedOffsetSeconds" : -0
+        },
+        {
+          "signedOffsetSeconds" : 32399
+        }
+      ],
+      "outcome" : "success"
+    }
+  ],
+  "name" : "ssm-invalid-signature-far",
+  "responses" : [
+    {
+      "dateOffsetSeconds" : 32400,
+      "response" : {
+        "body" : "{\"__type\":\"InvalidSignatureException\",\"message\":\"scripted InvalidSignatureException\"}",
+        "headers" : [
+          [
+            "Content-Type",
+            "application\/x-amz-json-1.1"
+          ],
+          [
+            "x-amzn-ErrorType",
+            "InvalidSignatureException"
+          ]
+        ],
+        "status" : 400
+      }
+    },
+    {
+      "dateOffsetSeconds" : 32400,
+      "response" : {
+        "body" : "{\"SessionId\":\"s\",\"StreamUrl\":\"wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/s\",\"TokenValue\":\"t\"}",
+        "headers" : [
+          [
+            "Content-Type",
+            "application\/x-amz-json-1.1"
+          ],
+          [
+            "x-amzn-RequestId",
+            "11111111-2222-3333-4444-555555555555"
+          ]
+        ],
+        "status" : 200
+      }
+    }
+  ],
+  "service" : "ssm"
+}
