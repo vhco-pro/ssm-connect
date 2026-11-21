@@ -119,7 +119,7 @@ import Testing
         var enteredPreflight = false
         let machine = RemoteDevelopmentStateMachine(profile: original, root: root.appendingPathComponent("owned"),
             configURL: root.appendingPathComponent("user/config"), ec2: ec2,
-            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in
+            helperPath: { "/usr/bin/true" }, pluginPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in
                 enteredPreflight = true
                 _ = try await RemoteEditorPreflight.run("/usr/bin/tail", arguments: ["-f", "/dev/null"], timeout: .seconds(1))
             })
@@ -242,7 +242,7 @@ import Testing
         let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
             configURL: root.appendingPathComponent("user/config"), auth: auth,
             ec2: MockEC2Service(), ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
-            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
+            helperPath: { "/usr/bin/true" }, pluginPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
             ownerIdentity: { (12345, Date(), "test-owner") })
         defer { machine.stop() }
         try machine.installSetup(consent: true)
@@ -272,7 +272,7 @@ import Testing
         let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
             configURL: root.appendingPathComponent("user/config"), auth: auth,
             ec2: ec2, ssm: MockSSMService(), keyGenerator: FakeSSHKeyGenerator(recorder: recorder),
-            helperPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
+            helperPath: { "/usr/bin/true" }, pluginPath: { "/usr/bin/true" }, editorPath: { "/usr/bin/true" }, editorPreflight: { _ in },
             ownerIdentity: { (12345, Date(), "test-owner") })
         defer { machine.stop() }
         try machine.installSetup(consent: true)
@@ -296,7 +296,7 @@ import Testing
         let auth = MockAuthProvider()
         let config = root.appendingPathComponent("user/config")
         let machine = RemoteDevelopmentStateMachine(profile: profile, root: root.appendingPathComponent("owned"),
-            configURL: config, auth: auth, helperPath: { "/usr/bin/true" }, editorPath: { nil })
+            configURL: config, auth: auth, helperPath: { "/usr/bin/true" }, pluginPath: { "/usr/bin/true" }, editorPath: { nil })
         try machine.installSetup(consent: false)
         machine.open()
         await machine.awaitOpening()

@@ -21,6 +21,7 @@ import Observation
     private let setup: RemoteSSHSetup
     private let helperPath: () -> String
     private let pluginPath: () -> String?
+    private let sshAvailable: () -> Bool
     private let editorPath: () -> String?
     private let editorPreflight: (String) async throws -> Void
     private let ownerIdentity: () -> (pid: Int32, launchDate: Date, bundleID: String)?
@@ -56,8 +57,9 @@ import Observation
          launchEditor: @escaping (String, [String]) async throws -> Void, resumeStore: (any KeyValueStoring)? = nil,
          recoverySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          recoveryBudget: Duration = .seconds(30 * 60),
-         leaseOwnerIsActive: @escaping (RemoteSSHLease) -> Bool) {
+         leaseOwnerIsActive: @escaping (RemoteSSHLease) -> Bool, sshAvailable: @escaping () -> Bool) {
         self.platform = platform
+        self.sshAvailable = sshAvailable
         self.profile = profile
         self.root = root
         self.setup = RemoteSSHSetup(root: root, configURL: configURL)
@@ -256,6 +258,12 @@ import Observation
 
     private func prepareAndLaunch(recovering: Bool, approvedInstanceID: String? = nil) async throws {
         let profile = profile
+        // Capability preflight (AC-25): before sign-in, the editor CLI or any lease write. A
+        // missing VS Code keeps the existing message below.
+        guard pluginPath().map({ FileManager.default.isExecutableFile(atPath: $0) }) == true else {
+            throw CapabilityError.missing(.sessionManagerPlugin)
+        }
+        guard sshAvailable() else { throw CapabilityError.missing(.openSSH) }
         guard profile.isConfigured, profile.remoteDevelopment?.enabled == true, setup.isInstalled,
               let editor = editorPath(), FileManager.default.isExecutableFile(atPath: editor),
               FileManager.default.isExecutableFile(atPath: helperPath()) else { throw RemoteSSHError.unavailable }

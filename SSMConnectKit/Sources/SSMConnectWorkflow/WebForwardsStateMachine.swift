@@ -187,6 +187,12 @@ public final class WebForwardsStateMachine {
     }
 
     private func run(initialRecovery: Bool) async {
+        // Capability preflight (AC-25): before any AWS call, key, process or PAC write.
+        if let missing = tunnel.unavailableCapabilities().first {
+            state = .error
+            errorMessage = CapabilityError.missing(missing).errorDescription
+            return
+        }
         var reconnecting = false
         var recovering = initialRecovery
         var readinessWait = false

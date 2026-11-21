@@ -274,7 +274,11 @@ public final class ConnectionStateMachine {
         log.log(.ui, "Connecting to \(profile.name) (\(profile.resourceRegion))…")
 
         do {
-            // 0. Pre-flight: validate the profile's regions before any SDK call. A bad region
+            // 0. Capability preflight (AC-25): the plugin carries every connection, so refuse
+            //    before any AWS call, process launch or configuration write when it is missing.
+            guard tunnel.checkAvailability() == .available else { throw CapabilityError.missing(.sessionManagerPlugin) }
+
+            //    Then validate the profile's regions before any SDK call. A bad region
             //    (empty, whitespace, or malformed) would otherwise reach the AWS SDK's endpoint
             //    resolver and throw the opaque `Smithy.ClientError.invalidValue` ("error 4").
             //    Catching it here gives an actionable message and covers both the manual and

@@ -48,6 +48,13 @@ package struct SSHTunnel: SSHTunnelProviding {
         }
     }
 
+    package func unavailableCapabilities() -> [Capability] {
+        var missing: [Capability] = []
+        if pluginPath().map({ FileManager.default.isExecutableFile(atPath: $0) }) != true { missing.append(.sessionManagerPlugin) }
+        if !FileManager.default.isExecutableFile(atPath: "/usr/bin/ssh") { missing.append(.openSSH) }
+        return missing
+    }
+
     package static func arguments(pluginPath: String, region: String, instanceId: String, user: String,
                           keyPath: String, configuration: WebForwardsConfiguration) throws -> [String] {
         if let error = ProfileEditorValidation.webForwardsError(configuration) {

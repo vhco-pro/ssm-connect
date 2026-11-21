@@ -173,11 +173,13 @@ extension RemoteDevelopmentStateMachine {
          }, resumeStore: (any KeyValueStoring)? = nil,
          recoverySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          recoveryBudget: Duration = .seconds(30 * 60),
-         leaseOwnerIsActive: @escaping (RemoteSSHLease) -> Bool = { $0.ownerProcessIsActive }) {
+         leaseOwnerIsActive: @escaping (RemoteSSHLease) -> Bool = { $0.ownerProcessIsActive },
+         sshAvailable: @escaping () -> Bool = { FileManager.default.isExecutableFile(atPath: "/usr/bin/ssh") }) {
         self.init(platform: .macOS, profile: profile, root: root, configURL: configURL, auth: auth, ec2: ec2, ssm: ssm,
                   keyGenerator: keyGenerator, helperPath: helperPath, pluginPath: pluginPath, editorPath: editorPath,
                   editorPreflight: editorPreflight, ownerIdentity: ownerIdentity, now: now, renewalSleep: renewalSleep,
                   writeLease: writeLease, launchEditor: launchEditor, resumeStore: resumeStore,
-                  recoverySleep: recoverySleep, recoveryBudget: recoveryBudget, leaseOwnerIsActive: leaseOwnerIsActive)
+                  recoverySleep: recoverySleep, recoveryBudget: recoveryBudget, leaseOwnerIsActive: leaseOwnerIsActive,
+                  sshAvailable: sshAvailable)
     }
 }

@@ -19,6 +19,8 @@ package enum WebForwardsError: LocalizedError {
 }
 
 package protocol SSHTunnelProviding: Sendable {
+    /// The capabilities this tunnel needs that are missing (the plugin it proxies through, OpenSSH).
+    func unavailableCapabilities() -> [Capability]
     func start(session: SSMSessionResponse, region: String, instanceId: String, user: String,
                keyPath: String, configuration: WebForwardsConfiguration) async throws -> TunnelHandle
 }
