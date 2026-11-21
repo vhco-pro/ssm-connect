@@ -312,3 +312,4 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
 $results = Join-Path $Output 'release-outputs.txt'
 @("msi=$msi", "sha256=$hash", "manifest=$manifest") | Set-Content $results -Encoding ascii
 Write-Host "Wrote the results to $results"
+exit 0

@@ -105,3 +105,6 @@ if ($Install) {
 
 if ($failures.Count -gt 0) { throw "$($failures.Count) package check(s) failed." }
 Write-Host 'Every package check passed.'
+# An explicit status: the last native command run above (the proxy, which exits 1 without
+# arguments) would otherwise become this script's exit code under GitHub's pwsh wrapper.
+exit 0
