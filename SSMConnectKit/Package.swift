@@ -21,12 +21,15 @@ var dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
     // SSM Connect's own portable AWS client (cross-platform-client spec, AWS client).
     .package(path: "AWSClient"),
+    // SHA-1 for the AWS CLI's SSO cache file names on every platform; the AWS client pins the same.
+    .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.0"),
 ]
 
 var awsDependencies: [Target.Dependency] = [
     "SSMConnectDomain",
     "SSMConnectWorkflow",
     .product(name: "SSMConnectAWSClient", package: "AWSClient"),
+    .product(name: "Crypto", package: "swift-crypto"),
 ]
 
 var targets: [Target] = [
@@ -51,6 +54,11 @@ var targets: [Target] = [
         name: "SSMConnectHelper",
         dependencies: ["SSMConnectHelperProtocol", "SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectAWS"]
     ),
+    // The AWS boundary's client path; runs on macOS, Linux and Windows.
+    .testTarget(name: "SSMConnectAWSTests", dependencies: [
+        "SSMConnectAWS", "SSMConnectDomain", "SSMConnectWorkflow",
+        .product(name: "SSMConnectAWSClient", package: "AWSClient"),
+    ]),
     // The shared workflows' portable rules; runs on macOS, Linux and Windows.
     .testTarget(name: "SSMConnectWorkflowTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow"]),
     // The helper protocol and executable, with fake ports; runs on macOS, Linux and Windows.

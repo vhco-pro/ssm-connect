@@ -1,6 +1,4 @@
-// The aws-sdk-swift implementation, used on macOS until T36 switches it to SSM Connect's client.
-#if os(macOS)
-import CryptoKit
+import Crypto
 import Foundation
 import SSMConnectDomain
 import SSMConnectWorkflow
@@ -142,4 +140,3 @@ package struct SSOCacheReader: SSOCacheReading {
         return formatter.string(from: date)
     }
 }
-#endif
