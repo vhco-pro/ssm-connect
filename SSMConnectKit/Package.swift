@@ -103,7 +103,9 @@ let package = Package(
                 .product(name: "AWSEC2InstanceConnect", package: "aws-sdk-swift"),
                 // Resolver tests inject the shared AWS client's transport.
                 .product(name: "SSMConnectAWSClient", package: "AWSClient"),
-            ]
+            ],
+            // Read from the source tree through #filePath, not bundled.
+            exclude: ["Fixtures"]
         ),
     ]
 )
