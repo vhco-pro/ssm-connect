@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SSMConnect.App/SSMConnect.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SSMConnect.App.Tests/SSMConnect.App.Tests.csproj" />
+  </Folder>
+</Solution>
