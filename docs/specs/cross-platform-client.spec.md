@@ -795,6 +795,7 @@ None.
 | 2026-11-21 | R-23 | spec | `da7d96c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix and one nit |
 | 2026-11-21 | R-24 | spec | `b079c3b` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 | 2026-11-21 | R-25 | spec | `e74903d` | gpt-6.1-sol | procedural | NO FINDINGS |
+| 2026-11-21 | R-25 | spec | `e74903d` | n/a | n/a | accepted by owner |
 
 ### R-1
 
