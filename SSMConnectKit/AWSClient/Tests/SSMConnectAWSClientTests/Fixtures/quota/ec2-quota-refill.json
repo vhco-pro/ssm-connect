@@ -1,0 +1,180 @@
+{
+  "name" : "ec2-quota-refill",
+  "region" : "us-east-1",
+  "service" : "ec2",
+  "steps" : [
+    {
+      "attempts" : [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "calls" : 50,
+      "outcomes" : [
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError"
+      ],
+      "script" : [
+        {
+          "code" : "InternalError",
+          "dateOffsetSeconds" : 0,
+          "status" : 500
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "calls" : 5,
+      "outcomes" : [
+        "success",
+        "success",
+        "success",
+        "success",
+        "success"
+      ],
+      "script" : [
+        {
+          "dateOffsetSeconds" : 0,
+          "status" : 200
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        2
+      ],
+      "calls" : 1,
+      "outcomes" : [
+        "success"
+      ],
+      "script" : [
+        {
+          "code" : "InternalError",
+          "dateOffsetSeconds" : 0,
+          "status" : 500
+        },
+        {
+          "dateOffsetSeconds" : 0,
+          "status" : 200
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        2
+      ],
+      "calls" : 1,
+      "outcomes" : [
+        "error: UnknownAWSHTTPServiceError"
+      ],
+      "script" : [
+        {
+          "code" : "InternalError",
+          "dateOffsetSeconds" : 0,
+          "status" : 500
+        }
+      ]
+    }
+  ]
+}
