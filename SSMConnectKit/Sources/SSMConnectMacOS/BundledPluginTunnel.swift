@@ -105,18 +105,8 @@ package final class BundledPluginTunnel: TunnelProvider {
         localPort: Int,
         remotePort: Int
     ) throws -> [String] {
-        let sessionJSON = try session.pluginSessionJSON()
-        let parameters: [String: Any] = [
-            "Target": instanceId,
-            "DocumentName": SSMService.portForwardDocument,
-            "Parameters": [
-                "portNumber": [String(remotePort)],
-                "localPortNumber": [String(localPort)],
-            ],
-        ]
-        let paramData = try JSONSerialization.data(withJSONObject: parameters)
-        let paramJSON = String(decoding: paramData, as: UTF8.self)
-        return [sessionJSON, region, "StartSession", "", paramJSON]
+        try PluginArguments.portForward(session: session, region: region, instanceId: instanceId,
+                                        localPort: localPort, remotePort: remotePort)
     }
 }
 

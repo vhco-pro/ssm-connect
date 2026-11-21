@@ -62,7 +62,7 @@ package struct RemoteSSHLease: Codable, Equatable, Sendable {
         let file = URL(fileURLWithPath: path)
         for candidate in [file, URL(fileURLWithPath: keyPath), URL(fileURLWithPath: keyPath + ".pub")] {
             let attributes = try FileManager.default.attributesOfItem(atPath: candidate.path)
-            guard attributes[.type] as? FileAttributeType == .typeRegular, files.isOwnerOnly(attributes) else {
+            guard attributes[.type] as? FileAttributeType == .typeRegular, files.isOwnerOnly(candidate, attributes) else {
                 throw RemoteSSHError.invalidLease
             }
         }

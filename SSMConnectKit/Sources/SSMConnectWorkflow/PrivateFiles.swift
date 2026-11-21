@@ -52,14 +52,14 @@ package enum BrowserPrivateFiles {
 /// Owner-only file checks the editor workflow relies on, from the platform: on macOS POSIX
 /// ownership, permission bits and `fcntl` locks (`OwnerOnlyFiles.posix`).
 package struct OwnerOnlyFiles: Sendable {
-    /// Whether attributes from `FileManager` show a file owned by the current user with no
-    /// group or other access.
-    package var isOwnerOnly: @Sendable ([FileAttributeKey: Any]) -> Bool
+    /// Whether the file at the URL, whose `FileManager` attributes are given, is owned by the
+    /// current user with no access for anyone else (POSIX mode bits, or a Windows DACL).
+    package var isOwnerOnly: @Sendable (URL, [FileAttributeKey: Any]) -> Bool
     /// Runs `body` holding an exclusive lock on the owner-only lock file at `url`, created if
     /// missing; throws `RemoteSSHError.configurationConflict` when the file is unsafe or locked.
     package var withExclusiveLock: @Sendable (URL, () throws -> Void) throws -> Void
 
-    package init(isOwnerOnly: @escaping @Sendable ([FileAttributeKey: Any]) -> Bool,
+    package init(isOwnerOnly: @escaping @Sendable (URL, [FileAttributeKey: Any]) -> Bool,
                  withExclusiveLock: @escaping @Sendable (URL, () throws -> Void) throws -> Void) {
         self.isOwnerOnly = isOwnerOnly
         self.withExclusiveLock = withExclusiveLock

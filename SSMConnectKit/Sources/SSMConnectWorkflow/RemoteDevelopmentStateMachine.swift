@@ -345,7 +345,7 @@ import Observation
         do { attributes = try FileManager.default.attributesOfItem(atPath: url.path) }
         catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return nil }
         guard attributes[.type] as? FileAttributeType == .typeRegular,
-              platform.ownerOnlyFiles.isOwnerOnly(attributes),
+              platform.ownerOnlyFiles.isOwnerOnly(url, attributes),
               (attributes[.size] as? NSNumber)?.intValue ?? Int.max < 128 * 1024 else {
             throw RemoteSSHError.configurationConflict
         }

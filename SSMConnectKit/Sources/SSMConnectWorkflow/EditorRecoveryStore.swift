@@ -117,7 +117,7 @@ package struct EditorRecoveryRequest: Codable, Sendable {
         let attributes: [FileAttributeKey: Any]
         do { attributes = try FileManager.default.attributesOfItem(atPath: url.path) }
         catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return nil }
-        guard attributes[.type] as? FileAttributeType == .typeRegular, files.isOwnerOnly(attributes) else {
+        guard attributes[.type] as? FileAttributeType == .typeRegular, files.isOwnerOnly(url, attributes) else {
             throw RemoteSSHError.configurationConflict
         }
         guard (attributes[.size] as? NSNumber)?.intValue ?? Int.max < 4096 else {

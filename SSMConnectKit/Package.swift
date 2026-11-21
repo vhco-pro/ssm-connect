@@ -60,6 +60,15 @@ var targets: [Target] = [
     ),
 ]
 
+#if os(Windows)
+targets += [
+    // The core-side Windows adapters: per-user ACL files, the key-value store, tool discovery
+    // and process launch, and browser discovery.
+    .target(name: "SSMConnectWindows", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow"]),
+    .testTarget(name: "SSMConnectWindowsTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectWindows"]),
+]
+#endif
+
 #if os(macOS)
 products += [
     .library(name: "SSMConnectKit", targets: ["SSMConnectKit"]),

@@ -5,7 +5,7 @@ import SSMConnectWorkflow
 extension OwnerOnlyFiles {
     /// POSIX ownership, permission bits and an `fcntl` write lock.
     package static let posix = OwnerOnlyFiles(
-        isOwnerOnly: { attributes in
+        isOwnerOnly: { _, attributes in
             attributes[.ownerAccountID] as? UInt32 == getuid()
                 && ((attributes[.posixPermissions] as? Int ?? 0) & 0o077) == 0
         },

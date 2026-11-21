@@ -18,6 +18,8 @@ on:
       - SSMConnectKit/Sources/SSMConnectHelper/**
       - SSMConnectKit/Tests/SSMConnectHelperTests/**
       - SSMConnectKit/Tests/SSMConnectWorkflowTests/**
+      - SSMConnectKit/Sources/SSMConnectWindows/**
+      - SSMConnectKit/Tests/SSMConnectWindowsTests/**
   workflow_dispatch:
 
 permissions:
@@ -131,7 +133,7 @@ jobs:
           # macOS it also builds the app's targets, so use the build system that handles the
           # aws-sdk-swift build-tool plugin.
           if [ "$RUNNER_OS" = "Windows" ]; then
-            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests' -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectWindowsTests' -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
           elif [ "$RUNNER_OS" = "macOS" ]; then
             swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests'
           else
