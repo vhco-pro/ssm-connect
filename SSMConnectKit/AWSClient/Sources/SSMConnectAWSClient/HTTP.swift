@@ -40,13 +40,16 @@ public protocol HTTPTransport: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
-/// The production transport: an ephemeral `URLSession`, so signed and token-bearing
-/// requests never land in a shared cache.
+/// The production transport: one process-wide ephemeral `URLSession`, so signed and
+/// token-bearing requests never land in a shared cache, and no session is released while the
+/// process keeps working (on Linux that crashed in FoundationNetworking).
 public struct URLSessionTransport: HTTPTransport {
-    private let session: URLSession
+    static let sharedSession = URLSession(configuration: .ephemeral)
+
+    let session: URLSession
 
     public init() {
-        session = URLSession(configuration: .ephemeral)
+        session = Self.sharedSession
     }
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
