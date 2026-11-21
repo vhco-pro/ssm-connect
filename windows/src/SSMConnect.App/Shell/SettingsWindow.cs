@@ -64,12 +64,19 @@ public sealed class SettingsWindow : Window
         return button;
     }
 
-    public async Task ReloadAsync()
+    /// <summary>
+    /// Reloads the profiles from the helper, keeping the selected profile selected (or
+    /// <paramref name="select"/>, such as the profile just saved) so Use acts on the same profile.
+    /// </summary>
+    public async Task ReloadAsync(string? select = null)
     {
+        select ??= (string?)(list.SelectedItem as ProfileRow)?.Profile["id"];
         var result = await controller.ListProfilesAsync();
         list.Items.Clear();
         if (result.Value.TryGetValue("profiles", out var json) && JsonNode.Parse(json) is JsonArray profiles)
             foreach (var node in profiles.OfType<JsonObject>()) list.Items.Add(new ProfileRow((string?)node["name"] ?? "", node));
+        list.SelectedItem = list.Items.OfType<ProfileRow>()
+            .FirstOrDefault(row => select is not null && string.Equals((string?)row.Profile["id"], select, StringComparison.OrdinalIgnoreCase));
     }
 
     void Show(ProfileRow? row)
@@ -83,7 +90,7 @@ public sealed class SettingsWindow : Window
         foreach (var (key, box) in fields)
             profile[key] = key is "localPort" or "remotePort" ? int.TryParse(box.Text, out var port) ? port : 8443 : box.Text;
         await controller.SaveProfileAsync(profile.ToJsonString());
-        await ReloadAsync();
+        await ReloadAsync((string?)profile["id"]);
     }
 
     async Task Use()

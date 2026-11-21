@@ -89,13 +89,21 @@ public sealed class ShellDriveThroughTests
             await settings.ReloadAsync();
             var list = FindAll<ListBox>(settings).Single();
             list.SelectedIndex = 0;
-            foreach (var name in new[] { "save", "use", "import", "editorSetup" })
+            // Each button's command reaches the helper before the next is pressed; saving reloads the
+            // list and keeps the saved profile selected, so Use acts on it.
+            foreach (var (name, command) in new[] { ("save", "saveProfile"), ("use", "setActiveProfile"),
+                                                    ("import", "importProfile"), ("editorSetup", "installEditorSetup") })
             {
+                var listed = Commands(helper!).Count(c => c == "listProfiles");
                 var button = FindAll<Button>(settings).Single(b => b.Name == name);
                 ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)!).Invoke();
+                await Eventually(() => Commands(helper!).Contains(command));
+                if (name is "save" or "import") await Eventually(() => Commands(helper!).Count(c => c == "listProfiles") > listed);
                 await Task.Delay(50);
+                if (name == "save") Assert.Equal("Workstation", (list.SelectedItem as SettingsWindow.ProfileRow)?.Name);
             }
-            await Eventually(() => Commands(helper!).Count >= 13);
+            var menuCommands = ShellController.MenuActions.Select(a => a.Command).ToList();
+            await Eventually(() => menuCommands.All(Commands(helper!).Contains));
         });
 
         var commands = Commands(helper!);
