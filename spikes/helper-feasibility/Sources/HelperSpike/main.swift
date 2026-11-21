@@ -1,6 +1,8 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
+#if os(Windows)
+import WinSDK
+#elseif canImport(Glibc)
+import Glibc
 #endif
 import SSMConnectAWSClient
 
@@ -24,12 +26,11 @@ final class Output: @unchecked Sendable {
         object["event"] = event
         if let id { object["id"] = id }
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return }
-        lock.withLock {
-            FileHandle.standardOutput.write(data)
-            FileHandle.standardOutput.write(Data("\n".utf8))
-        }
+        // A closed stdout (the shell has gone) must not crash the helper; FileHandle.write(_:)
+        // traps on a broken pipe on Windows.
+        lock.withLock { try? FileHandle.standardOutput.write(contentsOf: data + Data("\n".utf8)) }
     }
-    func log(_ message: String) { FileHandle.standardError.write(Data("helper: \(message)\n".utf8)) }
+    func log(_ message: String) { try? FileHandle.standardError.write(contentsOf: Data("helper: \(message)\n".utf8)) }
 }
 
 actor Helper {
@@ -181,19 +182,9 @@ actor Helper {
         throw HelperError.tunnelTimedOut
     }
 
-    /// The forwarded port is ready when a connection is accepted: any outcome other than
-    /// "cannot connect" (for example a TLS failure from DCV's HTTPS port) means a listener answered.
+    /// The forwarded port is ready when a TCP connection to it on 127.0.0.1 is accepted.
     static func portAccepts(_ port: Int) async -> Bool {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/")!)
-        request.timeoutInterval = 2
-        do {
-            _ = try await URLSession.shared.data(for: request)
-            return true
-        } catch let error as URLError {
-            return ![.cannotConnectToHost, .timedOut, .networkConnectionLost, .notConnectedToInternet].contains(error.code)
-        } catch {
-            return false
-        }
+        tcpConnects(port: UInt16(port))
     }
 
     func stopPlugin() {
@@ -202,6 +193,37 @@ actor Helper {
         plugin.waitUntilExit()
         self.plugin = nil
     }
+}
+
+/// A blocking TCP connect to 127.0.0.1:port; true when the connection is accepted.
+func tcpConnects(port: UInt16) -> Bool {
+    #if os(Windows)
+    var data = WSADATA()
+    guard WSAStartup(0x0202, &data) == 0 else { return false }
+    defer { WSACleanup() }
+    let handle = socket(AF_INET, Int32(SOCK_STREAM), Int32(IPPROTO_TCP.rawValue))
+    guard handle != INVALID_SOCKET else { return false }
+    defer { closesocket(handle) }
+    #else
+    let handle = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+    guard handle >= 0 else { return false }
+    defer { close(handle) }
+    #endif
+    var address = sockaddr_in()
+    address.sin_port = port.bigEndian
+    #if os(Windows)
+    address.sin_family = ADDRESS_FAMILY(AF_INET)
+    address.sin_addr.S_un.S_addr = UInt32(0x7F00_0001).bigEndian
+    let length = Int32(MemoryLayout<sockaddr_in>.size)
+    #else
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
+    let length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    #endif
+    let result = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(handle, $0, length) }
+    }
+    return result == 0
 }
 
 enum HelperError: Error {

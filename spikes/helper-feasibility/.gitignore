@@ -1,3 +1,4 @@
 Sources/HelperSpike/Reused/
 .build/
 work/
+core.*
