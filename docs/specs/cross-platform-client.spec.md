@@ -773,6 +773,7 @@ None.
 | 2026-11-18 | R-20 | spec | `654c59e` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-18 | R-20 | spec | `654c59e` | n/a | n/a | accepted by owner |
 | 2026-11-21 | R-21 | spec | `9f2969f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
+| 2026-11-21 | R-22 | spec | `8d04477` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 
 ### R-1
 
@@ -1246,6 +1247,29 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary, lines 71-93; Context / Observed credential-free portability results, lines 183-185; Design / First increment; Tasks / T32-T43, T4, T5; Sources / clock-skew decision
 EVIDENCE: Frontmatter identifies clock-skew correction as the current revision, but the owner summary does not explain that change since the latest acceptance. It still describes authentication and transports as unverified and authorization as limited to credential-free spikes. T5 now records native SSO authorization, refresh and usable SSM traffic on Windows and Fedora, while T33 and T35 record completed client checks. These records are not independently established native proof in this review, but their presence conflicts with the summary's unqualified account of progress. The pinned feature-document standard requires refreshing the summary when proof or decisions change.
 PROPOSAL: Refresh the summary to explain the clock-skew addition and distinguish recorded subset results from remaining full-workflow acceptance. Reconcile the authorization wording with the authority actually granted for completed tasks, preserving separate permission boundaries for future operations.
+
+### R-22
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:76-77; Design / AWS client:380-406; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T39, T35, T42, T43
+EVIDENCE: The pinned SDK's [DefaultRetryStrategy](https://github.com/smithy-lang/smithy-swift/blob/31336dfea2e448523630ea1fe4d83ddc1156de3c/Sources/SmithyRetries/DefaultRetryStrategy/DefaultRetryStrategy.swift) checks a shared retry quota before retrying, including clock-skew retries. Its [RetryQuota](https://github.com/smithy-lang/smithy-swift/blob/31336dfea2e448523630ea1fe4d83ddc1156de3c/Sources/SmithyRetries/DefaultRetryStrategy/RetryQuota.swift) defines consumption, exhaustion and replenishment. The document promises SDK-default retry parity but specifies none of these transitions. The recorder explicitly creates fresh clients to prevent quota carryover at SSMConnectKit/Tools/FixtureRecorder/Sources/FixtureRecorder/Retries.swift:45-54. Today's authorization flow reuses one SDK client across device-token polling at AWSAuthProvider.swift:142-198, so quota depletion can affect actual behavior. A replacement without quotas can pass every listed isolated scenario while continuing retries the SDK would refuse.
+PROPOSAL: Define quota scope and transitions to match the pinned SDK. Add repeated-call parity checks covering exhaustion, replenishment and clock-skew retries when quota is exhausted.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:89-94; Design / First increment:434-439; Test Plan / AC-23; Tasks / increment description:684-688, T4, T5
+EVIDENCE: T5 is marked complete although its cited driver does not establish usable remote traffic or pending-action cancellation. HelperSpike/main.swift:175-187 reports tunnelReady after tcpConnects; lines 198-226 only connect to the local listener and close, without sending or receiving payload. drive.py:83-116 then refreshes, stops an established tunnel and quits. The helper has no cancel command at main.swift:51-69, and its input loop awaits each command at lines 237-242 before reading another. These checks can succeed without proving the remote forwarding path or cancellation of an in-flight action, both required before broad extraction.
+PROPOSAL: Preserve the recorded subset results while identifying these missing checks. Add explicit tasks before extraction that verify a response through the remote service and cancel a pending action on both native feasibility targets.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:84-87; Design / AWS client:407-415; Tasks / T5
+EVIDENCE: The summary added when addressing R-21 says the motivating clock failure occurs where today's app would recover. However, T5's driver requests identity before DescribeInstances or StartSession at drive.py:71-83. Today's STSIdentityResolver.swift:16-22,42-46 signs with local time, sends once and rejects a non-success response without learning clock skew. Design explicitly preserves that behavior at lines 411-415. SDK clock correction therefore does not establish recovery for the complete motivating sequence, and the revised client deliberately retains this limitation.
+PROPOSAL: Limit the recovery claim to SDK-managed signed requests and explain that the direct STS identity path still fails under clock skew. Preserve the selected single-attempt STS policy.
 
 ## Sources
 
