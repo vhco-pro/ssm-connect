@@ -41,7 +41,7 @@ package actor HelperSession {
     private let build: String
     private let commands: [String: CommandSpec]
     private let send: @Sendable (Frame) -> Void
-    private let events: EventSink
+    package nonisolated let events: EventSink
     private var welcomed = false
     package private(set) var isEnded = false
     /// Whether the session ended by refusing the shell's handshake.

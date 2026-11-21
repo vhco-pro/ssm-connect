@@ -1,6 +1,5 @@
 #if os(Windows)
 import Foundation
-import SSMConnectWorkflow
 import WinSDK
 
 /// Per-user private files on Windows: directories and files carry a protected DACL granting only
@@ -76,7 +75,7 @@ package enum WindowsPrivateFiles {
 
 extension URL {
     /// The path in the form Win32 expects ("C:\\..."), not Foundation's "/C:/..." form.
-    var nativePath: String { withUnsafeFileSystemRepresentation { String(cString: $0!) } }
+    package var nativePath: String { withUnsafeFileSystemRepresentation { String(cString: $0!) } }
 }
 
 extension OwnerOnlyFiles {

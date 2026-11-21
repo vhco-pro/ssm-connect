@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import SSMConnectAWS
 import SSMConnectDomain
 import SSMConnectWorkflow
 
@@ -33,13 +32,12 @@ public final class ProfileStore {
     package private(set) var operationError: String?
     public var configurationDidChange: ((ConnectionProfile, AppSettings) -> Void)?
     private var fileMonitor: Task<Void, Never>?
+    private let files: ProfileFileAccessing
 
-    public convenience init(defaults: UserDefaults = .standard) {
-        self.init(store: defaults)
-    }
 
     /// Designated initializer. Takes the storage seam so tests can stay off disk entirely.
-    package init(store: any KeyValueStoring) {
+    package init(store: any KeyValueStoring, files: ProfileFileAccessing) {
+        self.files = files
         self.defaults = store
         self.profiles = Self.decode([ConnectionProfile].self, from: store, key: Self.profilesKey) ?? []
         self.settings = Self.decode(AppSettings.self, from: store, key: Self.settingsKey) ?? .default
@@ -183,7 +181,7 @@ extension ProfileStore {
 
     @discardableResult
     package func importFile(_ preview: ProfileFileSnapshot, attach: Bool) throws -> ConnectionProfile {
-        let current = try ProfileFileIO.read(preview.url)
+        let current = try files.read(preview.url)
         guard current.revision == preview.revision else { throw PortableProfileError.conflict }
         if attach, attachments.values.contains(where: { $0.url == current.url }) {
             throw PortableProfileError.invalid("This file is already attached. Select its existing local profile.")
@@ -210,7 +208,7 @@ extension ProfileStore {
             throw PortableProfileError.invalid("The attached profile metadata is missing. Save a local copy.")
         }
         let document = try original.updating(profile: profile)
-        attachment.revision = try ProfileFileIO.save(document, to: attachment.url, expected: expected)
+        attachment.revision = try files.save(document, to: attachment.url, expected: expected)
         attachment.canonicalSaveAccepted = true
         attachments[profile.id] = attachment
         documents[profile.id] = document
@@ -242,7 +240,7 @@ extension ProfileStore {
         guard var attachment = attachments[id], let original = documents[id] else {
             throw PortableProfileError.invalid("Select an attached profile first.")
         }
-        let snapshot = try ProfileFileIO.read(url)
+        let snapshot = try files.read(url)
         guard try snapshot.document.id == original.id else {
             throw PortableProfileError.invalid("This is a different document. Attach it as a new profile instead.")
         }
@@ -259,7 +257,7 @@ extension ProfileStore {
     package func refreshAttachedFiles() {
         for (id, attachment) in attachments {
             do {
-                let current = try ProfileFileIO.read(attachment.url)
+                let current = try files.read(attachment.url)
                 guard let original = documents[id], try current.document.id == original.id else {
                     throw PortableProfileError.invalid("The file's document identity changed. Attach it as a new profile; existing access was retained.")
                 }
@@ -278,7 +276,7 @@ extension ProfileStore {
               let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw PortableProfileError.invalid("There are no validated external changes to apply.")
         }
-        let current = try ProfileFileIO.read(attachment.url)
+        let current = try files.read(attachment.url)
         guard current.revision == pending.revision else { throw PortableProfileError.conflict }
         let profile = try current.document.profile(localID: id,
             localBrowserProfilePath: profiles[index].webForwards?.browserProfilePath)

@@ -17,13 +17,23 @@ package enum BrowserBootstrapError: LocalizedError {
     }
 }
 
+/// Owner-only private files on every platform: mode 0700/0600 with an atomic rename on macOS and
+/// Linux, a protected current-user DACL with `MoveFileExW` on Windows.
 package enum BrowserPrivateFiles {
     package static func directory(_ url: URL) throws {
+        #if os(Windows)
+        return try WindowsPrivateFiles.directory(url)
+        #else
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        #endif
     }
     package static func write(_ data: Data, to url: URL, createParent: Bool = true) throws {
+        #if os(Windows)
+        do { return try WindowsPrivateFiles.write(data, to: url, createParent: createParent) }
+        catch WindowsPrivateFiles.Failure.reparsePoint { throw BrowserBootstrapError.conflict }
+        #else
         if createParent { try directory(url.deletingLastPathComponent()) }
         if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
             throw BrowserBootstrapError.conflict
@@ -35,6 +45,7 @@ package enum BrowserPrivateFiles {
             throw CocoaError(.fileWriteUnknown)
         }
         if rename(temporary.path, url.path) != 0 { throw CocoaError(.fileWriteUnknown) }
+        #endif
     }
     package static var root: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

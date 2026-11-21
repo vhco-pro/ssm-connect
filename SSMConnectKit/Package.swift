@@ -32,6 +32,15 @@ var awsDependencies: [Target.Dependency] = [
     .product(name: "Crypto", package: "swift-crypto"),
 ]
 
+var helperCoreDependencies: [Target.Dependency] = [
+    "SSMConnectHelperProtocol", "SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectAWS",
+    .product(name: "SSMConnectAWSClient", package: "AWSClient"),
+    .product(name: "Crypto", package: "swift-crypto"),
+]
+#if os(Windows)
+helperCoreDependencies.append("SSMConnectWindows")
+#endif
+
 var targets: [Target] = [
     // Models, validation, the profile document codec and typed errors, shared by every
     // desktop client. No macOS framework and no AWS SDK module: scripts/check-boundaries.sh
@@ -48,11 +57,17 @@ var targets: [Target] = [
     // The helper protocol: framing, the build handshake, command admission, terminal results,
     // cancellation, heartbeats and events. Foundation only.
     .target(name: "SSMConnectHelperProtocol"),
+    // The helper's runtime: the workflows composed from its services, and the command table that
+    // maps each shell action to one of them. A library, so tests import it on every platform.
+    .target(
+        name: "SSMConnectHelperCore",
+        dependencies: helperCoreDependencies
+    ),
     // The Windows and Linux shells' private helper: the protocol over stdin/stdout, diagnostics
     // on stderr, exiting on stdin EOF.
     .executableTarget(
         name: "SSMConnectHelper",
-        dependencies: ["SSMConnectHelperProtocol", "SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectAWS"]
+        dependencies: ["SSMConnectHelperProtocol", "SSMConnectHelperCore"]
     ),
     // The AWS boundary's client path; runs on macOS, Linux and Windows.
     .testTarget(name: "SSMConnectAWSTests", dependencies: [
@@ -64,7 +79,8 @@ var targets: [Target] = [
     // The helper protocol and executable, with fake ports; runs on macOS, Linux and Windows.
     .testTarget(
         name: "SSMConnectHelperTests",
-        dependencies: ["SSMConnectHelperProtocol", "SSMConnectHelper"]
+        dependencies: ["SSMConnectHelperProtocol", "SSMConnectHelperCore", "SSMConnectHelper",
+                       "SSMConnectDomain", "SSMConnectWorkflow"]
     ),
 ]
 

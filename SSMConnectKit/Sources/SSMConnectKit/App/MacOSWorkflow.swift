@@ -181,3 +181,14 @@ extension RemoteDevelopmentStateMachine {
                   sshAvailable: sshAvailable)
     }
 }
+
+extension ProfileStore {
+    public convenience init(defaults: UserDefaults = .standard) {
+        self.init(store: defaults)
+    }
+
+    /// The macOS profile file access, for the app and the tests.
+    package convenience init(store: any KeyValueStoring) {
+        self.init(store: store, files: POSIXProfileFiles())
+    }
+}

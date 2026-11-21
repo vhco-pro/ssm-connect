@@ -1,4 +1,5 @@
 import Foundation
+import SSMConnectHelperCore
 import SSMConnectHelperProtocol
 
 // The private helper a Windows or Linux shell starts as its child, connected by anonymous
@@ -24,8 +25,16 @@ if CommandLine.arguments.dropFirst().first == "--build" {
 }
 
 let pipes = Pipes()
-// Commands are registered as the shells' workflows are wired to the helper.
-let session = HelperSession(build: HelperBuild.current, commands: [:], send: { pipes.send($0) })
+let requests = ShellRequests()
+#if os(Windows)
+let runtime = HelperRuntime(services: HelperComposition.production(requests: requests))
+let commands = runtime.commands()
+#else
+// Linux composes its adapters into the helper with T22.
+let commands: [String: CommandSpec] = [:]
+#endif
+let session = HelperSession(build: HelperBuild.current, commands: commands, send: { pipes.send($0) })
+requests.attach(session.events)
 
 let chunks = AsyncStream<Data> { continuation in
     Thread.detachNewThread {

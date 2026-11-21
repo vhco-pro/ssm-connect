@@ -5,46 +5,16 @@ import SSMConnectAWS
 import SSMConnectDomain
 import SSMConnectWorkflow
 
-package struct ProfileFileRevision: Codable, Equatable {
-    package let digest: String
-    package let inode: UInt64
-    package let device: Int32
-    package let permissions: UInt16
-    package let metadataVersion: String
-
-    package init(digest: String, inode: UInt64, device: Int32, permissions: UInt16, metadataVersion: String) {
-        self.digest = digest
-        self.inode = inode
-        self.device = device
-        self.permissions = permissions
-        self.metadataVersion = metadataVersion
+/// The macOS profile file access: POSIX descriptors, `O_NOFOLLOW`, `fsync` and a SHA-256 digest
+/// with the file's inode, device and mode as its revision.
+package struct POSIXProfileFiles: ProfileFileAccessing {
+    package init() {}
+    package func read(_ url: URL) throws -> ProfileFileSnapshot { try ProfileFileIO.read(url) }
+    package func save(_ document: PortableProfileDocument, to url: URL, expected: ProfileFileRevision?,
+                      beforeCommit: () throws -> Void) throws -> ProfileFileRevision {
+        try ProfileFileIO.save(document, to: url, expected: expected, beforeCommit: beforeCommit)
     }
-}
-
-package struct ProfileFileSnapshot {
-    package let url: URL
-    package let document: PortableProfileDocument
-    package let revision: ProfileFileRevision
-    package let isWritable: Bool
-
-    package init(url: URL, document: PortableProfileDocument, revision: ProfileFileRevision, isWritable: Bool) {
-        self.url = url
-        self.document = document
-        self.revision = revision
-        self.isWritable = isWritable
-    }
-}
-
-package struct ProfileAttachment: Codable, Equatable {
-    package var url: URL
-    package var revision: ProfileFileRevision
-    package var canonicalSaveAccepted = false
-
-    package init(url: URL, revision: ProfileFileRevision, canonicalSaveAccepted: Bool = false) {
-        self.url = url
-        self.revision = revision
-        self.canonicalSaveAccepted = canonicalSaveAccepted
-    }
+    package func existingRevision(_ url: URL) throws -> ProfileFileRevision? { try ProfileFileIO.existingRevision(url) }
 }
 
 package enum ProfileFileIO {
