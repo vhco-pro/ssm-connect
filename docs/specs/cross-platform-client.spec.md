@@ -791,6 +791,7 @@ None.
 | 2026-11-21 | R-21 | spec | `9f2969f` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-21 | R-22 | spec | `8d04477` | gpt-6.1-sol | procedural | No blocking findings; three should-fix |
 | 2026-11-21 | R-23 | spec | `da7d96c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix and one nit |
+| 2026-11-21 | R-24 | spec | `b079c3b` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 
 ### R-1
 
@@ -1310,6 +1311,15 @@ SEVERITY: nit
 WHERE: Tasks / T4:728
 EVIDENCE: T4 describes the helper as built from current SSO, SSM and plugin sources behind stub UI ports. spikes/helper-feasibility/run.sh:11-12 and run.ps1:10-11 copy only SSMSessionResponse, AWSRegion and IdentityMapper. HelperSpike/main.swift:78-127 implements its own authorization and refresh harness, and lines 148-195 implement its plugin orchestration. The task overstates source reuse, although its native-build done condition is unchanged.
 PROPOSAL: Describe T4 as a feasibility harness using the AWS client and the three reused portable types. Retain the distinction between this subset evidence and final workflow integration.
+
+### R-24
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / AWS client, direct STS request; Acceptance Criteria / AC-28; Test Plan / AC-28; Tasks / T35, T36
+EVIDENCE: T35 is checked and explicitly includes moving STSIdentityResolver onto the shared client. However, SSMConnectKit/Sources/SSMConnectKit/Auth/STSIdentityResolver.swift:16-25 still owns its URLSession transport, and lines 42-46 still send through that transport. STSPresigner.swift:16 also retains the hardcoded amazonaws.com host. Only its signer delegates to SSMConnectAWSClient. The standalone package checks cited under T35 cannot exercise this production resolver. T36 describes switching the SDK adapters but does not explicitly carry this unfinished direct-request migration.
+PROPOSAL: Preserve the standalone client results while recording the production STS adapter migration as unfinished and assigning it an unchecked task. Require a production-resolver transport test establishing shared-client use, the China endpoint and the preserved single-attempt behavior.
 
 ## Sources
 
