@@ -47,6 +47,8 @@ final class FakeInstanceConnect: InstanceConnectProviding, @unchecked Sendable {
 
 final class FakeSSHTunnel: SSHTunnelProviding, @unchecked Sendable {
     let recorder: WebEventRecorder
+    var unavailable: [Capability] = []
+    func unavailableCapabilities() -> [Capability] { unavailable }
     private(set) var handles: [MockTunnelHandle] = []
     private(set) var keyPaths: [String] = []
     init(_ recorder: WebEventRecorder) { self.recorder = recorder }
@@ -63,7 +65,8 @@ final class FakeSSHTunnel: SSHTunnelProviding, @unchecked Sendable {
 @MainActor final class FakeBrowserOpening: BrowserOpening {
     var launchCount = 0
     var fail = false
-    func preflight(profile: ConnectionProfile) throws {}
+    var preflightError: Error?
+    func preflight(profile: ConnectionProfile) throws { if let preflightError { throw preflightError } }
     func open(profile: ConnectionProfile) async throws {
         launchCount += 1
         if fail { throw BrowserBootstrapError.launchFailed }
