@@ -7,35 +7,22 @@ import SSMConnectAWSClient
 /// verified caller ARN, so the proof of identity is the same AWS credential the
 /// SSM tunnel already required, with no password and no new secret store.
 ///
-/// Signing is the shared Signature Version 4 signer in SSMConnectAWSClient, which
-/// passes the AWS signing test suite. It must produce a URL the agent's Go verifier
-/// accepts (spec §12.4 / ADR-5); STSPresignerTests holds that known answer.
+/// The URL comes from the shared AWS client: its endpoint resolver gives the STS
+/// host (`amazonaws.com.cn` in China regions) and its Signature Version 4 signer,
+/// which passes the AWS signing test suite, signs it. It must produce a URL the
+/// agent's Go verifier accepts (spec §12.4 / ADR-5); STSPresignerTests holds that
+/// known answer.
 struct STSPresigner {
     let region: String
-
-    var host: String { "sts.\(region).amazonaws.com" }
 
     /// Produces the presigned URL. `now` is injectable for deterministic tests.
     func presignedGetCallerIdentityURL(
         credentials: AWSCredentials,
         now: Date,
         expiresSeconds: Int = 120
-    ) -> String {
-        let request = SigV4.Request(
-            method: "GET", path: "/", query: "Action=GetCallerIdentity&Version=2011-06-15",
-            headers: [("Host", host)]
-        )
-        let signing = AWSCredentialSet(
-            accessKeyID: credentials.accessKeyId,
-            secretAccessKey: credentials.secretAccessKey,
-            sessionToken: credentials.sessionToken.isEmpty ? nil : credentials.sessionToken
-        )
-        let result = SigV4.presign(
-            request, credentials: signing,
-            context: SigV4.Context(region: region, service: "sts", date: now),
-            expires: expiresSeconds
-        )
-        return "https://\(host)/?\(result.signedQuery)"
+    ) throws -> String {
+        try AWSClient(region: region, credentials: credentials.signingCredentials, now: { now })
+            .presignedCallerIdentityURL(expires: expiresSeconds).absoluteString
     }
 
     /// RFC3986 encoding per SigV4: only `A-Za-z0-9-_.~` are unreserved; everything
@@ -45,5 +32,13 @@ struct STSPresigner {
         var allowed = CharacterSet()
         allowed.insert(charactersIn: unreserved)
         return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+    }
+}
+
+extension AWSCredentials {
+    /// The credentials in the AWS client's form; an empty session token is omitted.
+    var signingCredentials: AWSCredentialSet {
+        AWSCredentialSet(accessKeyID: accessKeyId, secretAccessKey: secretAccessKey,
+                         sessionToken: sessionToken.isEmpty ? nil : sessionToken)
     }
 }

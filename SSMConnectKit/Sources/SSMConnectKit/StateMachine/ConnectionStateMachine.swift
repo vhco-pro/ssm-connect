@@ -553,7 +553,7 @@ public final class ConnectionStateMachine {
                 warningMessage = DCVError.viewerNotInstalled.errorDescription
                 return
             }
-            let freshToken = presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
+            let freshToken = try presigner.presignedGetCallerIdentityURL(credentials: creds, now: Date())
             let file = DCVConnectionFile.multiUser(
                 port: profile.localPort,
                 user: provisioned.user,
@@ -580,7 +580,7 @@ public final class ConnectionStateMachine {
         var lastError: Error = AuthError.signInRequired
         for _ in 1...attempts {
             do {
-                let token = presigner.presignedGetCallerIdentityURL(credentials: credentials, now: Date())
+                let token = try presigner.presignedGetCallerIdentityURL(credentials: credentials, now: Date())
                 return try await agent.ensureSession(authToken: token)
             } catch let agentError as WorkstationAgentClient.AgentError {
                 throw agentError // the agent responded — not transient

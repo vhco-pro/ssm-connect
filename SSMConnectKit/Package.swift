@@ -49,6 +49,8 @@ let package = Package(
                 .product(name: "AWSSSM", package: "aws-sdk-swift"),
                 .product(name: "AWSSecretsManager", package: "aws-sdk-swift"),
                 .product(name: "AWSEC2InstanceConnect", package: "aws-sdk-swift"),
+                // Resolver tests inject the shared AWS client's transport.
+                .product(name: "SSMConnectAWSClient", package: "AWSClient"),
             ]
         ),
     ]
