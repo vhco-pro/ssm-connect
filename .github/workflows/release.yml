@@ -243,9 +243,10 @@ jobs:
         env:
           VERSION: ${{ needs.release.outputs.version }}
         run: |
-          $lines = & ./packaging/windows/Build-Release.ps1 -Version $env:VERSION -Build "$env:VERSION+$($env:GITHUB_SHA.Substring(0, 12))"
-          $lines | Where-Object { $_ -match '^(msi|sha256|manifest)=' } | Add-Content $env:GITHUB_OUTPUT
-          "build=$env:VERSION+$($env:GITHUB_SHA.Substring(0, 12))" | Add-Content $env:GITHUB_OUTPUT
+          $build = "$env:VERSION+$($env:GITHUB_SHA.Substring(0, 12))"
+          ./packaging/windows/Build-Release.ps1 -Version $env:VERSION -Build $build
+          Get-Content dist/release-outputs.txt | Add-Content $env:GITHUB_OUTPUT
+          "build=$build" | Add-Content $env:GITHUB_OUTPUT
 
       # The package holds the helper, runtime and notices, the helper starts from it, the manifest
       # pins its hash, and on this disposable runner it installs, refuses while running, and removes.

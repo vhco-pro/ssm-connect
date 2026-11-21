@@ -90,10 +90,14 @@ if ($Install) {
     Check ($code -eq 1603) "a silent reinstall while SSM Connect runs is refused (exit $code)"
     Check (-not $app.HasExited) 'the refused reinstall leaves SSM Connect running'
 
+    # The helper's job is kill-on-close: ending the shell ends it once Windows closes the shell's handles.
+    $helperIds = @($helper | ForEach-Object Id)
     Stop-Process -Id $app.Id -Force
     $app.WaitForExit()
-    Start-Sleep -Seconds 2
-    Check ($null -eq (Get-Process SSMConnectHelper -ErrorAction SilentlyContinue)) 'quitting SSM Connect ends its helper'
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    while ((Get-Process -Id $helperIds -ErrorAction SilentlyContinue) -and $watch.Elapsed.TotalSeconds -lt 15) { Start-Sleep -Milliseconds 200 }
+    $remaining = @(Get-Process -Id $helperIds -ErrorAction SilentlyContinue)
+    Check ($remaining.Count -eq 0) "quitting SSM Connect ends its helper (after $([math]::Round($watch.Elapsed.TotalSeconds, 1)) s)"
     Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'a silent reinstall after quitting succeeds'
     Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'a silent uninstall succeeds'
     Check (-not (Test-Path $folder)) 'the uninstall leaves no program folder'

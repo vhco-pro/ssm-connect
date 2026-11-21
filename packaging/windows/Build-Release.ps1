@@ -27,7 +27,8 @@
     The build ID shared by the shell, helper and proxy. Defaults to the version.
 
 .PARAMETER Output
-    Where the MSI, checksum and manifest are written. Defaults to dist\ in the repository.
+    Where the MSI, checksum and manifest are written. Defaults to dist\ in the repository. The paths
+    and hash are also written there as key=value lines in release-outputs.txt.
 #>
 [CmdletBinding()]
 param(
@@ -48,11 +49,13 @@ $payload = Join-Path $work 'payload'
 if (-not $Output) { $Output = Join-Path $repository 'dist' }
 $WixVersion = '6.0.2'
 
-# Runs a native command, passing its output through. Windows PowerShell turns a native command's
-# stderr into error records, which Stop would make fatal; the exit code decides instead.
+# Runs a native command with its output going straight to the console; the exit code decides.
+# Its output is never captured or piped: PowerShell 7 then waits for end-of-file on the pipe, and a
+# build server the command leaves running (SwiftPM's, MSBuild's) holds the pipe open for good.
+# Windows PowerShell turns redirected native stderr into error records, which Stop would make fatal.
 function Invoke-Native([string] $Description, [scriptblock] $Command) {
     $ErrorActionPreference = 'Continue'
-    & $Command 2>&1 | ForEach-Object { Write-Host "$_" }
+    & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE." }
 }
 
@@ -121,14 +124,17 @@ try {
             swift build -c release --package-path $kit --product $product -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
         }
     }
-    $binaries = (& { $ErrorActionPreference = 'Continue'; swift build -c release --package-path $kit --show-bin-path 2>$null } |
-        Select-Object -Last 1).Trim()
 }
 finally {
     [IO.File]::WriteAllBytes($buildFile, $original)
 }
+# The release products, wherever the build system placed them (native: x86_64-unknown-windows-msvc\release,
+# swiftbuild: out\Products\Release-windows-x86_64); the newest copy is this build's.
 foreach ($executable in 'SSMConnectHelper.exe', 'ssm-connect-proxy.exe') {
-    Copy-Item (Join-Path $binaries $executable) $payload
+    $built = Get-ChildItem (Join-Path $kit '.build') -Recurse -Filter $executable |
+        Where-Object { $_.DirectoryName -match '(?i)release' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $built) { throw "The build produced no $executable." }
+    Copy-Item $built.FullName $payload
 }
 
 # 3. The Swift runtime DLLs the two executables import, transitively. System DLLs are not in the
@@ -301,6 +307,8 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Warning 'winget is not available here; the manifest was not validated.'
 }
 
-"msi=$msi"
-"sha256=$hash"
-"manifest=$manifest"
+# The results, as key=value lines in a file rather than on the output stream, so callers never
+# capture this script's output (see Invoke-Native).
+$results = Join-Path $Output 'release-outputs.txt'
+@("msi=$msi", "sha256=$hash", "manifest=$manifest") | Set-Content $results -Encoding ascii
+Write-Host "Wrote the results to $results"
