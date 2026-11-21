@@ -10,6 +10,13 @@ on:
       - SSMConnectKit/Sources/SSMConnectDomain/AWSRegion.swift
       - SSMConnectKit/Sources/SSMConnectDomain/AWSConfigParser.swift
       - SSMConnectKit/AWSClient/**
+      - SSMConnectKit/Package.swift
+      - SSMConnectKit/Sources/SSMConnectDomain/**
+      - SSMConnectKit/Sources/SSMConnectWorkflow/**
+      - SSMConnectKit/Sources/SSMConnectAWS/**
+      - SSMConnectKit/Sources/SSMConnectHelperProtocol/**
+      - SSMConnectKit/Sources/SSMConnectHelper/**
+      - SSMConnectKit/Tests/SSMConnectHelperTests/**
   workflow_dispatch:
 
 permissions:
@@ -92,3 +99,41 @@ jobs:
           else
             swift test --package-path SSMConnectKit/AWSClient
           fi
+
+  helper:
+    name: helper (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Test the helper protocol and executable
+        shell: bash
+        run: |
+          # On Windows and Linux the manifest holds only the shared layers and the helper; on
+          # macOS it also builds the app's targets, so use the build system that handles the
+          # aws-sdk-swift build-tool plugin.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            swift test --package-path SSMConnectKit --filter SSMConnectHelperTests -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            swift test --package-path SSMConnectKit --filter SSMConnectHelperTests
+          else
+            swift test --package-path SSMConnectKit --filter SSMConnectHelperTests
+          fi
+

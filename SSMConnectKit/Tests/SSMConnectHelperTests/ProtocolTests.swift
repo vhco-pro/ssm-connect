@@ -236,17 +236,19 @@ struct ProtocolTests {
 
     // MARK: Executable
 
-    /// The built helper next to the test bundle.
+    /// The built helper in the build products directory that holds the test bundle or binary.
     static var helperExecutable: URL {
-        var directory = Bundle(for: Marker.self).bundleURL.deletingLastPathComponent()
-        #if os(macOS)
-        if directory.lastPathComponent == "Contents" { directory = directory.deletingLastPathComponent().deletingLastPathComponent() }
-        #endif
         #if os(Windows)
-        return directory.appendingPathComponent("SSMConnectHelper.exe")
+        let name = "SSMConnectHelper.exe"
         #else
-        return directory.appendingPathComponent("SSMConnectHelper")
+        let name = "SSMConnectHelper"
         #endif
+        let bundle = Bundle(for: Marker.self).bundleURL
+        let binary = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        let candidates = [bundle, bundle.deletingLastPathComponent(), binary, binary.deletingLastPathComponent(),
+                          bundle.appendingPathComponent("debug"), bundle.appendingPathComponent("release")]
+        return candidates.map { $0.appendingPathComponent(name) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? bundle.appendingPathComponent(name)
     }
     final class Marker {}
 
