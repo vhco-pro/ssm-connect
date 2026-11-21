@@ -248,6 +248,25 @@ jobs:
           Get-Content dist/release-outputs.txt | Add-Content $env:GITHUB_OUTPUT
           "build=$build" | Add-Content $env:GITHUB_OUTPUT
 
+      # A rerun job continues with the MSI already published: MSI builds are not byte-reproducible,
+      # so the checksum, the manifest and the package checks must describe the published file.
+      - name: Use the published MSI on a rerun
+        id: reuse
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          MSI: ${{ steps.package.outputs.msi }}
+        run: bash scripts/release/release-assets.sh reuse-published "$TAG" "${MSI//\\//}" | tee /dev/stderr | tail -1 >> "$GITHUB_OUTPUT"
+
+      - name: Describe the published MSI
+        if: steps.reuse.outputs.reused == 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          MSI: ${{ steps.package.outputs.msi }}
+        run: ./packaging/windows/Write-ReleaseMetadata.ps1 -Msi $env:MSI -Version $env:VERSION -Output dist
+
       # The package holds the helper, runtime and notices, the helper starts from it, the manifest
       # pins its hash, and on this disposable runner it installs, refuses while running, and removes.
       - name: Inspect and install the MSI

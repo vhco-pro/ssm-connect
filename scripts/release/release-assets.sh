@@ -5,6 +5,7 @@
 #
 #   ensure-release <tag> <title> [--prerelease]   create the release once, without the latest mark
 #   upload-missing <tag> <file>...                upload only assets the release does not hold yet
+#   reuse-published <tag> <file>                  replace a rebuilt file with the published one
 #   mark-latest                                   mark the newest release that has a macOS ZIP
 #
 # Published assets never change: upload-missing skips a name the release already holds instead of
@@ -12,6 +13,9 @@
 # valid. mark-latest is idempotent and converges on the newest release with a macOS ZIP, so a late
 # older macOS build never displaces a newer one, and Homebrew's sync, which reads the latest
 # release, always finds a ZIP. The release workflow runs it in the release-latest concurrency group.
+# reuse-published exists because builds are not byte-reproducible: when a rerun job's artifact is
+# already published, everything derived from it (checksums, manifests, package checks) must come
+# from the published file. It prints reused=true or reused=false.
 set -euo pipefail
 
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
@@ -51,6 +55,16 @@ case "${1:-}" in
       fi
     done
     ;;
+  reuse-published)
+    tag="$2"; file="$3"; name="$(basename "$file")"
+    if gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | grep -qxF "$name"; then
+      gh release download "$tag" --repo "$repo" --pattern "$name" --dir "$(dirname "$file")" --clobber
+      echo "Using the published $name; checksums and manifests describe it, not this rebuild."
+      echo "reused=true"
+    else
+      echo "reused=false"
+    fi
+    ;;
   mark-latest)
     newest="$(gh api --paginate "repos/$repo/releases?per_page=100" | jq -s 'add' | newest_with_zip)"
     if [ -z "$newest" ]; then echo "No release has a macOS ZIP yet."; exit 0; fi
@@ -66,7 +80,7 @@ case "${1:-}" in
     newest_with_zip
     ;;
   *)
-    echo "usage: $0 ensure-release|upload-missing|mark-latest|newest-with-zip ..." >&2
+    echo "usage: $0 ensure-release|upload-missing|reuse-published|mark-latest|newest-with-zip ..." >&2
     exit 2
     ;;
 esac

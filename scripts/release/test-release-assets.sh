@@ -32,6 +32,11 @@ elif args[:2] == ["release", "upload"]:
     name = os.path.basename(args[3])
     if name in names: sys.exit("asset already exists")
     find(args[2])["assets"].append({"name": name}); save()
+elif args[:2] == ["release", "download"]:
+    name = args[args.index("--pattern") + 1]
+    directory = args[args.index("--dir") + 1]
+    assert any(a["name"] == name for a in find(args[2])["assets"]), "download of an unpublished asset"
+    open(os.path.join(directory, name), "w").write("published " + name)
 elif args[:2] == ["release", "edit"]:
     assert "--latest" in args; state["latest"] = args[2]; save()
 elif args[0] == "api" and args[-1].endswith("/releases/latest") or (args[0] == "api" and "releases/latest" in " ".join(args)):
@@ -70,6 +75,14 @@ touch "$work/SSMConnect-1.0.0-x64.msi" "$work/SSMConnect-1.0.0-x64.msi.sha256" "
 "$script" upload-missing v1.0.0 "$work/SSMConnect-1.0.0-x64.msi" "$work/SSMConnect-1.0.0-x64.msi.sha256" >/dev/null
 check "a rerun uploads only the missing asset" '[ "$(grep -c "release upload" "$FAKE_GH_LOG")" = 1 ] && grep -q "msi.sha256" "$FAKE_GH_LOG"'
 check "both platforms' assets are on the release" '[ "$(jq ".releases[0].assets | length" "$FAKE_GH_STATE")" = 3 ]'
+
+# A rerun job whose artifact is already published continues with the published file, so its
+# checksum and manifest describe what users download, not the rebuild.
+echo "rebuilt" > "$work/SSMConnect-1.0.0-x64.msi"
+reused="$("$script" reuse-published v1.0.0 "$work/SSMConnect-1.0.0-x64.msi" | tail -1)"
+check "a rerun uses the published MSI in place of its rebuild" '[ "$reused" = reused=true ] && [ "$(cat "$work/SSMConnect-1.0.0-x64.msi")" = "published SSMConnect-1.0.0-x64.msi" ]'
+touch "$work/SSMConnect-2.0.0-x64.msi"
+check "a first build keeps its own MSI" '[ "$("$script" reuse-published v1.0.0 "$work/SSMConnect-2.0.0-x64.msi" | tail -1)" = reused=false ]'
 
 # mark-latest picks the newest non-prerelease release with a macOS ZIP.
 state "{\"releases\":[$(release v1.2.0 "$(zip v1.2.0)"),$(release v1.3.0 "$(zip v1.3.0),$(msi v1.3.0)"),$(release v1.4.0 "$(msi v1.4.0)"),$(release v1.5.0-test.1 "$(zip v1.5.0-test.1)" true)],\"latest\":\"v1.2.0\"}"
