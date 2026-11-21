@@ -5,16 +5,22 @@ Usage: drive.py <helper> <plugin> <profile.json> [local-port]
 
 profile.json holds startUrl, ssoRegion, accountId, roleName, region, tagKey and tagValue
 (keep it outside the repository). The scenario: sign in with SSO device authorization
-(the verification URL is printed for a person to approve), read the caller identity, find
-the workstation by tag, open a port-forward tunnel through the Session Manager plugin,
-refresh the SSO token, stop the tunnel, open it again and quit with it open. After each
-stop and the quit it checks that the plugin process the helper started is gone.
+(the verification URL is printed for a person to approve), after first starting and
+cancelling one sign-in; read the caller identity; find the workstation by tag; open a
+port-forward tunnel through the Session Manager plugin and complete a TLS handshake with the
+workstation through it (a ServerHello received, its certificate fingerprint printed);
+refresh the SSO token; stop the tunnel; start a tunnel and cancel it once its plugin has
+started; open it again and quit with it open. After each stop, cancel and the quit it checks
+that the plugin process the helper started is gone.
 
 It changes nothing in AWS beyond the SSM sessions it opens: no instance is started or
 stopped. Credentials never reach this script; the helper keeps them.
 """
+import hashlib
 import json
 import os
+import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -29,6 +35,19 @@ def alive(pid):
         return True
     except OSError:
         return False
+
+
+def tls_handshake(port):
+    """Completes a TLS handshake through the tunnel: the ClientHello goes out and the
+    workstation's ServerHello (and the rest of its handshake) comes back. The workstation's
+    certificate is self-signed, so it is fingerprinted rather than verified."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with socket.create_connection(("127.0.0.1", port), timeout=20) as raw:
+        with context.wrap_socket(raw) as tls:
+            der = tls.getpeercert(binary_form=True) or b""
+            return tls.version(), tls.cipher()[0], hashlib.sha256(der).hexdigest()
 
 
 def main():
@@ -64,6 +83,15 @@ def main():
     say(f"helper {helper}, plugin {plugin}, local port {local_port}")
     say(f"[start] {proc.stdout.readline().strip()}")
 
+    sign_in = {"cmd": "signIn", **{k: profile[k] for k in ("startUrl", "ssoRegion", "accountId", "roleName", "region")}}
+    send({"id": "signin-cancel", **sign_in})
+    wait("signin-cancel", {"verify"}, 60)
+    send({"id": "cancel1", "cmd": "cancel"})
+    wait("cancel1", {"cancelling"}, 30)
+    if wait("signin-cancel", {"cancelled"}, 30)["event"] != "cancelled":
+        raise SystemExit("sign-in was not cancelled")
+    say("sign-in poll cancelled; the code above is never approved")
+
     send({"id": "signin", "cmd": "signIn", **{k: profile[k] for k in ("startUrl", "ssoRegion", "accountId", "roleName", "region")}})
     if wait("signin", {"signedIn"}, 700)["event"] != "signedIn":
         raise SystemExit("sign-in failed")
@@ -92,6 +120,8 @@ def main():
     if event["event"] != "tunnelReady":
         raise SystemExit("tunnel failed")
     say(f"plugin pid {started} alive: {alive(started)}")
+    version, cipher, fingerprint = tls_handshake(local_port)
+    say(f"TLS through the tunnel: ServerHello received, {version} {cipher}, workstation certificate sha256 {fingerprint}")
 
     send({"id": "refresh", "cmd": "refresh"})
     wait("refresh", {"refreshed"}, 60)
@@ -100,6 +130,27 @@ def main():
     wait("stop", {"stopped"}, 30)
     time.sleep(1)
     say(f"after stop, plugin pid {started} alive: {alive(started)}")
+
+    for attempt in range(1, 4):
+        cid = f"tunnel-cancel{attempt}"
+        send({"id": cid, **tunnel})
+        event = wait(cid, {"pluginStarted", "tunnelReady"}, 90)
+        if event["event"] != "pluginStarted":
+            raise SystemExit("tunnel start failed before its plugin started")
+        pid = event["pid"]
+        send({"id": f"cancel{attempt + 1}", "cmd": "cancel"})
+        event = wait(cid, {"cancelled", "tunnelReady"}, 60)
+        if event["event"] == "failed":
+            raise SystemExit("tunnel start failed")
+        if event["event"] == "cancelled":
+            time.sleep(1)
+            say(f"tunnel start cancelled after its plugin started; plugin pid {pid} alive: {alive(pid)}")
+            break
+        say("the tunnel became ready before the cancel arrived; stopping it and trying again")
+        send({"id": f"stop-race{attempt}", "cmd": "stop"})
+        wait(f"stop-race{attempt}", {"stopped"}, 30)
+    else:
+        raise SystemExit("could not cancel a tunnel start in three tries")
 
     send({"id": "tunnel2", **tunnel})
     second = None

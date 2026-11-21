@@ -17,7 +17,12 @@ import SSMConnectAWSClient
 //   {"cmd":"describe","tagKey":..,"tagValue":..}
 //   {"cmd":"tunnel","instanceId":..,"remotePort":..,"localPort":..,"pluginPath":..}
 //   {"cmd":"stop"}                          ends the plugin process
-//   {"cmd":"quit"} or end of input          ends any plugin process and exits
+//   {"cmd":"cancel"}                        cancels the action in progress (sign-in polling or a
+//                                           tunnel start); that action reports "cancelled"
+//   {"cmd":"quit"} or end of input          cancels any action, ends any plugin process and exits
+//
+// One action runs at a time; commands keep being read while it runs, so a cancel or quit
+// reaches it.
 
 final class Output: @unchecked Sendable {
     private let lock = NSLock()
@@ -45,10 +50,47 @@ actor Helper {
     var refreshToken: String?
     var credentials: AWSCredentialSet?
     var plugin: Process?
+    var action: Task<Void, Never>?
 
     init(out: Output) { self.out = out }
 
-    func handle(_ command: [String: Any]) async -> Bool {
+    /// Starts a command as the action in progress, unless one is already running.
+    func start(_ command: [String: Any]) {
+        let id = command["id"] as? String
+        if action != nil {
+            out.emit(id, "failed", ["error": "busy: another action is in progress"])
+            return
+        }
+        action = Task { await self.handle(command) }
+    }
+
+    /// Reports an action's final event. The action is cleared first, so a command sent as soon
+    /// as this event is read is never refused as busy.
+    private func done(_ id: String?, _ event: String, _ fields: [String: Any] = [:]) {
+        action = nil
+        out.emit(id, event, fields)
+    }
+
+    /// Cancels the action in progress; the action itself reports "cancelled".
+    func cancel(_ id: String?) {
+        guard let action else {
+            out.emit(id, "failed", ["error": "nothing to cancel"])
+            return
+        }
+        // Reported before cancelling, so it always precedes the action's "cancelled".
+        out.emit(id, "cancelling")
+        action.cancel()
+    }
+
+    /// Cancels any action, waits for it to end, and ends any plugin process.
+    func shutdown() async {
+        let running = action
+        running?.cancel()
+        await running?.value
+        stopPlugin()
+    }
+
+    func handle(_ command: [String: Any]) async {
         let id = command["id"] as? String
         let name = command["cmd"] as? String ?? ""
         do {
@@ -58,16 +100,22 @@ actor Helper {
             case "identity": try await identity(id)
             case "describe": try await describe(id, command)
             case "tunnel": try await tunnel(id, command)
-            case "stop": stopPlugin(); out.emit(id, "stopped")
-            case "quit": stopPlugin(); out.emit(id, "bye"); return false
-            default: out.emit(id, "failed", ["error": "unknown command \(name)"])
+            case "stop": stopPlugin(); done(id, "stopped")
+            default: done(id, "failed", ["error": "unknown command \(name)"])
             }
         } catch let error as AWSServiceError {
-            out.emit(id, "failed", ["typeName": error.typeName ?? "", "message": error.message ?? "", "httpStatus": error.httpStatus ?? 0])
+            done(id, "failed", ["typeName": error.typeName ?? "", "message": error.message ?? "", "httpStatus": error.httpStatus ?? 0])
+        } catch where Self.isCancellation(error) {
+            done(id, "cancelled", ["pluginRunning": plugin?.isRunning ?? false])
         } catch {
-            out.emit(id, "failed", ["error": String(describing: error)])
+            done(id, "failed", ["error": String(describing: error)])
         }
-        return true
+    }
+
+    static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if let error = error as? URLError, error.code == .cancelled { return true }
+        return false
     }
 
     private func string(_ command: [String: Any], _ key: String) throws -> String {
@@ -100,7 +148,7 @@ actor Helper {
                 accessToken = token.accessToken
                 refreshToken = token.refreshToken
                 try await roleCredentials()
-                out.emit(id, "signedIn", ["tokenExpiresIn": token.expiresIn, "canRefresh": token.refreshToken != nil])
+                done(id, "signedIn", ["tokenExpiresIn": token.expiresIn, "canRefresh": token.refreshToken != nil])
                 return
             } catch let error as AWSServiceError where error.typeName == "AuthorizationPendingException" {
                 continue
@@ -118,7 +166,7 @@ actor Helper {
         accessToken = token.accessToken
         self.refreshToken = token.refreshToken ?? refreshToken
         try await roleCredentials()
-        out.emit(id, "refreshed", ["tokenExpiresIn": token.expiresIn])
+        done(id, "refreshed", ["tokenExpiresIn": token.expiresIn])
     }
 
     private func roleCredentials() async throws {
@@ -134,7 +182,7 @@ actor Helper {
 
     func identity(_ id: String?) async throws {
         let arn = try await client().getCallerIdentityARN()
-        out.emit(id, "identity", ["arn": arn, "username": (try? IdentityMapper.username(fromARN: arn)) ?? ""])
+        done(id, "identity", ["arn": arn, "username": (try? IdentityMapper.username(fromARN: arn)) ?? ""])
     }
 
     func describe(_ id: String?, _ command: [String: Any]) async throws {
@@ -142,7 +190,7 @@ actor Helper {
             ("tag:\(try string(command, "tagKey"))", [try string(command, "tagValue")]),
             ("instance-state-name", ["pending", "running", "stopping", "stopped"]),
         ])
-        out.emit(id, "instances", ["instances": instances.map { ["instanceId": $0.instanceId, "state": $0.state ?? ""] }])
+        done(id, "instances", ["instances": instances.map { ["instanceId": $0.instanceId, "state": $0.state ?? ""] }])
     }
 
     func tunnel(_ id: String?, _ command: [String: Any]) async throws {
@@ -150,6 +198,7 @@ actor Helper {
         let pluginPath = try string(command, "pluginPath")
         guard let remotePort = command["remotePort"] as? Int, let localPort = command["localPort"] as? Int else { throw HelperError.missing("ports") }
         stopPlugin()
+        try Task.checkCancellation()
         let start = try await client().startSession(target: instanceId, documentName: "AWS-StartPortForwardingSession",
                                                     parameters: ["portNumber": [String(remotePort)], "localPortNumber": [String(localPort)]])
         let session = SSMSessionResponse(sessionId: start.sessionId, streamUrl: start.streamUrl, tokenValue: start.tokenValue)
@@ -166,20 +215,28 @@ actor Helper {
         process.standardOutput = FileHandle.standardError
         process.standardError = FileHandle.standardError
         process.standardInput = FileHandle.nullDevice
+        try Task.checkCancellation()
         try process.run()
         plugin = process
         out.emit(id, "pluginStarted", ["sessionId": start.sessionId, "pid": Int(process.processIdentifier)])
-        let deadline = Date().addingTimeInterval(60)
-        while Date() < deadline {
-            guard process.isRunning else { throw HelperError.pluginExited(Int(process.terminationStatus)) }
-            if await Self.portAccepts(localPort) {
-                out.emit(id, "tunnelReady", ["localPort": localPort])
-                return
+        // A failure or cancellation before the tunnel is ready ends the plugin this action started.
+        do {
+            let deadline = Date().addingTimeInterval(60)
+            while Date() < deadline {
+                try Task.checkCancellation()
+                guard process.isRunning else { throw HelperError.pluginExited(Int(process.terminationStatus)) }
+                if await Self.portAccepts(localPort) {
+                    try Task.checkCancellation()
+                    done(id, "tunnelReady", ["localPort": localPort])
+                    return
+                }
+                try await Task.sleep(nanoseconds: 500_000_000)
             }
-            try await Task.sleep(nanoseconds: 500_000_000)
+            throw HelperError.tunnelTimedOut
+        } catch {
+            stopPlugin()
+            throw error
         }
-        stopPlugin()
-        throw HelperError.tunnelTimedOut
     }
 
     /// The forwarded port is ready when a TCP connection to it on 127.0.0.1 is accepted.
@@ -234,12 +291,46 @@ enum HelperError: Error {
 let output = Output()
 let helper = Helper(out: output)
 output.emit(nil, "ready", ["protocol": 1])
-while let line = readLine() {
+// Standard input is read on its own thread, so a blocking read never holds up the main actor
+// while an action runs. It reads through FileHandle rather than readLine(): a thread blocked in
+// readLine() holds the stdio lock on stdin, and exit() waits for that lock while flushing
+// streams, so the helper would hang on quit.
+let lines = AsyncStream<String> { continuation in
+    Thread.detachNewThread {
+        var buffer = Data()
+        func yieldLine(_ bytes: Data) {
+            var line = String(decoding: bytes, as: UTF8.self)
+            if line.hasSuffix("\r") { line.removeLast() }
+            continuation.yield(line)
+        }
+        while true {
+            let chunk = FileHandle.standardInput.availableData
+            if chunk.isEmpty { break }
+            buffer.append(chunk)
+            while let newline = buffer.firstIndex(of: 0x0A) {
+                yieldLine(buffer[buffer.startIndex..<newline])
+                buffer.removeSubrange(buffer.startIndex...newline)
+            }
+        }
+        if !buffer.isEmpty { yieldLine(buffer) }
+        continuation.finish()
+    }
+}
+for await line in lines {
     guard let data = line.data(using: .utf8), let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         output.emit(nil, "failed", ["error": "not a JSON object"])
         continue
     }
-    if await helper.handle(command) == false { exit(0) }
+    switch command["cmd"] as? String {
+    case "cancel":
+        await helper.cancel(command["id"] as? String)
+    case "quit":
+        await helper.shutdown()
+        output.emit(command["id"] as? String, "bye")
+        exit(0)
+    default:
+        await helper.start(command)
+    }
 }
-await helper.stopPlugin()
+await helper.shutdown()
 output.emit(nil, "bye")
