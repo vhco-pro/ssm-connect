@@ -257,7 +257,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release.outputs.tag }}
           MSI: ${{ steps.package.outputs.msi }}
-        run: bash scripts/release/release-assets.sh reuse-published "$TAG" "${MSI//\\//}" | tee /dev/stderr | tail -1 >> "$GITHUB_OUTPUT"
+        run: |
+          result="$(bash scripts/release/release-assets.sh reuse-published "$TAG" "${MSI//\\//}")"
+          echo "$result"
+          tail -1 <<<"$result" >> "$GITHUB_OUTPUT"
 
       - name: Describe the published MSI
         if: steps.reuse.outputs.reused == 'true'
