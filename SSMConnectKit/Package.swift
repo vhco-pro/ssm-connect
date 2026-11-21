@@ -29,10 +29,15 @@ let package = Package(
             name: "SSMConnectDomain",
             dependencies: [.product(name: "Yams", package: "Yams")]
         ),
+        // Authorization and the desktop, web and editor connection workflows, written against
+        // injected ports. Like SSMConnectDomain, no macOS framework and no AWS SDK module; the
+        // macOS implementations of its ports stay in the platform targets.
+        .target(name: "SSMConnectWorkflow", dependencies: ["SSMConnectDomain"]),
         .target(
             name: "SSMConnectKit",
             dependencies: [
                 "SSMConnectDomain",
+                "SSMConnectWorkflow",
                 .product(name: "Yams", package: "Yams"),
                 .product(name: "SSMConnectAWSClient", package: "AWSClient"),
                 .product(name: "AWSSSOOIDC", package: "aws-sdk-swift"),
@@ -49,6 +54,7 @@ let package = Package(
             dependencies: [
                 "SSMConnectKit",
                 "SSMConnectDomain",
+                "SSMConnectWorkflow",
                 // The tests construct AWS SDK response types directly. AWSClientRuntime is
                 // explicit because the error-rendering tests build a real
                 // `UnknownAWSHTTPServiceError` rather than a look-alike stub (#20).

@@ -4,21 +4,6 @@ import CryptoKit
 import Darwin
 import Foundation
 
-enum BrowserBootstrapError: LocalizedError {
-    case unavailable, chooseMode, chooseProfile, conflict, closeBrowser, pendingChanges, launchFailed, interruptedSetup
-    var errorDescription: String? {
-        switch self {
-        case .unavailable: "This browser/mode is not verified. Choose Chrome (Separate Browser) or Zen, or use Advanced manual setup."
-        case .chooseMode: "Choose Use My Browser or Separate Browser in Settings."
-        case .chooseProfile: "Select the existing Zen profile folder in Settings."
-        case .conflict: "Browser proxy settings, policy or ownership conflict. Nothing was replaced. Use Separate Browser or resolve the conflict first."
-        case .closeBrowser: "Close this browser yourself, including its separate windows, then retry. SSM Connect never force-closes browsers."
-        case .pendingChanges: "Saved browser routing is pending. Close the routed browser, then use Apply Changes."
-        case .launchFailed: "Browser launch failed. The web tunnel is still connected."
-        case .interruptedSetup: "Browser setup was interrupted. Close the browser and use Restore Browser Settings to recover its prior proxy settings."
-        }
-    }
-}
 
 enum BrowserFamily { case chromium, firefox }
 
@@ -105,37 +90,7 @@ struct BrowserRouting: Equatable, Codable {
     }
 }
 
-enum BrowserPrivateFiles {
-    static func directory(_ url: URL) throws {
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
-    }
-    static func write(_ data: Data, to url: URL, createParent: Bool = true) throws {
-        if createParent { try directory(url.deletingLastPathComponent()) }
-        if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-            throw BrowserBootstrapError.conflict
-        }
-        let temporary = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        guard FileManager.default.createFile(atPath: temporary.path, contents: data,
-                                            attributes: [.posixPermissions: 0o600]) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        if rename(temporary.path, url.path) != 0 { throw CocoaError(.fileWriteUnknown) }
-    }
-    static var root: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "SSMConnect", isDirectory: true)
-            .appendingPathComponent("Browsers", isDirectory: true)
-    }
-}
 
-@MainActor protocol BrowserOpening {
-    func preflight(profile: ConnectionProfile) throws
-    func open(profile: ConnectionProfile) async throws
-    func restore(profile: ConnectionProfile) throws
-}
 
 @MainActor final class BrowserBootstrap: BrowserOpening {
     private struct Instance: Codable {

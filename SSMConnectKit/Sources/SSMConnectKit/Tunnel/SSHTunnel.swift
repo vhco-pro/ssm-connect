@@ -1,26 +1,5 @@
 import Foundation
 
-enum WebForwardsError: LocalizedError {
-    case invalidConfiguration(String)
-    case keyGenerationFailed
-    case keyPushFailed
-    case sshNotReady
-
-    var errorDescription: String? {
-        switch self {
-        case let .invalidConfiguration(message): return message
-        case .keyGenerationFailed: return "Could not generate the temporary SSH key."
-        case .keyPushFailed:
-            return "Could not authorize the SSH key. Check ec2-instance-connect:SendSSHPublicKey permission and the SSH OS user."
-        case .sshNotReady: return "SSH did not open the configured ports. Check the SSH user and host SSH service."
-        }
-    }
-}
-
-protocol SSHTunnelProviding: Sendable {
-    func start(session: SSMSessionResponse, region: String, instanceId: String, user: String,
-               keyPath: String, configuration: WebForwardsConfiguration) async throws -> TunnelHandle
-}
 
 struct SSHTunnel: SSHTunnelProviding {
     var pluginPath: @Sendable () -> String? = { BundledPluginTunnel.defaultPluginPath() }
@@ -96,24 +75,6 @@ struct SSHTunnel: SSHTunnelProviding {
     private static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
-}
-
-final class SSHKeyMaterial: @unchecked Sendable {
-    let directory: URL
-    let publicKey: String
-    var privateKeyPath: String { directory.appendingPathComponent("key").path }
-
-    init(directory: URL, publicKey: String) {
-        self.directory = directory
-        self.publicKey = publicKey
-    }
-
-    func remove() { try? FileManager.default.removeItem(at: directory) }
-    deinit { remove() }
-}
-
-protocol SSHKeyGenerating: Sendable {
-    func generate() async throws -> SSHKeyMaterial
 }
 
 struct SSHKeyGenerator: SSHKeyGenerating {

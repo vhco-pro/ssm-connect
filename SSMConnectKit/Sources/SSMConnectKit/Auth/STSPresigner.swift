@@ -24,15 +24,6 @@ struct STSPresigner {
         try AWSClient(region: region, credentials: credentials.signingCredentials, now: { now })
             .presignedCallerIdentityURL(expires: expiresSeconds).absoluteString
     }
-
-    /// RFC3986 encoding per SigV4: only `A-Za-z0-9-_.~` are unreserved; everything
-    /// else is percent-encoded with uppercase hex (note `/` becomes `%2F`).
-    static func rfc3986(_ s: String) -> String {
-        let unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
-        var allowed = CharacterSet()
-        allowed.insert(charactersIn: unreserved)
-        return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
-    }
 }
 
 extension AWSCredentials {

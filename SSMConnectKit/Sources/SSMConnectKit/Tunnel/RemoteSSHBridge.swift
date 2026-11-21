@@ -2,56 +2,8 @@ import AppKit
 import Darwin
 import Foundation
 
-enum RemoteSSHError: LocalizedError {
-    case invalidLease, unavailable, targetChanged, invalidFolder, configurationConflict
-    case invalidRecoveryState, replacementApprovalRequired, workstationNotReady
-    var errorDescription: String? {
-        switch self {
-        case .invalidLease: "Remote access is off or its owned session expired. Open VS Code from SSM Connect again."
-        case .unavailable: "Install Visual Studio Code and Microsoft's Remote - SSH extension before opening the remote workspace."
-        case .targetChanged: "The workstation identity changed. Reopen remote access from SSM Connect; no direct SSH fallback was attempted."
-        case .invalidFolder: "Use an absolute remote folder path, or leave it blank to choose a folder in VS Code."
-        case .configurationConflict: "The SSH setup changed independently. Nothing was overwritten; review the existing configuration."
-        case .invalidRecoveryState: "Saved editor recovery state is invalid. Existing access was not replaced; review the profile and recovery settings."
-        case .replacementApprovalRequired: "A different workstation instance requires confirmation in SSM Connect before this workspace can reconnect."
-        case .workstationNotReady: "The workstation is not ready. Recovery can wait without starting or replacing it."
-        }
-    }
-}
-
-struct RemoteSSHLease: Codable, Equatable, Sendable {
-    let profile: ConnectionProfile
-    let instanceID: String
-    let user: String
-    let keyPath: String
-    let pluginPath: String
-    let ownerPID: Int32
-    let ownerLaunchDate: Date
-    let ownerBundleID: String
-    let generation: UUID
-    let expiresAt: Date
-
-    func canReuse(profile: ConnectionProfile, instanceID: String, user: String, now: Date = Date()) throws -> Bool {
-        guard self.profile.hasSameWorkstation(as: profile),
-              self.instanceID == instanceID, self.user == user else { throw RemoteSSHError.targetChanged }
-        return expiresAt > now
-    }
-
-    func continues(_ original: RemoteSSHLease, ownerActive: Bool, now: Date = Date()) -> Bool {
-        guard ownerActive, generation == original.generation,
-              ownerPID == original.ownerPID, ownerBundleID == original.ownerBundleID,
-              ownerLaunchDate == original.ownerLaunchDate, keyPath == original.keyPath,
-              pluginPath == original.pluginPath else { return false }
-        return (try? canReuse(profile: original.profile, instanceID: original.instanceID,
-                              user: original.user, now: now)) == true
-    }
-
-    func extending(until expiry: Date) -> RemoteSSHLease {
-        RemoteSSHLease(profile: profile, instanceID: instanceID, user: user, keyPath: keyPath,
-            pluginPath: pluginPath, ownerPID: ownerPID, ownerLaunchDate: ownerLaunchDate,
-            ownerBundleID: ownerBundleID, generation: generation, expiresAt: expiry)
-    }
-
+/// The owning-app checks a lease needs on macOS: the owner process and file ownership.
+extension RemoteSSHLease {
     var ownerIsActive: Bool {
         expiresAt > Date() && ownerProcessIsActive
     }
@@ -64,56 +16,7 @@ struct RemoteSSHLease: Codable, Equatable, Sendable {
     }
 
     func validate(path: String, ownerActive: Bool) throws {
-        guard ownerActive, profile.isConfigured, ProfileEditorValidation.safeHost(user),
-              instanceID.range(of: #"^i-[a-f0-9]+$"#, options: .regularExpression) != nil else {
-            throw RemoteSSHError.invalidLease
-        }
-        let file = URL(fileURLWithPath: path)
-        for candidate in [file, URL(fileURLWithPath: keyPath), URL(fileURLWithPath: keyPath + ".pub")] {
-            let attributes = try FileManager.default.attributesOfItem(atPath: candidate.path)
-            guard attributes[.type] as? FileAttributeType == .typeRegular,
-                  attributes[.ownerAccountID] as? UInt32 == getuid(),
-                  ((attributes[.posixPermissions] as? Int ?? 0) & 0o077) == 0 else {
-                throw RemoteSSHError.invalidLease
-            }
-        }
-        guard FileManager.default.isExecutableFile(atPath: pluginPath) else { throw RemoteSSHError.invalidLease }
-    }
-}
-
-enum RemoteSSHConfiguration {
-    static func alias(_ id: UUID) -> String { "ssm-connect-" + id.uuidString.lowercased() }
-
-    static func folderURI(alias: String, folder: String) throws -> String {
-        guard let uri = RemoteFolder.uri(alias: alias, folder: folder) else { throw RemoteSSHError.invalidFolder }
-        return uri
-    }
-
-    static func arguments(alias: String, folder: String?) throws -> [String] {
-        guard let folder, !folder.isEmpty else { return ["--new-window", "--remote", "ssh-remote+" + alias] }
-        return ["--new-window", "--folder-uri", try folderURI(alias: alias, folder: folder)]
-    }
-
-    static func contents(lease: RemoteSSHLease, leasePath: String, helperPath: String, knownHostsPath: String) throws -> String {
-        guard ProfileEditorValidation.safeHost(lease.user), ProfileEditorValidation.safeHost(lease.instanceID),
-              [leasePath, helperPath, lease.keyPath, knownHostsPath].allSatisfy({ !$0.contains(where: \ .isNewline) }) else {
-            throw RemoteSSHError.invalidLease
-        }
-        let host = alias(lease.profile.id)
-        return ["Host \(host)", "  HostName \(lease.instanceID)", "  User \(lease.user)",
-                "  IdentityFile \(optionQuote(lease.keyPath))", "  IdentitiesOnly yes", "  BatchMode yes",
-                "  ForwardAgent no", "  ForwardX11 no", "  ConnectTimeout 90", "  StrictHostKeyChecking accept-new",
-                "  UserKnownHostsFile \(optionQuote(knownHostsPath))", "  HostKeyAlias \(lease.instanceID)",
-                "  ServerAliveInterval 30", "  ServerAliveCountMax 3",
-                "  ProxyCommand \(shellQuote(helperPath)) --configuration \(shellQuote(leasePath))", ""].joined(separator: "\n")
-    }
-
-    private static func optionQuote(_ value: String) -> String {
-        "\"" + value.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "%", with: "%%") + "\""
-    }
-    private static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''").replacingOccurrences(of: "%", with: "%%") + "'"
+        try validate(path: path, ownerActive: ownerActive, files: .posix)
     }
 }
 

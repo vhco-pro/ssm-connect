@@ -2,10 +2,6 @@ import AWSEC2InstanceConnect
 import Foundation
 import SmithyIdentity
 
-protocol InstanceConnectProviding: Sendable {
-    func sendPublicKey(instanceId: String, user: String, publicKey: String,
-                       region: String, credentials: AWSCredentials) async throws
-}
 
 struct InstanceConnectService: InstanceConnectProviding {
     func sendPublicKey(instanceId: String, user: String, publicKey: String,

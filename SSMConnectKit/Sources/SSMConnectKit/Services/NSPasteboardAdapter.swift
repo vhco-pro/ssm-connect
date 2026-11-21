@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// `Pasteboard` backed by the general `NSPasteboard`.
-struct NSPasteboardAdapter: Pasteboard {
+struct NSPasteboardAdapter: SSMConnectWorkflow.Pasteboard {
     func setString(_ value: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
