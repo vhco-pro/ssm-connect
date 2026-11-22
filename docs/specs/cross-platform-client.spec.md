@@ -88,14 +88,23 @@ the SDK sends today. This revision adds that after the T5 live run showed a
 machine with a 9-hour clock error failing. The direct STS identity request keeps
 today's behavior and still fails under such an error, as it does in today's app.
 
-Progress so far is subset evidence, recorded in Tasks: the AWS client passes
-its SDK parity tests on macOS, Linux and Windows (T32, T33, T35, T37-T41), and
-a feasibility helper built on it completed SSO device sign-in, token refresh, an
-AWS call and an SSM port forward through the Session Manager plugin natively on
-Windows 11 and Fedora 43 (T4, partial T5). T5 still lacks traffic through the
-tunnel to the workstation and the cancellation of an action in progress (T44).
-No acceptance criterion is met yet: the shells, adapters, extraction, packaging
-and full native acceptance remain.
+Progress is recorded in Tasks. The AWS client, the helper, both shells, the
+adapters, the extraction and the packages are built (T4 to T26, T32 to T49), and
+native acceptance has run on Windows 11, Fedora 43 and Ubuntu 24.04 (T28, T29),
+finding and fixing defects along the way. No acceptance criterion is ticked yet.
+
+This revision adds two owner decisions from that native acceptance
+(2026-11-22). First, the Windows and Linux shells offer every user action and
+setting the macOS menu, settings window and profile editor offer, not the
+smaller set they have today. Each runs the shared workflow through a helper
+command and keeps macOS's confirmations and availability rules. A committed
+inventory lists every macOS control with its helper command and its Windows and
+Linux control, and tests on each platform fail when one is missing. Second, the
+DCV connection file stays on disk for 120 seconds after the Viewer is asked to
+open it, instead of 5, on every platform: a cold Viewer start on Ubuntu took
+about 70 seconds and found the file already gone. It is still removed at Quit
+and by the sweep at the next connect after a crash. The missing-Viewer message
+also stops naming the macOS install path on Windows and Linux.
 
 This draft replaces the old two-core scope; its historical acceptance and
 passing tests do not carry over. Each task runs under the authority the owner
@@ -203,7 +212,9 @@ Included:
 - Extract and reuse current Swift domain, configuration, authentication and
   desktop/web/editor workflow behavior.
 - Keep the macOS SwiftUI interface and its observable user behavior.
-- Supply Windows and Linux interfaces backed by that same Swift core.
+- Supply Windows and Linux interfaces backed by that same Swift core, offering
+  every user action and setting of the macOS menu, settings window and profile
+  editor (owner decision, 2026-11-22).
 - Implement OS adapters for process ownership, files, local integration,
   notifications and other native capabilities.
 - Reuse historical Swift separation, Windows UI/adapters, fixtures and packaging
@@ -550,6 +561,86 @@ unreleased application feature. This merge changed no active source.
 The older local safety snapshot `fc2edd8`, explicitly marked not for publication,
 remains local and was not added to the publishable branch.
 
+### Windows and Linux parity with the macOS interface
+
+The owner decided on 2026-11-22 that the Windows and Linux shells offer every
+user action and setting the macOS interface offers. Today they offer a subset:
+the tray sends sign-in, connect, disconnect, stop workstation, open VS Code,
+start and stop web forwards and open browser
+(`linux/src/shell_controller.cpp:27-38`,
+`windows/src/SSMConnect.App/Shell/ShellController.cs:57-67`), and the settings
+window edits the name, SSO, account, role, region, tag and port fields with
+Save, Use This Profile, Import and Set Up VS Code (`linux/qml/Settings.qml:95-107`,
+`windows/src/SSMConnect.App/Shell/SettingsWindow.cs`). The helper has no command
+for the rest (`SSMConnectKit/Sources/SSMConnectHelperCore/HelperRuntime.swift:146-168`).
+
+The macOS surfaces are `SSMConnectKit/Sources/SSMConnectUI/MenuContentView.swift`,
+`SettingsView.swift`, `ProfileEditorView.swift`, `LogView.swift` and
+`AboutView.swift`. Their controls fall into these groups:
+
+- **Connection:** Retry Authorization, the pending-changes and connection detail
+  lines, the masked password with Copy Password, Reconnect, the Stop Workstation
+  confirmation, and Set Up a Workstation when no profile exists
+  (`MenuContentView.swift:48-103`).
+- **Editor:** Reconnect Existing Workspace, Cancel Recovery, Review Replacement
+  Workstation with its confirmation, Cancel Replacement Recovery, the lease and
+  recovery lines, the VS Code browser routing notes, Stop Remote Access and
+  Restore Editor Setup, each with macOS's confirmation text
+  (`MenuContentView.swift:105-178`).
+- **Web forwards:** the state line, Review Forwarding Replacement, Cancel
+  Forwarding Recovery, Open for each local forward, the Advanced items (Copy PAC
+  URL, Reveal PAC File, Apply Browser Setup, Restore Browser Settings) and Apply
+  Changes (`MenuContentView.swift:181-260`).
+- **Settings:** connect automatically on launch, reconnect automatically,
+  clipboard auto-clear seconds, add a blank profile, import from
+  `~/.aws/config`, duplicate, delete (disabled while one profile is left; the
+  first remaining profile becomes active when the active one goes,
+  `SSMConnectWorkflow/ProfileStore.swift:122-133`), and the Files and attachment
+  actions: Open Profile File, Export Profile, Save a Local Copy, Reload / Review
+  Changes, Apply External Changes, Locate File and Detach
+  (`SettingsView.swift:41-193`).
+- **Profile editor:** every field of `ConnectionProfile`, including the DCV
+  password secret, Open DCV Viewer automatically, connect mode, remote
+  development with its remote folder, and web forwards with SSH user, SOCKS port,
+  browser, browser mode, proxy suffixes and local forwards, with the same
+  validation messages (`ProfileEditorView.swift:43-313`).
+- **Log and About:** the connection log with Clear, and the About window.
+
+`contracts/macos-parity.json` lists each control once with its macOS file and
+symbol, the helper command it sends (or `shell` for presentation only, such as
+opening the About or Log window) and the Windows and Linux control that offers
+it. A Swift test checks that every listed command is in the helper's command
+table; the Windows xUnit and Linux Qt drive-through tests check that every
+listed control exists and sends its command, with macOS's confirmation shown
+first where macOS asks. A control added to the macOS views without an entry, or
+an entry without its command or controls, fails those tests.
+
+Every new command runs the same shared workflow macOS calls, under the
+existing admission rules: one command per workflow at a time, a command that
+conflicts with the current state refused before any side effect, and exactly
+one terminal result (AC-27). Profile and settings commands share the
+`profiles` workflow, so a delete cannot race a save. Deleting a profile removes
+its attachment record but never the attached file, as on macOS. Shell-side
+requests the commands need already exist: clipboard, open URL and launch
+(`SSMConnectHelperCore/ShellRequests.swift:9-28`); revealing the PAC file adds a `reveal` request
+that the shell serves with the platform file manager. Shell and helper always
+share a build (the handshake refuses any other), so no command reaches a helper
+that lacks it, and rolling back installs an older shell and helper together.
+
+### DCV connection file lifetime
+
+SSM Connect deletes the DCV connection file 5 seconds after asking the Viewer to
+open it, on macOS (`SSMConnectMacOS/DCVLauncher.swift:15-57`) and in the helper
+(`SSMConnectHelperCore/ShellRequests.swift:47-72`). On ubuntu-sandbox the first
+Viewer start in a fresh session took about 70 seconds and found no file (T29).
+The window becomes 120 seconds on every platform, from one shared constant. The
+file stays `0600` in the user's own folder during the window. Quit removes any
+file still waiting, as part of the quit work, and the sweep at the next connect
+removes one a crash left behind, as today. The missing-Viewer message comes from
+the shared workflow and names the macOS path on every platform
+(`SSMConnectWorkflow/DCVLaunching.swift:22`); each platform names its own
+install instead.
+
 ### Migration, performance and release boundaries
 
 Refactor in reviewed increments with a working macOS rollback point. Preserve
@@ -669,6 +760,8 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-26: Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
 - [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
 - [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures, corrects a skewed clock the same way and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path, except that in China regions it goes to the resolver's `amazonaws.com.cn` host, and keeps its single attempt.
+- [ ] AC-29: On Windows and Linux, every user action and setting of the macOS menu, settings window and profile editor is offered by the shell, runs the shared workflow through a helper command, and keeps macOS's confirmations and availability rules; the parity inventory lists none as missing.
+- [ ] AC-30: On every platform the DCV connection file stays readable for 120 seconds after the Viewer is asked to open it and is removed at the end of that window, at Quit, or by the next connect's sweep after a crash; a Viewer that takes up to that long to start opens the desktop; and the missing-Viewer message names the platform's own install.
 
 ## Test Plan
 
@@ -692,6 +785,8 @@ core, or change macOS signing claims through this refactor.
 | AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
 | AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper and all its descendants; killing only the helper during an established transport, with the shell running, ends every descendant before the replacement helper starts; killing the helper mid-StartSession fails that command with "core stopped", one replacement starts, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. A replacement that exits at once, never completes its handshake, or stops answering heartbeats leads, within the stated limits, to "SSM Connect core unavailable" with Retry and no further automatic restart; a first helper that never handshakes leads there without any automatic restart; after ten healthy minutes one automatic restart is available again; a pending command whose cancel is not confirmed within 10 seconds leads to helper replacement. |
 | AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 SDK operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message. Under a controlled clock, with no retry settings configured, the delays between attempts match the pinned SDK's retry strategy options; closed connections, HTTP timeouts and transient transport failures are retried as the SDK's retry classifier retries them; and cancelling during a backoff wait ends the call without another attempt; the existing error-translation tests pass on the client. Separately, without an endpoint override, the SDK's endpoint resolver and the client's give the same production endpoint for every service in standard, China and GovCloud regions. With `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, `AWS_NEW_RETRIES_2026` or a shared-config retry setting present, the client's attempts and delays are unchanged; with `AWS_ENDPOINT_URL`, a service-specific endpoint variable or a shared-config endpoint present, every request still goes to the resolver's regional endpoint. The STS identity request makes exactly one attempt: a throttling, 5xx or access-denied response fails at once with the same typed error as today. Outside China, the STS identity request recorded from today's direct path matches the client's request byte for byte after signing with the same time; in China regions it goes to the resolver's `amazonaws.com.cn` host. Each of the 12 requests succeeds once against AWS natively on every matrix target. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. Fixtures recorded from the SDK show the clock-skew behavior: a signed request answered with `AuthFailure` or `RequestTimeTooSkewed` and a `Date` header 9 hours ahead is retried once, signed at local time plus that offset, and succeeds; a 4-minute difference is not corrected. Controlled-clock client tests check the offset is computed from the unadjusted local time and applied to later requests to that host only, the 300-second and 60-second thresholds, that a skew error with a near, missing or unparseable `Date` header clears a stored offset and retries once (a client whose local clock was repaired after an offset was learned recovers), a retry only when the stored value changed, that the retry counts as an attempt and waits its backoff, that a non-skew error with a far-off `Date` header is not treated as skew, and that two requests failing with the same skew at the same time yield one skew retry, as the SDK's store does. Retry-quota tests on one reused client check that 100 failed retries exhaust the 500 capacity so the next retryable failure is returned without a retry, that a timeout retry costs 10, that a success returns its retry's cost or 1, and that a clock-skew retry is refused when the quota is exhausted, matching recorded SDK behavior on a reused client. |
+| AC-29 | `contracts/macos-parity.json` checked three ways: a Swift test that every listed helper command is in the command table, and Windows xUnit and Linux Qt drive-throughs that operate every listed control and assert its command frame and, where macOS asks, the confirmation shown first. Helper command tests with fake services cover each new command's macOS rules, including delete refused for the last profile, the active profile moving to the first remaining one, and the attached file left untouched. A native pass on w11-sandbox, Fedora 43 and Ubuntu 24.04 exercises each new control once against the owner's profile. |
+| AC-30 | Helper and macOS launcher tests with an injected delay: the default window is 120 seconds, the file exists until it ends and is gone after, Quit removes a waiting file, and the next connect's sweep removes a leftover one. A message test per platform for the missing Viewer. Natively on ubuntu-sandbox, after logging the session out and back in so the Viewer starts cold, Connect opens the desktop with no copied file. |
 
 ## Tasks
 
