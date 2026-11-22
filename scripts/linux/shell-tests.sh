@@ -22,4 +22,9 @@ fi
 docker run --rm --user "$(id -u):$(id -g)" -v "$source":/src:ro -v "$build":"$build" "$image" \
   bash -c "cmake -S /src -B '$build' -G Ninja -DCMAKE_BUILD_TYPE=Debug >/dev/null && cmake --build '$build'"
 
-"$build/helper_host_test" "$@" 2>&1 | tee "$build/test.log"
+status=0
+: > "$build/test.log"
+for test in helper_host_test shell_test; do
+  "$build/$test" "$@" 2>&1 | tee -a "$build/test.log" || status=1
+done
+exit $status
