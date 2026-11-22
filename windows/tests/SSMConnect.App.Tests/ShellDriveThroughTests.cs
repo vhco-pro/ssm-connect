@@ -237,3 +237,39 @@ public sealed class DcvViewerLocationTests
         finally { Directory.Delete(root, recursive: true); }
     }
 }
+
+/// <summary>A second launch brings the open settings window forward instead of opening another.</summary>
+public sealed class SingleWindowTests
+{
+    [Fact]
+    public void ShowingAgainReusesTheOpenWindowAndAClosedOneIsReplaced()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var single = new SingleWindow<Window>();
+                var created = 0;
+                Window Create() { created++; return new Window { Width = 100, Height = 100, ShowActivated = false }; }
+                var first = single.Show(Create);
+                first.WindowState = WindowState.Minimized;
+                var again = single.Show(Create);
+                Assert.Same(first, again);
+                Assert.Equal(1, created);
+                Assert.Equal(WindowState.Normal, again.WindowState);
+                first.Close();
+                Assert.Null(single.Current);
+                var replacement = single.Show(Create);
+                Assert.NotSame(first, replacement);
+                Assert.Equal(2, created);
+                replacement.Close();
+            }
+            catch (Exception error) { failure = error; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null) throw failure;
+    }
+}

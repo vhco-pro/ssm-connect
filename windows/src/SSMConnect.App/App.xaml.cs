@@ -18,6 +18,7 @@ public partial class App : Application
     TrayIcon? tray;
     System.Windows.Controls.ContextMenu? menu;
     SessionEndWindow? sessionEnd;
+    readonly SingleWindow<SettingsWindow> settings = new();
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -54,11 +55,12 @@ public partial class App : Application
     void ShowSettings()
     {
         if (controller is null) return;
-        new SettingsWindow(controller, () =>
+        var shell = controller;
+        settings.Show(() => new SettingsWindow(shell, () =>
         {
             var dialog = new OpenFileDialog { Filter = "SSM Connect profiles|*.ssmconnect;*.yaml;*.yml;*.json" };
             return dialog.ShowDialog() == true ? dialog.FileName : null;
-        }).Show();
+        }));
     }
 
     void Quit()
