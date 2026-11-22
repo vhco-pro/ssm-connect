@@ -25,6 +25,22 @@ public sealed class ShellController
         this.host = host;
         this.platform = platform;
         host.EventReceived += Handle;
+        host.StatusChanged += ClearStatesWhenStopped;
+    }
+
+    /// <summary>
+    /// A helper that stops takes its connections with it, and its replacement starts with none:
+    /// what the stopped helper reported no longer describes anything.
+    /// </summary>
+    void ClearStatesWhenStopped()
+    {
+        if (host.Status == HelperHostStatus.Ready) return;
+        lock (states)
+        {
+            if (states.Count == 0) return;
+            states.Clear();
+        }
+        StateChanged?.Invoke();
     }
 
     /// <summary>Latest state per workflow (desktop, web, editor), from the helper's events.</summary>

@@ -19,6 +19,7 @@
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -161,6 +162,25 @@ private slots:
                                               "start dcvviewer /run/user/1000/ws.dcv", "browser chrome separate 1080",
                                               "clipboard password", "notify Connected"}));
         QTRY_COMPARE(controller.states().value("desktop").toString(), QStringLiteral("Connected"));
+    }
+
+    void aStoppedHelperClearsTheWorkflowStatesTheShellShows() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        QSignalSpy changed(&controller, &ShellController::stateChanged);
+        emitEvent(*spawner.started[0], "desktop", "state", {{"state", "tunneling"}});
+        QTRY_COMPARE(controller.states().value("desktop").toString(), QStringLiteral("tunneling"));
+        const int before = changed.count();
+        spawner.started[0]->exit();
+        QTRY_VERIFY(spawner.started.size() == 2 && host.status() == HelperHostStatus::Ready);
+        // The replacement helper holds no connection, so nothing the old one reported is shown.
+        QVERIFY(controller.states().isEmpty());
+        QVERIFY(changed.count() > before);
     }
 
     void startingAtSignInIsAnXdgAutostartEntry() {

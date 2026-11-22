@@ -222,6 +222,36 @@ public sealed class HelperHostTests
     }
 
     [Fact]
+    public async Task AStoppedHelperClearsTheWorkflowStatesTheShellShows()
+    {
+        var spawner = new FakeSpawner(() => new FakeHelper());
+        var host = Host(spawner, new FakeTimeProvider());
+        await host.StartAsync();
+        var controller = new SSMConnect.App.Shell.ShellController(host, new SilentPlatform());
+        var changes = 0;
+        controller.StateChanged += () => Interlocked.Increment(ref changes);
+        spawner.Started[0].Emit("desktop", "state", new() { ["state"] = "tunneling" });
+        await Eventually(() => controller.States.GetValueOrDefault("desktop") == "tunneling");
+        var before = changes;
+        spawner.Started[0].Exit();
+        await Eventually(() => spawner.Started.Count == 2 && host.Status == HelperHostStatus.Ready);
+        // The replacement helper holds no connection, so nothing the old one reported is shown.
+        Assert.Empty(controller.States);
+        Assert.True(changes > before);
+    }
+
+    sealed class SilentPlatform : SSMConnect.App.Shell.IShellPlatform
+    {
+        public string? DcvViewerPath => null;
+        public void OpenUrl(string url) { }
+        public void Start(string path, IReadOnlyList<string> arguments) { }
+        public void StartBrowser(string browser, string mode, string profile, int socksPort) { }
+        public void SetClipboard(string text) { }
+        public void Notify(string title, string body) { }
+        public void ShowError(string action, string message) { }
+    }
+
+    [Fact]
     public async Task TenHealthyMinutesReArmTheAutomaticRestart()
     {
         var time = new FakeTimeProvider();

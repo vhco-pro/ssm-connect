@@ -10,6 +10,13 @@ namespace ssmconnect {
 ShellController::ShellController(HelperHost &host, ShellPlatform &platform, QObject *parent)
     : QObject(parent), host_(host), platform_(platform) {
     connect(&host_, &HelperHost::eventReceived, this, &ShellController::handle);
+    // A helper that stops takes its connections with it, and its replacement starts with none: what
+    // the stopped helper reported no longer describes anything.
+    connect(&host_, &HelperHost::statusChanged, this, [this] {
+        if (host_.status() == HelperHostStatus::Ready || states_.isEmpty()) return;
+        states_.clear();
+        emit stateChanged();
+    });
 }
 
 const QList<ShellAction> &ShellController::menuActions() {
