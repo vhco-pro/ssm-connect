@@ -1,6 +1,9 @@
 import Foundation
 import SSMConnectHelperCore
 import SSMConnectHelperProtocol
+#if os(Windows)
+import WinSDK
+#endif
 
 // The private helper a Windows or Linux shell starts as its child, connected by anonymous
 // stdin/stdout pipes. Frames go to stdout only; diagnostics go to stderr. The helper exits when
@@ -36,11 +39,48 @@ let commands: [String: CommandSpec] = [:]
 let session = HelperSession(build: HelperBuild.current, commands: commands, send: { pipes.send($0) })
 requests.attach(session.events)
 
-// Signing out on Linux ends the helper without closing its stdin: systemd stops the helper's unit
-// with SIGTERM and kills it moments later. The helper first ends its session and runs the workflows'
-// quit work, so no key, lease or connection file outlives it. On Windows the shell asks the helper
-// to end when the session ends: the helper loads user32, so Windows sends it no console sign-out event.
-#if !os(Windows)
+// Signing out ends the helper without closing its stdin, and the shell cannot ask it to end in time.
+// The helper first ends its session and runs the workflows' quit work, so no key, lease or
+// connection file outlives it. On Linux, systemd stops the helper's unit with SIGTERM. On Windows,
+// a process that loads user32 gets no console sign-out event and, having no window, is ended
+// without notice; a hidden top-level window receives WM_QUERYENDSESSION and WM_ENDSESSION instead.
+#if os(Windows)
+Thread.detachNewThread {
+    let className = Array("SSMConnectHelperSessionEnd".utf16) + [0]
+    className.withUnsafeBufferPointer { name in
+        var windowClass = WNDCLASSW()
+        windowClass.lpszClassName = name.baseAddress
+        windowClass.hInstance = GetModuleHandleW(nil)
+        windowClass.lpfnWndProc = { window, message, wParam, lParam in
+            switch message {
+            case UINT(WM_QUERYENDSESSION):
+                return 1
+            case UINT(WM_ENDSESSION) where wParam != 0:
+                let done = DispatchSemaphore(value: 0)
+                Task { @MainActor in
+                    await HelperExit.end(session)
+                    done.signal()
+                }
+                // Windows waits a few seconds for WM_ENDSESSION before ending the process.
+                _ = done.wait(timeout: .now() + 4)
+                exit(0)
+            default:
+                return DefWindowProcW(window, message, wParam, lParam)
+            }
+        }
+        guard RegisterClassW(&windowClass) != 0 else { return }
+        // WS_POPUP and never shown: a top-level window is sent the session-end messages; a
+        // message-only window is not.
+        _ = CreateWindowExW(0, name.baseAddress, name.baseAddress, DWORD(bitPattern: Int32(bitPattern: 0x8000_0000)),
+                            0, 0, 0, 0, nil, nil, windowClass.hInstance, nil)
+        var message = MSG()
+        while GetMessageW(&message, nil, 0, 0) {
+            TranslateMessage(&message)
+            DispatchMessageW(&message)
+        }
+    }
+}
+#else
 signal(SIGTERM, SIG_IGN)
 let sessionEnd = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sessionEnd.setEventHandler {
