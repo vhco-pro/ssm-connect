@@ -371,9 +371,10 @@ release path, run the workflow manually with `test_tag` set to a prerelease tag 
 publish.
 
 The Homebrew cask (`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest
-release version + sha256 via a scheduled workflow in that tap (no manual cask edit needed). WinGet
-submission runs when the `WINGET_TOKEN` secret is set; otherwise the validated manifest is kept as
-a run artifact.
+release version + sha256 via a scheduled workflow in that tap (no manual cask edit needed). A separate
+`winget` job submits the validated manifest to `microsoft/winget-pkgs` with the `WINGET_TOKEN`
+secret of the `winget` environment, which only `main` can deploy to; without the secret the
+manifest stays a run artifact for a manual submission.
 
 ### Notarization (upgrade path)
 

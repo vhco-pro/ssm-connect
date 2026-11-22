@@ -314,17 +314,32 @@ jobs:
           name: winget-manifest-${{ needs.release.outputs.version }}
           path: ${{ steps.package.outputs.manifest }}
 
-      # WinGet takes manifests as pull requests to microsoft/winget-pkgs. A release submits through
-      # wingetcreate once the WINGET_TOKEN secret (a token that can fork and open pull requests)
-      # exists; until then, and for test tags, the validated manifest stays a run artifact.
-      - name: Submit the WinGet manifest
-        if: needs.release.outputs.prerelease == 'false'
+  # WinGet takes manifests as pull requests to microsoft/winget-pkgs. This job holds the token
+  # that opens them (WINGET_TOKEN, in the winget environment, which only main can deploy to) and
+  # runs nothing but the hash-pinned wingetcreate on the manifest the Windows job validated, so no
+  # build code ever runs beside the token. Without the secret it notes the manual path and passes.
+  winget:
+    name: Submit to WinGet
+    needs: [release, windows]
+    if: needs.release.outputs.skip == 'false' && needs.release.outputs.prerelease == 'false'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    environment: winget
+    permissions: {}
+    steps:
+      - name: Download the validated manifest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: winget-manifest-${{ needs.release.outputs.version }}
+          path: manifest
+
+      - name: Submit the manifest
         shell: pwsh
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
         run: |
           if (-not $env:WINGET_TOKEN) {
-            Write-Host '::notice::WINGET_TOKEN is not set; the validated manifest is kept as a run artifact for manual submission.'
+            Write-Host '::notice::WINGET_TOKEN is not set in the winget environment; submit the run artifact manifest by hand.'
             exit 0
           }
           # Pinned and verified, like every other downloaded tool.
@@ -332,7 +347,7 @@ jobs:
           if ((Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash -ne '63D980BA79E97042395BD6EB5992C2DB9E01E9E7A8A22958A95C288F27310413') {
             throw 'wingetcreate.exe failed verification.'
           }
-          ./wingetcreate.exe submit --token $env:WINGET_TOKEN '${{ steps.package.outputs.manifest }}'
+          ./wingetcreate.exe submit --token $env:WINGET_TOKEN manifest
           if ($LASTEXITCODE -ne 0) { throw "wingetcreate submit failed with $LASTEXITCODE." }
 
   linux:
