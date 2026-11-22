@@ -203,6 +203,11 @@ void HelperHost::stop(HelperConnection *connection) {
     for (HelperCommand *command : failed)
         command->finish({HelperOutcome::CoreStopped, "coreStopped", "core stopped", {}});
     spawner_.terminateAndWaitEmpty(connection, [this, connection, restart] {
+        // The spawner frees the connection once its unit is empty, and a later helper can be given
+        // the same address: forget this one so that helper is not taken for it.
+        stopped_.remove(connection);
+        handshaken_.remove(connection);
+        awaitingHandshake_.remove(connection);
         if (current_ != connection) return;
         if (shuttingDown_) {
             if (auto done = std::exchange(shutdownDone_, nullptr)) done();

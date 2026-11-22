@@ -84,6 +84,44 @@ private slots:
         QCOMPARE(spawner.log, QStringList({"start 1", "terminate 1", "empty 1"}));
     }
 
+    // A connection the spawner frees once its unit is empty can be followed by one at the same
+    // address; the host must treat it as a new helper, with its own handshake limit.
+    void aNewHelperAtAFreedHelpersAddressGetsItsOwnHandshake() {
+        struct ReusingSpawner : FakeSpawner {
+            FakeHelper *freed = nullptr;
+            HelperConnection *start() override {
+                if (!freed) return FakeSpawner::start();
+                FakeHelper *helper = std::exchange(freed, nullptr);
+                helper->hasExited = false;
+                helper->receivedFrames.clear();
+                configure(*helper);
+                started.push_back(helper);
+                log << QStringLiteral("start %1").arg(started.size());
+                return helper;
+            }
+            void terminateAndWaitEmpty(HelperConnection *connection, std::function<void()> done) override {
+                FakeSpawner::terminateAndWaitEmpty(connection, std::move(done));
+                freed = static_cast<FakeHelper *>(connection);
+            }
+        };
+        ManualClock clock;
+        ReusingSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) { helper.handshakes = false; };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_VERIFY(!spawner.started.empty() && !spawner.started[0]->receivedFrames.empty());
+        clock.advance(11s);
+        QTRY_COMPARE(host.status(), HelperHostStatus::Unavailable);
+        host.retry();
+        QCOMPARE(spawner.started.size(), size_t(2));
+        QCOMPARE(spawner.started[1], spawner.started[0]);
+        clock.advance(11s);
+        QTRY_COMPARE(host.status(), HelperHostStatus::Unavailable);
+        spawner.configure = [](FakeHelper &helper) { helper.handshakes = true; };
+        host.retry();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+    }
+
     void oneAutomaticRestartEmptiesTheOldUnitFirstThenRetryStartsAnother() {
         ManualClock clock;
         FakeSpawner spawner;
