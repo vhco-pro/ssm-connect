@@ -99,12 +99,15 @@ setting the macOS menu, settings window and profile editor offer, not the
 smaller set they have today. Each runs the shared workflow through a helper
 command and keeps macOS's confirmations and availability rules. A committed
 inventory lists every macOS control with its helper command and its Windows and
-Linux control, and tests on each platform fail when one is missing. Second, the
-DCV connection file stays on disk for 120 seconds after the Viewer is asked to
-open it, instead of 5, on every platform: a cold Viewer start on Ubuntu took
-about 70 seconds and found the file already gone. It is still removed at Quit
-and by the sweep at the next connect after a crash. The missing-Viewer message
-also stops naming the macOS install path on Windows and Linux.
+Linux control, and tests on each platform fail when one is missing. Second, on
+Windows and Linux the DCV connection file stays on disk for 120 seconds after
+the Viewer is asked to open it, instead of 5: a cold Viewer start on Ubuntu took
+about 70 seconds and found the file already gone. Connect does not wait for that
+window, and the file is still removed at Quit and by the sweep at the next
+connect after a crash. macOS keeps its 5 seconds unchanged, so its connect
+timing and the four named exceptions to preserving macOS behavior stay as they
+are (owner decision). The missing-Viewer message also stops naming the macOS
+install path on Windows and Linux.
 
 This draft replaces the old two-core scope; its historical acceptance and
 passing tests do not carry over. Each task runs under the authority the owner
@@ -112,6 +115,23 @@ gives for it; the live AWS runs of T5 used the owner's own profile with their
 approval. Installing or replacing the app, running workstation operations
 beyond T5's read-only checks and port forward, and releasing still need separate
 approval.
+
+### Harm and the simplest alternative
+
+The harm is observed, constant and does not resolve without work: SSM Connect
+runs only on macOS, so the owner and colleagues on Windows 11 and Linux reach
+the workstation through hand-assembled AWS CLI, Session Manager plugin, SSH and
+DCV steps, or not at all. Every connection then repeats manual SSO sign-in,
+instance lookup, port forwarding and editor and browser setup that the macOS app
+does in one action, and each step can be skipped or done insecurely (for
+example a long-lived SSH key, or a browser whose proxy setting routes all
+traffic). The simplest alternative without new machinery is to document those
+CLI steps per platform, or to keep the earlier separate C# core. Documentation
+leaves every user to repeat and secure the steps by hand. A second core
+duplicates every authorization, recovery and consent rule and has already
+diverged from the macOS features added since August. One shared Swift core
+behind native shells gives Windows and Linux the same behavior with one
+implementation to keep correct, which is why this design is preferred.
 
 ### Existing workflow and baseline
 
@@ -149,12 +169,14 @@ Preserve their documented limits as well as their implemented behavior.
 [trusted macOS distribution](macos-trusted-distribution.spec.md) retain their
 separate, unfinished scopes.
 
-The current [package manifest](../../SSMConnectKit/Package.swift) builds one
-umbrella target. OS responsibilities are still mixed into orchestration:
+At the pre-extraction baseline (`eb4f0bc`), the
+[package manifest](../../SSMConnectKit/Package.swift) built one umbrella target,
+and OS responsibilities were mixed into orchestration (both files have since
+moved into the extracted targets that T7 to T13 record):
 `SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:1`
-imports Darwin and owns shutdown signals;
-`SSMConnectKit/Sources/SSMConnectKit/Auth/AWSAuthProvider.swift:1` imports AppKit
-and opens the browser. These are boundaries to refactor, not a reason to translate
+imported Darwin and owned shutdown signals;
+`SSMConnectKit/Sources/SSMConnectKit/Auth/AWSAuthProvider.swift:1` imported AppKit
+and opened the browser. These were boundaries to refactor, not a reason to translate
 the working algorithms into another language.
 
 ### Observed credential-free portability results
@@ -582,13 +604,15 @@ The macOS surfaces are `SSMConnectKit/Sources/SSMConnectUI/MenuContentView.swift
   lines, the masked password with Copy Password, Reconnect, the Stop Workstation
   confirmation, and Set Up a Workstation when no profile exists
   (`MenuContentView.swift:48-103`).
-- **Editor:** Reconnect Existing Workspace, Cancel Recovery, Review Replacement
+- **Editor:** Open VS Code with its consent to add the SSH Include on first
+  use, Reconnect Existing Workspace, Renew Editor Access, Cancel Recovery, Review Replacement
   Workstation with its confirmation, Cancel Replacement Recovery, the lease and
   recovery lines, the VS Code browser routing notes, Stop Remote Access and
   Restore Editor Setup, each with macOS's confirmation text
   (`MenuContentView.swift:105-178`).
-- **Web forwards:** the state line, Review Forwarding Replacement, Cancel
-  Forwarding Recovery, Open for each local forward, the Advanced items (Copy PAC
+- **Web forwards:** the state line, Turn On and Turn Off Web Forwards, Review
+  Forwarding Replacement, Cancel Forwarding Recovery, Open for each local forward,
+  Open Browser with its Separate Browser or Use My Browser choice, the Advanced items (Copy PAC
   URL, Reveal PAC File, Apply Browser Setup, Restore Browser Settings) and Apply
   Changes (`MenuContentView.swift:181-260`).
 - **Settings:** connect automatically on launch, reconnect automatically,
@@ -609,7 +633,11 @@ The macOS surfaces are `SSMConnectKit/Sources/SSMConnectUI/MenuContentView.swift
 `contracts/macos-parity.json` lists each control once with its macOS file and
 symbol, the helper command it sends (or `shell` for presentation only, such as
 opening the About or Log window) and the Windows and Linux control that offers
-it. A Swift test checks that every listed command is in the helper's command
+it. A check that reads the macOS views lists every control they declare (each
+`Button`, `Toggle`, `Picker`, `Menu`, `TextField`, `SecureField`, `SettingsLink`
+and alert button, with its title or title expression) and fails when one has no
+inventory entry; it is shown failing first by removing one entry and by adding
+an unlisted control to a copy of a view. A Swift test checks that every listed command is in the helper's command
 table; the Windows xUnit and Linux Qt drive-through tests check that every
 listed control exists and sends its command, with macOS's confirmation shown
 first where macOS asks. A control added to the macOS views without an entry, or
@@ -633,13 +661,18 @@ SSM Connect deletes the DCV connection file 5 seconds after asking the Viewer to
 open it, on macOS (`SSMConnectMacOS/DCVLauncher.swift:15-57`) and in the helper
 (`SSMConnectHelperCore/ShellRequests.swift:47-72`). On ubuntu-sandbox the first
 Viewer start in a fresh session took about 70 seconds and found no file (T29).
-The window becomes 120 seconds on every platform, from one shared constant. The
-file stays `0600` in the user's own folder during the window. Quit removes any
-file still waiting, as part of the quit work, and the sweep at the next connect
-removes one a crash left behind, as today. The missing-Viewer message comes from
+On Windows and Linux the window becomes 120 seconds (owner decision,
+2026-11-22). The helper already schedules the deletion on its own task and
+reports the connect at once, so Connect does not wait for the window. The file
+stays `0600` in the user's own folder during the window. The helper's quit work
+removes any file still waiting, and the sweep at the next connect removes one a
+crash left behind, as today. macOS keeps its 5 seconds: its launcher waits for
+the window before Connected (`SSMConnectMacOS/DCVLauncher.swift:55-57`,
+`SSMConnectWorkflow/ConnectionStateMachine.swift:380-395`), and its behavior
+stays within the four named preservation exceptions. The missing-Viewer message comes from
 the shared workflow and names the macOS path on every platform
-(`SSMConnectWorkflow/DCVLaunching.swift:22`); each platform names its own
-install instead.
+(`SSMConnectWorkflow/DCVLaunching.swift:22`). Windows and Linux name their own
+install instead; macOS keeps its message.
 
 ### Migration, performance and release boundaries
 
@@ -761,7 +794,7 @@ core, or change macOS signing claims through this refactor.
 - [ ] AC-27: On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
 - [ ] AC-28: Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures, corrects a skewed clock the same way and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path, except that in China regions it goes to the resolver's `amazonaws.com.cn` host, and keeps its single attempt.
 - [ ] AC-29: On Windows and Linux, every user action and setting of the macOS menu, settings window and profile editor is offered by the shell, runs the shared workflow through a helper command, and keeps macOS's confirmations and availability rules; the parity inventory lists none as missing.
-- [ ] AC-30: On every platform the DCV connection file stays readable for 120 seconds after the Viewer is asked to open it and is removed at the end of that window, at Quit, or by the next connect's sweep after a crash; a Viewer that takes up to that long to start opens the desktop; and the missing-Viewer message names the platform's own install.
+- [ ] AC-30: On Windows and Linux the DCV connection file stays readable for 120 seconds after the Viewer is asked to open it, without delaying Connected, and is removed at the end of that window, at Quit, or by the next connect's sweep after a crash; a Viewer that takes up to that long to start opens the desktop; the missing-Viewer message names the platform's own install; and macOS keeps its current window and message.
 
 ## Test Plan
 
@@ -785,8 +818,8 @@ core, or change macOS signing claims through this refactor.
 | AC-26 | In an isolated macOS user account with representative profiles, attachments, editor recovery intent and integration metadata written by the current release: install the refactored build and verify identity, consent, restore and conflict behavior; then have it create or update state through every persisted-state writer: profiles, attachments, portable documents and settings (`ProfileStore`), editor recovery intent (`EditorRecoveryStore`), and browser routing and ownership records (`BrowserBootstrap`). Reinstall the current release and verify it reads each resulting artifact with the same identities, consent, conflict and restore behavior. |
 | AC-27 | Helper protocol tests with fake ports: two concurrent commands each get one terminal result; a command conflicting with current state is refused before any recorded side effect; cancelling one workflow leaves a second running. Native tests on each Windows/Linux target: no named pipe or socket exists for the helper; a second launch focuses the first shell and starts no second helper; killing the shell ends the helper and all its descendants; killing only the helper during an established transport, with the shell running, ends every descendant before the replacement helper starts; killing the helper mid-StartSession fails that command with "core stopped", one replacement starts, and exactly one StartSession was recorded. A helper from a different build is refused at handshake. A replacement that exits at once, never completes its handshake, or stops answering heartbeats leads, within the stated limits, to "SSM Connect core unavailable" with Retry and no further automatic restart; a first helper that never handshakes leads there without any automatic restart; after ten healthy minutes one automatic restart is available again; a pending command whose cancel is not confirmed within 10 seconds leads to helper replacement. |
 | AC-28 | Signing tests pass the published Signature Version 4 test suite on macOS, Linux and Windows. For each of the 11 SDK operations, fixtures recorded from the current SDK-based app through a local recording endpoint (requests, a success response, a throttling response and each service error the app translates) show the client sending equivalent requests to the same endpoint, retrying the same responses the same number of times, and producing the same typed error and message. Under a controlled clock, with no retry settings configured, the delays between attempts match the pinned SDK's retry strategy options; closed connections, HTTP timeouts and transient transport failures are retried as the SDK's retry classifier retries them; and cancelling during a backoff wait ends the call without another attempt; the existing error-translation tests pass on the client. Separately, without an endpoint override, the SDK's endpoint resolver and the client's give the same production endpoint for every service in standard, China and GovCloud regions. With `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, `AWS_NEW_RETRIES_2026` or a shared-config retry setting present, the client's attempts and delays are unchanged; with `AWS_ENDPOINT_URL`, a service-specific endpoint variable or a shared-config endpoint present, every request still goes to the resolver's regional endpoint. The STS identity request makes exactly one attempt: a throttling, 5xx or access-denied response fails at once with the same typed error as today. Outside China, the STS identity request recorded from today's direct path matches the client's request byte for byte after signing with the same time; in China regions it goes to the resolver's `amazonaws.com.cn` host. Each of the 12 requests succeeds once against AWS natively on every matrix target. Inspecting every built artifact and the resolved package graph finds no aws-sdk-swift, aws-crt-swift or Smithy module. Fixtures recorded from the SDK show the clock-skew behavior: a signed request answered with `AuthFailure` or `RequestTimeTooSkewed` and a `Date` header 9 hours ahead is retried once, signed at local time plus that offset, and succeeds; a 4-minute difference is not corrected. Controlled-clock client tests check the offset is computed from the unadjusted local time and applied to later requests to that host only, the 300-second and 60-second thresholds, that a skew error with a near, missing or unparseable `Date` header clears a stored offset and retries once (a client whose local clock was repaired after an offset was learned recovers), a retry only when the stored value changed, that the retry counts as an attempt and waits its backoff, that a non-skew error with a far-off `Date` header is not treated as skew, and that two requests failing with the same skew at the same time yield one skew retry, as the SDK's store does. Retry-quota tests on one reused client check that 100 failed retries exhaust the 500 capacity so the next retryable failure is returned without a retry, that a timeout retry costs 10, that a success returns its retry's cost or 1, and that a clock-skew retry is refused when the quota is exhausted, matching recorded SDK behavior on a reused client. |
-| AC-29 | `contracts/macos-parity.json` checked three ways: a Swift test that every listed helper command is in the command table, and Windows xUnit and Linux Qt drive-throughs that operate every listed control and assert its command frame and, where macOS asks, the confirmation shown first. Helper command tests with fake services cover each new command's macOS rules, including delete refused for the last profile, the active profile moving to the first remaining one, and the attached file left untouched. A native pass on w11-sandbox, Fedora 43 and Ubuntu 24.04 exercises each new control once against the owner's profile. |
-| AC-30 | Helper and macOS launcher tests with an injected delay: the default window is 120 seconds, the file exists until it ends and is gone after, Quit removes a waiting file, and the next connect's sweep removes a leftover one. A message test per platform for the missing Viewer. Natively on ubuntu-sandbox, after logging the session out and back in so the Viewer starts cold, Connect opens the desktop with no copied file. |
+| AC-29 | The view-reading check fails for a removed inventory entry and for an unlisted control added to a copy of a view, then passes on the real views. `contracts/macos-parity.json` is then checked three ways: a Swift test that every listed helper command is in the command table, and Windows xUnit and Linux Qt drive-throughs that operate every listed control and assert its command frame and, where macOS asks, the confirmation shown first. Helper command tests with fake services cover each new command's macOS rules, including delete refused for the last profile, the active profile moving to the first remaining one, and the attached file left untouched. A native pass on w11-sandbox, Fedora 43 and Ubuntu 24.04 exercises each new control once against the owner's profile. |
+| AC-30 | Helper tests with an injected delay: the default window is 120 seconds, connect reports connected while the file still exists, the file is gone after the window, the helper's quit work removes a waiting file, and the next connect's sweep removes a leftover one. A message test for the missing Viewer on Windows and on Linux, and the existing macOS launcher and message tests unchanged. Natively on ubuntu-sandbox, after logging the session out and back in so the Viewer starts cold, Connect opens the desktop with no copied file. |
 
 ## Tasks
 
@@ -958,7 +991,8 @@ The AWS client lives in its own Foundation-only package, `SSMConnectKit/AWSClien
       - **AWS requests on Windows, added:** RegisterClient, StartDeviceAuthorization and CreateToken's device grant (the Sign In with SSO above).
       - **Open finding, cancelled upgrade:** after an upgrade is cancelled or fails and rolls back, the previous product stays installed but loses its upgrade code registration, so the next upgrade installs beside it and a later uninstall leaves its files (reproduced on w11-sandbox with t28.18 and t28.7, then a copy of t28.18 under a new product code). Removing the old product late (afterInstallExecute) kept the registration but made a full-UI upgrade fail writing the first file (error 1310), so the early schedule stays until the cause is known.
       - **Disconnect during Connect (AC-18):** the Linux runs (T29) found that Disconnect while connecting was refused as busy in both shells. With 8efc7dd and 3ded8ec on t28.22, Disconnect pressed when the tray showed tunneling brought it to disconnected within two seconds with no plugin process or listener left, and the next Connect reached connected with the Viewer. The plugin count read 0 at tunneling as well, so this run does not show the plugin already running when the cancel came; ubuntu-sandbox showed that part.
-      - **Remaining:** StartInstances and StopInstances (the workstation stop was refused by this session's permission classifier although the owner approved it), GetSecretValue (no single-user workstation resolves), the open finding above, and sleep for AC-18.
+      - **Stop and start (AC-28):** with the owner's approval of 2026-11-22, on t28.22 through the tray: Connect, then Stop Workstation sent StopInstances and the tray showed disconnected; EC2 reported the instance stopped after about 7 minutes; Connect then sent StartInstances, waited for running and reached connected 30 seconds later; Disconnect left no plugin. The tray stopped the workstation without the confirmation macOS asks for, which AC-29 now covers.
+      - **Remaining:** GetSecretValue (no single-user workstation resolves), the open finding above, and sleep for AC-18.
 - [ ] T29 `docs/specs/cross-platform-client.spec.md` - Fedora 43 and Ubuntu 24.04 native acceptance of the same rows, and each of the 12 AWS requests once against AWS on Fedora 43 and Ubuntu 24.04; done: an evidence line under each criterion exercised (AC-28, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21, AC-23, AC-25, AC-27)
       Progress: 2026-11-22, Fedora 43 KDE Plasma Desktop Edition (x86_64, the owner's management workstation) in a headless Plasma session (KWin's virtual backend with kded for the StatusNotifierWatcher), the tray driven over D-Bus (dbusmenu) and the settings window through AT-SPI; the SSO session copied from w11-sandbox.
       - **Install and upgrade (AC-21):** `dnf install` of the prior candidate, then of 0.0.0-t29.1, t29.2 and t29.3 over it, each reporting its build from the installed helper.
@@ -992,9 +1026,11 @@ The AWS client lives in its own Foundation-only package, `SSMConnectKit/AWSClien
       - **Open finding for the owner:** the Windows and Linux shells lack three actions macOS has: deleting a profile, Restore Editor Setup (which removes the owned Include) and Stop Remote Access; the helper has no command for any of them. On Fedora the Include was removed by hand after the run.
       - **Environment notes:** the headless GNOME Shell crashed once (signal 11 in its init.js) and was restarted; the Viewer and VS Code limits above belong to this headless session.
       - **AWS requests on Fedora and Ubuntu (AC-28):** the connect, web forwards and editor flows that sent CreateToken's refresh grant, GetRoleCredentials, DescribeInstances, DescribeInstanceInformation, StartSession (port forward and SSH) and SendSSHPublicKey on Windows ran on both, and Sign In with SSO sent RegisterClient, StartDeviceAuthorization and CreateToken's device grant.
-      - **Remaining on Linux:** StartInstances and StopInstances, GetSecretValue (as on Windows), and sleep for AC-18.
+      - **Stop and start (AC-28):** with the owner's approval of 2026-11-22, through the helper's commands on t29.8 (`~/.local/share/ssm-acceptance/workstation-power.sh`): on Fedora, Connect and stopWorkstation sent StopInstances, the instance was stopped after about 9 minutes, and the next Connect sent StartInstances and connected about 30 seconds later; on Ubuntu, the same stop, and the next Connect started the stopped instance (running 51 seconds later) but then failed because the plugin did not open the local port within its 15 seconds. That wait is the same on macOS (`SSMConnectMacOS/SSHTunnel.swift:64`, `BundledPluginTunnel`), and the workflow retries only a desktop that is not ready yet, not a plugin that missed its port, on every platform; the same miss happened once on a running instance on Fedora. Observation for the owner, not a Windows or Linux difference.
+      - **Remaining on Linux:** GetSecretValue (as on Windows), and sleep for AC-18.
 - [ ] T30 `docs/specs/cross-platform-client.spec.md` - measure the refactored macOS app and the Windows and Linux clients with T1 on the T2 hosts; done: every metric compared with its limit in an AC-22 evidence line (AC-22)
 - [ ] T31 `docs/specs/cross-platform-client.spec.md` - inspect each built dependency graph and artifact for duplicate production workflows and for any aws-sdk-swift, aws-crt-swift or Smithy module, and rebuild each platform's release path on its own; done: AC-11 and AC-24 evidence lines, and an AC-28 evidence line combining the T37-T40 parity results, the T27-T29 native operation results and these inspections (AC-11, AC-24, AC-28)
+      Progress: 2026-11-22, the Windows and Linux part. Resolved package graphs: SSMConnectKit, its AWSClient package and the helper spike pin only swift-asn1, swift-crypto and Yams; aws-sdk-swift, aws-crt-swift and smithy-swift appear only in `SSMConnectKit/Tools/FixtureRecorder`, the development tool that records SDK fixtures and is not built into any artifact. Built artifacts: in the t29.8 `.deb` and `.rpm` (helper, editor proxy, Qt shell) and the files installed from the t28.22 MSI, no name of an SDK, CRT or Smithy module occurs (strings and Select-String for AWSSDK, AwsCommonRuntimeKit, aws_c_common, ClientRuntime, SmithyHTTPAPI and AWSClientRuntime), while the helpers carry SSM Connect's own client (about 2,100 to 2,300 SSMConnectAWSClient symbols); the Qt and WPF shells carry none. Duplicate workflows: the shell sources (2,327 lines of C# and C++) contain no AWS call, endpoint or workflow logic. Remaining: the macOS artifact, rebuilding each release path on its own, and `project.yml`'s comment that still says aws-sdk-swift is declared in the package.
 
 ## Open Questions
 
