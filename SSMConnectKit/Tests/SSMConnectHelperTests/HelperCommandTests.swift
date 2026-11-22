@@ -302,7 +302,7 @@ struct HelperCommandTests {
         #expect(f.outbox.rejection("s")?.code == "notConnected" && f.ec2.stopCount == 0)
     }
 
-    @Test("Cancelling a connect tears the connection down with one cancelled result")
+    @Test("Cancelling a connect tears the connection down with one cancelled result, and tells the shell")
     func cancelConnect() async throws {
         let f = try await Self.fixture(auth: MockAuthProvider(delay: .seconds(5)))
         try await Self.save(f, Self.configured())
@@ -311,8 +311,9 @@ struct HelperCommandTests {
         await f.session.receive(.cancel(id: "c"))
         await f.session.awaitIdle()
         #expect(f.outbox.result("c") == .cancelled)
-        await f.runtime.connection.awaitInFlightTask()
         #expect(f.runtime.connection.state == .disconnected)
+        // The tray shows the last state event, so the torn-down connection's state is the last one.
+        #expect(f.outbox.events("desktop").last == "disconnected")
     }
 
     @Test("Sign-in runs the shared authorization workflow")

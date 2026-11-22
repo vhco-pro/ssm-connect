@@ -285,7 +285,10 @@ package struct HelperServices {
 
     private func connect(_ events: EventSink) async throws -> [String: String] {
         connection.connect()
-        _ = try await follow("desktop", events, cancel: { self.connection.disconnect() }) {
+        _ = try await follow("desktop", events, cancel: {
+            self.connection.disconnect()
+            await self.connection.awaitInFlightTask()
+        }) {
             switch self.connection.state {
             case .connected: return .done(["state": "connected"])
             case .error: return .failed(HelperError(code: "connectFailed", message: self.connection.errorMessage ?? "The connection failed."))
@@ -333,7 +336,10 @@ package struct HelperServices {
 
     private func startWebForwards(_ events: EventSink) async throws -> [String: String] {
         web.connect()
-        return try await follow("web", events, cancel: { self.web.stop() }) {
+        return try await follow("web", events, cancel: {
+            self.web.stop()
+            await self.web.awaitStopped()
+        }) {
             switch self.web.state {
             case .on: return .done(["state": "on"])
             case .error: return .failed(HelperError(code: "webForwardsFailed", message: self.web.errorMessage ?? "Web forwards failed."))
@@ -359,11 +365,12 @@ package struct HelperServices {
 
     private enum Progress { case running(String), done([String: String]), failed(HelperError) }
 
-    /// Emits a state event at each change until the workflow settles; cancelling the command
-    /// tears the workflow down. The authorization status is streamed alongside as its own
+    /// Emits a state event at each change until the workflow settles. Cancelling the command runs
+    /// `cancel`, which returns once the workflow is torn down, and sends that state, since the tray
+    /// shows the last state event. The authorization status is streamed alongside as its own
     /// workflow: a connect waiting for an explicit sign-in shows `signInRequired`, so the shell can
     /// tell the user to sign in, and the action resumes once they have.
-    private func follow(_ workflow: String, _ events: EventSink, cancel: @escaping () -> Void,
+    private func follow(_ workflow: String, _ events: EventSink, cancel: @escaping () async -> Void,
                         _ check: () -> Progress) async throws -> [String: String] {
         var last = ""
         var lastAuthorization = ""
@@ -392,7 +399,14 @@ package struct HelperServices {
             }
             do { try await Task.sleep(for: pollInterval) }
             catch {
-                cancel()
+                await cancel()
+                let final: String
+                switch check() {
+                case let .running(value): final = value
+                case let .done(value): final = value["state"] ?? "done"
+                case .failed: final = "error"
+                }
+                if final != last { events.emit(workflow: workflow, name: "state", fields: ["state": final]) }
                 throw CancellationError()
             }
         }
