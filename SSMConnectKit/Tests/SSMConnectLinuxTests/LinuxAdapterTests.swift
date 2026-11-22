@@ -185,6 +185,8 @@ struct LinuxAdapterTests {
                                          LinuxBrowser(choice: .zen, executable: zen.appendingPathComponent("zen"), version: "1.17.3b")])
         #expect(unpinned.installedSupported().isEmpty)
         #expect(unpinned.supported(.zen, mode: .separate) == nil)
+        // Only what the Linux native acceptance run (T29) passed on.
+        #expect(LinuxBrowserDiscovery.pinnedVersions == [.chrome: ["158.0.8127.36"]])
 
         let pinned = LinuxBrowserDiscovery(candidates: candidates, pinned: [.chrome: ["131.0.6778.85"], .zen: ["1.17.3b"]],
                                            chromeVersion: { _ in "131.0.6778.85" })

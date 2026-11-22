@@ -33,9 +33,9 @@ package struct LinuxBrowserDiscovery: Sendable {
         }
     }
 
-    /// Versions recorded by the Linux native acceptance run (T29). Empty until then, so no browser
-    /// is offered for managed browsing before it has passed on Linux.
-    package static let pinnedVersions: [ManagedBrowserChoice: Set<String>] = [:]
+    /// Versions recorded by the Linux native acceptance run (T29): Chrome from Google's DEB package
+    /// on Ubuntu 24.04. Zen is not pinned, because no Linux run has tested its tarball install.
+    package static let pinnedVersions: [ManagedBrowserChoice: Set<String>] = [.chrome: ["158.0.8127.36"]]
 
     package var candidates: Candidates
     package var pinned: [ManagedBrowserChoice: Set<String>]
