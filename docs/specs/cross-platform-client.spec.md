@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "AWS client parity, clock skew, retry quota, the native helper runs and the STS resolver move done (T32-T46, T4, T5); T6 to T26 and T36 done; T47 to T49 done; next native acceptance (T27 to T31), with the macOS baselines (T1, T2) waiting for the owner at the Mac, with the macOS baselines (T1, T2) waiting for the owner at the Mac."
+status: draft
+status_description: "Reopened for the owner's 2026-11-22 decisions from native acceptance: the Windows and Linux shells gain profile deletion, Restore Editor Setup and Stop Remote Access, and the DCV connection file is kept longer before deletion. T1 to T49 progress stays recorded under Tasks."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
