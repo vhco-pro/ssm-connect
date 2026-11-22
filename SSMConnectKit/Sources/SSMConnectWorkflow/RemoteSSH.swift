@@ -97,9 +97,13 @@ package enum RemoteSSHConfiguration {
         return ["--new-window", "--folder-uri", try folderURI(alias: alias, folder: folder)]
     }
 
-    package static func contents(lease: RemoteSSHLease, leasePath: String, helperPath: String, knownHostsPath: String) throws -> String {
+    /// The entry's ProxyCommand is quoted for the platform's OpenSSH (`style`): a POSIX shell reads
+    /// single-quoted words, Windows OpenSSH starts the command without a shell and reads double-quoted ones.
+    package static func contents(lease: RemoteSSHLease, leasePath: String, helperPath: String, knownHostsPath: String,
+                                 style: SSHArguments.Style = .current) throws -> String {
         guard ProfileEditorValidation.safeHost(lease.user), ProfileEditorValidation.safeHost(lease.instanceID),
-              [leasePath, helperPath, lease.keyPath, knownHostsPath].allSatisfy({ !$0.contains(where: \ .isNewline) }) else {
+              [leasePath, helperPath, lease.keyPath, knownHostsPath].allSatisfy({ !$0.contains(where: \ .isNewline) }),
+              style == .posix || ![leasePath, helperPath].contains(where: { $0.contains("\"") }) else {
             throw RemoteSSHError.invalidLease
         }
         let host = alias(lease.profile.id)
@@ -108,14 +112,15 @@ package enum RemoteSSHConfiguration {
                 "  ForwardAgent no", "  ForwardX11 no", "  ConnectTimeout 90", "  StrictHostKeyChecking accept-new",
                 "  UserKnownHostsFile \(optionQuote(knownHostsPath))", "  HostKeyAlias \(lease.instanceID)",
                 "  ServerAliveInterval 30", "  ServerAliveCountMax 3",
-                "  ProxyCommand \(shellQuote(helperPath)) --configuration \(shellQuote(leasePath))", ""].joined(separator: "\n")
+                "  ProxyCommand \(commandQuote(helperPath, style)) --configuration \(commandQuote(leasePath, style))", ""].joined(separator: "\n")
     }
 
     private static func optionQuote(_ value: String) -> String {
         "\"" + value.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "%", with: "%%") + "\""
     }
-    private static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''").replacingOccurrences(of: "%", with: "%%") + "'"
+    /// One word of the ProxyCommand, with % doubled because OpenSSH expands its % tokens there.
+    private static func commandQuote(_ value: String, _ style: SSHArguments.Style) -> String {
+        SSHArguments.quote(value.replacingOccurrences(of: "%", with: "%%"), style)
     }
 }

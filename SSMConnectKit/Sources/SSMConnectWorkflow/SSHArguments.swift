@@ -10,6 +10,15 @@ package enum SSHArguments {
         case posix
         /// Windows OpenSSH: double-quoted words, `NUL`.
         case windows
+
+        /// The style of the platform this runs on.
+        package static var current: Style {
+            #if os(Windows)
+            .windows
+            #else
+            .posix
+            #endif
+        }
     }
 
     package static let sshDocument = "AWS-StartSSHSession"
