@@ -37,6 +37,40 @@ struct InstallationCheckLaunchTests {
         #expect(!FileManager.default.fileExists(atPath: ran.path))
     }
 
+    #if !os(Windows)
+    @Test("A cancelled port-forward tunnel ends the plugin it started")
+    func cancelledTunnelEndsPlugin() async throws {
+        // Disconnect or Quit while connecting cancels the connect before the plugin's port answers.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ssm-cancel-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pidFile = directory.appendingPathComponent("pid")
+        let plugin = directory.appendingPathComponent("plugin")
+        try Data("#!/bin/sh\necho $$ > '\(pidFile.path)'\nexec sleep 30\n".utf8).write(to: plugin)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: plugin.path)
+        let tunnel = ProcessTunnelProvider(pluginPath: { plugin.path }, readinessTimeout: .seconds(20))
+        let connect = Task {
+            try await tunnel.startTunnel(session: Self.session, region: "eu-west-1", instanceId: "i-0",
+                                         localPort: 48_125, remotePort: 8443)
+        }
+        var pid: Int32?
+        for _ in 0..<50 where pid == nil {
+            try await Task.sleep(for: .milliseconds(100))
+            pid = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+        let pluginPID = try #require(pid)
+        connect.cancel()
+        _ = await connect.result
+        var running = true
+        for _ in 0..<30 where running {
+            running = kill(pluginPID, 0) == 0
+            if running { try await Task.sleep(for: .milliseconds(100)) }
+        }
+        if running { kill(pluginPID, SIGKILL) }
+        #expect(!running)
+    }
+    #endif
+
     @Test("Web forwards refuse a removed plugin before starting SSH")
     func webForwardsRefuseRemovedPlugin() async throws {
         let (path, ran) = try Self.plugin()

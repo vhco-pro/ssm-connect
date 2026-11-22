@@ -38,16 +38,22 @@ package struct ProcessTunnelProvider: TunnelProvider {
         let handle = ProcessTunnelHandle(process: process)
         try process.run()
         let deadline = ContinuousClock.now.advanced(by: readinessTimeout)
-        while ContinuousClock.now < deadline {
-            try Task.checkCancellation()
-            guard process.isRunning else {
-                throw TunnelError.launchFailed(reason: "The plugin exited with code \(process.terminationStatus ?? -1).")
+        // Until the handle is returned nothing else can end the plugin, so a cancelled connect
+        // (Disconnect or Quit while connecting, or a stage timeout) ends it here.
+        do {
+            while ContinuousClock.now < deadline {
+                try Task.checkCancellation()
+                guard process.isRunning else {
+                    throw TunnelError.launchFailed(reason: "The plugin exited with code \(process.terminationStatus ?? -1).")
+                }
+                if tcpConnects(port: UInt16(localPort)) { return handle }
+                try await Task.sleep(for: .milliseconds(250))
             }
-            if tcpConnects(port: UInt16(localPort)) { return handle }
-            try await Task.sleep(for: .milliseconds(250))
+            throw TunnelError.launchFailed(reason: "The plugin did not open local port \(localPort).")
+        } catch {
+            await handle.terminate()
+            throw error
         }
-        await handle.terminate()
-        throw TunnelError.launchFailed(reason: "The plugin did not open local port \(localPort).")
     }
 }
 
