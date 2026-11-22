@@ -3,7 +3,8 @@
 #
 # Runs the Linux test suites of SSMConnectKit on Ubuntu 24.04 (the official swift:6.4.2-noble
 # image) and Fedora 43 (fedora43.Containerfile beside this script, built on first use), as the
-# current user, with a build cache per distribution under ${SSM_LINUX_CACHE:-/tmp/ssm-linux-build}.
+# current user (the host's passwd and group are mounted read-only, since ssh-keygen needs an entry for
+# the uid), with a build cache per distribution under ${SSM_LINUX_CACHE:-/tmp/ssm-linux-build}.
 #
 #   scripts/linux/test-in-containers.sh                 # both distributions, the default suites
 #   scripts/linux/test-in-containers.sh noble 'SSMConnectLinuxTests'
@@ -39,6 +40,7 @@ run() {
   echo "== $distro ($image): swift test --filter '$filter'"
   set +e
   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp/home -e NO_COLOR=1 \
+    -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro \
     -v "$kit":/kit -v "$cache/$distro":/build -w /kit "$image" \
     bash -c 'mkdir -p /tmp/home && cat /etc/os-release | grep PRETTY_NAME && swift --version 2>&1 | head -1 &&
              swift test --build-system native --scratch-path /build --only-use-versions-from-resolved-file --filter "$0"' "$filter" > "$log" 2>&1

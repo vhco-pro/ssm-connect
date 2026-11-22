@@ -31,8 +31,6 @@ package struct WindowsTools: Sendable {
 
     package var sshPath: String? { existing([path("SystemRoot", "System32", "OpenSSH", "ssh.exe")]) }
 
-    package var sshKeygenPath: String? { existing([path("SystemRoot", "System32", "OpenSSH", "ssh-keygen.exe")]) }
-
     /// DCV Viewer under Program Files or Program Files (x86), where AWS's Windows MSI installs it.
     package var dcvViewerPath: String? {
         existing([path("ProgramFiles", "NICE", "DCV", "Client", "bin", "dcvviewer.exe"),
@@ -49,7 +47,7 @@ package struct WindowsTools: Sendable {
         capabilities.filter { capability in
             switch capability {
             case .sessionManagerPlugin: pluginPath == nil
-            case .openSSH: sshPath == nil || sshKeygenPath == nil
+            case .openSSH: sshPath == nil
             case .visualStudioCode: vsCodePath == nil
             case .browser: WindowsBrowserDiscovery(environment: environment).installedSupported().isEmpty
             }

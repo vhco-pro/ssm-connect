@@ -69,36 +69,6 @@ package struct ProcessSSHTunnel: SSHTunnelProviding {
     }
 }
 
-/// A temporary ed25519 key from the platform's ssh-keygen, in a fresh directory removed with it.
-package struct ProcessSSHKeyGenerator: SSHKeyGenerating {
-    let keygenPath: @Sendable () -> String?
-
-    package init(keygenPath: @escaping @Sendable () -> String?) { self.keygenPath = keygenPath }
-
-    package func generate() async throws -> SSHKeyMaterial {
-        guard let keygen = keygenPath() else { throw WebForwardsError.keyGenerationFailed }
-        return try await Task.detached {
-            let directory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("ssm-connect-ssh-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: keygen)
-            process.arguments = ["-q", "-t", "ed25519", "-N", "", "-f", directory.appendingPathComponent("key").path]
-            process.standardInput = FileHandle.nullDevice
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0,
-                  let publicKey = try? String(contentsOf: directory.appendingPathComponent("key.pub"), encoding: .utf8) else {
-                try? FileManager.default.removeItem(at: directory)
-                throw WebForwardsError.keyGenerationFailed
-            }
-            return SSHKeyMaterial(directory: directory, publicKey: publicKey.trimmingCharacters(in: .whitespacesAndNewlines))
-        }.value
-    }
-}
-
 /// Whether a local port accepts a TCP connection (the tunnel-up assertion).
 package struct TCPPortListenerProbe: TunnelListenerProbing {
     package init() {}

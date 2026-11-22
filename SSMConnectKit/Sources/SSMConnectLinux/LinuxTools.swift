@@ -39,7 +39,6 @@ package struct LinuxTools: Sendable {
     package var pluginPath: String? { bundled("session-manager-plugin") }
     package var proxyPath: String? { bundled("ssm-connect-proxy") }
     package var sshPath: String? { find("ssh") }
-    package var sshKeygenPath: String? { find("ssh-keygen") }
     package var vsCodePath: String? { find("code") }
     package var dcvViewerPath: String? { find("dcvviewer") }
 
@@ -48,7 +47,7 @@ package struct LinuxTools: Sendable {
         capabilities.filter { capability in
             switch capability {
             case .sessionManagerPlugin: pluginPath == nil
-            case .openSSH: sshPath == nil || sshKeygenPath == nil
+            case .openSSH: sshPath == nil
             case .visualStudioCode: vsCodePath == nil
             case .browser: LinuxBrowserDiscovery().installedSupported().isEmpty
             }

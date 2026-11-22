@@ -146,12 +146,10 @@ struct LinuxAdapterTests {
         try Self.executable(helper.appendingPathComponent("session-manager-plugin"))
         try Self.executable(helper.appendingPathComponent("ssm-connect-proxy"))
         try Self.executable(bin.appendingPathComponent("ssh"))
-        try Self.executable(bin.appendingPathComponent("ssh-keygen"))
         try Self.executable(bin.appendingPathComponent("code"))
         #expect(tools.pluginPath == helper.appendingPathComponent("session-manager-plugin").path)
         #expect(tools.proxyPath == helper.appendingPathComponent("ssm-connect-proxy").path)
         #expect(tools.sshPath == bin.appendingPathComponent("ssh").path)
-        #expect(tools.sshKeygenPath == bin.appendingPathComponent("ssh-keygen").path)
         #expect(tools.vsCodePath == bin.appendingPathComponent("code").path)
         #expect(tools.missing([.sessionManagerPlugin, .openSSH, .visualStudioCode]).isEmpty)
     }

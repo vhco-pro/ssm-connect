@@ -28,7 +28,7 @@ package protocol SSHTunnelProviding: Sendable {
 package final class SSHKeyMaterial: @unchecked Sendable {
     package let directory: URL
     package let publicKey: String
-    package var privateKeyPath: String { directory.appendingPathComponent("key").path }
+    package var privateKeyPath: String { directory.appendingPathComponent("key").externalPath }
 
     package init(directory: URL, publicKey: String) {
         self.directory = directory

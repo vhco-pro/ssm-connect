@@ -24,7 +24,6 @@ package enum HelperComposition {
         var pluginPath: @Sendable () -> String?
         var proxyPath: @Sendable () -> String
         var sshPath: @Sendable () -> String?
-        var sshKeygenPath: @Sendable () -> String?
         var vsCodePath: @Sendable () -> String?
         var dcvViewerPath: @Sendable () -> String?
         var sshStyle: SSHArguments.Style
@@ -45,7 +44,7 @@ package enum HelperComposition {
             home: URL(fileURLWithPath: environment["USERPROFILE"] ?? NSHomeDirectory()),
             pluginPath: { tools.pluginPath },
             proxyPath: { tools.helperDirectory.appendingPathComponent("ssm-connect-proxy.exe").nativePath },
-            sshPath: { tools.sshPath }, sshKeygenPath: { tools.sshKeygenPath }, vsCodePath: { tools.vsCodePath },
+            sshPath: { tools.sshPath }, vsCodePath: { tools.vsCodePath },
             dcvViewerPath: { tools.dcvViewerPath },
             sshStyle: .windows, ownerOnlyFiles: .windows,
             writePrivate: { try WindowsPrivateFiles.write($0, to: $1) },
@@ -65,7 +64,7 @@ package enum HelperComposition {
             local: paths.state, home: paths.home,
             pluginPath: { tools.pluginPath },
             proxyPath: { tools.helperDirectory.appendingPathComponent("ssm-connect-proxy").path },
-            sshPath: { tools.sshPath }, sshKeygenPath: { tools.sshKeygenPath }, vsCodePath: { tools.vsCodePath },
+            sshPath: { tools.sshPath }, vsCodePath: { tools.vsCodePath },
             dcvViewerPath: { tools.dcvViewerPath },
             sshStyle: .posix, ownerOnlyFiles: .posix,
             writePrivate: { try LinuxPrivateFiles.write($0, to: $1) },
@@ -102,7 +101,7 @@ package enum HelperComposition {
             },
             ownerOnlyFiles: adapters.ownerOnlyFiles)
         let proxyPath = adapters.proxyPath
-        let sshPath = adapters.sshPath, sshKeygenPath = adapters.sshKeygenPath
+        let sshPath = adapters.sshPath
         let dcvViewerPath = adapters.dcvViewerPath
         let browserSupported = adapters.browserSupported
         return HelperServices(
@@ -112,7 +111,7 @@ package enum HelperComposition {
             tunnel: ProcessTunnelProvider(pluginPath: adapters.pluginPath, verify: { try check.plugin(at: $0) }),
             sshTunnel: ProcessSSHTunnel(sshPath: sshPath, pluginPath: adapters.pluginPath, style: adapters.sshStyle,
                                         verify: { try check.plugin(at: $0) }),
-            keyGenerator: ProcessSSHKeyGenerator(keygenPath: sshKeygenPath),
+            keyGenerator: NativeSSHKeyGenerator(),
             dcv: ShellDCVLauncher(requests: requests, directory: local.appendingPathComponent("DCV", isDirectory: true),
                                   viewerInstalled: { dcvViewerPath() != nil }, writePrivate: writePrivate),
             readiness: TLSReadinessProbe(), tunnelListener: TCPPortListenerProbe(),
@@ -132,7 +131,7 @@ package enum HelperComposition {
                               try check.executable(at: proxyPath())
                               if let plugin = adapters.pluginPath() { try check.plugin(at: plugin) }
                           },
-                          owner: ProcessLeaseOwner(), sshAvailable: { sshPath() != nil && sshKeygenPath() != nil }),
+                          owner: ProcessLeaseOwner(), sshAvailable: { sshPath() != nil }),
             browserSupported: { profile in
                 guard let choice = profile.webForwards?.browser, let mode = profile.webForwards?.browserMode else { return false }
                 return browserSupported(choice, mode)

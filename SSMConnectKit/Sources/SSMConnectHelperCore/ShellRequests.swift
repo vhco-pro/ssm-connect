@@ -58,7 +58,7 @@ package struct ShellDCVLauncher: DCVLaunching {
         let url = directory.appendingPathComponent(DCVConnectionFile.tempFilePrefix + UUID().uuidString)
             .appendingPathExtension(DCVConnectionFile.fileExtension)
         try writePrivate(Data(connectionFile.iniContent().utf8), url)
-        requests.launch("dcvViewer", fields: ["file": url.path])
+        requests.launch("dcvViewer", fields: ["file": url.externalPath])
     }
 
     package func sweepOrphanedFiles() {

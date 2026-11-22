@@ -115,7 +115,6 @@ struct WindowsAdapterTests {
         #expect(missing == [.sessionManagerPlugin, .openSSH, .visualStudioCode], "\(missing) \(String(describing: empty.pluginPath)) \(String(describing: empty.sshPath)) \(String(describing: empty.vsCodePath))")
         for file in [helper.appendingPathComponent("session-manager-plugin.exe"),
                      system.appendingPathComponent("System32/OpenSSH/ssh.exe"),
-                     system.appendingPathComponent("System32/OpenSSH/ssh-keygen.exe"),
                      local.appendingPathComponent("Programs/Microsoft VS Code/bin/code.cmd")] {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.copyItem(atPath: Self.system32 + "\\where.exe", toPath: file.path)

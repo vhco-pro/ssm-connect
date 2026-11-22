@@ -312,8 +312,8 @@ import Observation
             let lease = RemoteSSHLease(profile: profile, instanceID: instance.id, user: user, keyPath: key.privateKeyPath,
                 pluginPath: pluginPath() ?? "", ownerPID: owner.pid,
                 ownerLaunchDate: owner.launchDate, ownerBundleID: owner.bundleID, generation: UUID(), expiresAt: now().addingTimeInterval(24 * 60 * 60), ownerBuild: InstalledBuild.current)
-            let contents = try RemoteSSHConfiguration.contents(lease: lease, leasePath: leaseURL.path,
-                helperPath: helperPath(), knownHostsPath: root.appendingPathComponent("known-hosts").path)
+            let contents = try RemoteSSHConfiguration.contents(lease: lease, leasePath: leaseURL.externalPath,
+                helperPath: helperPath(), knownHostsPath: root.appendingPathComponent("known-hosts").externalPath)
             try withPublicationLock {
                 guard try unownedLeaseData(at: leaseURL, profileID: profile.id) == previousData else {
                     throw RemoteSSHError.configurationConflict
