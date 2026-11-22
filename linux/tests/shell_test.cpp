@@ -41,8 +41,9 @@ public:
         calls << QStringLiteral("browser %1 %2 %3").arg(browser, mode).arg(socksPort);
     }
     void setClipboard(const QString &text) override { calls << "clipboard " + text; }
+    QString lastBody;
     void notify(const QString &title, const QString &body) override {
-        Q_UNUSED(body);
+        lastBody = body;
         calls << "notify " + title;
     }
     void showError(const QString &action, const QString &message) override { calls << QStringLiteral("error %1: %2").arg(action, message); }
@@ -181,6 +182,25 @@ private slots:
         // The replacement helper holds no connection, so nothing the old one reported is shown.
         QVERIFY(controller.states().isEmpty());
         QVERIFY(changed.count() > before);
+    }
+
+    void signInRequiredNotifiesOnceAndNamesTheMenuItem() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        FakeHelper &helper = *spawner.started[0];
+        emitEvent(helper, "authorization", "state", {{"state", "refreshing"}});
+        emitEvent(helper, "authorization", "state", {{"state", "signInRequired"}});
+        emitEvent(helper, "authorization", "state", {{"state", "signInRequired"}});
+        QTRY_COMPARE(controller.states().value("authorization").toString(), QStringLiteral("signInRequired"));
+        emitEvent(helper, "authorization", "state", {{"state", "ready"}});
+        QTRY_COMPARE(controller.states().value("authorization").toString(), QStringLiteral("ready"));
+        QCOMPARE(platform.calls.filter(QStringLiteral("notify")), QStringList({QStringLiteral("notify Sign in required")}));
+        QVERIFY(platform.lastBody.contains(QStringLiteral("Sign In with SSO")));
     }
 
     void startingAtSignInIsAnXdgAutostartEntry() {

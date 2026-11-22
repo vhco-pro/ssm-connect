@@ -62,7 +62,10 @@ int main(int argc, char **argv) {
     auto updateTray = [&] {
         const bool ready = host.status() == HelperHostStatus::Ready;
         const QString state = ready ? controller.states().value("desktop", "Disconnected").toString() : QStringLiteral("Error");
-        trayIcon.update(state, QStringLiteral("SSM Connect: ") + (ready ? state : host.statusMessage().isEmpty() ? QStringLiteral("Starting…") : host.statusMessage()));
+        const bool signInRequired = controller.states().value("authorization").toString() == "signInRequired";
+        const QString text = !ready ? (host.statusMessage().isEmpty() ? QStringLiteral("Starting…") : host.statusMessage())
+                                    : signInRequired ? QStringLiteral("Sign in required") : state;
+        trayIcon.update(state, QStringLiteral("SSM Connect: ") + text);
     };
     QObject::connect(&controller, &ShellController::stateChanged, &app, updateTray);
     QObject::connect(&host, &HelperHost::statusChanged, &app, updateTray);

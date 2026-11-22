@@ -47,8 +47,11 @@ public partial class App : Application
     void UpdateTray()
     {
         if (tray is null || host is null || controller is null) return;
-        var state = controller.States.GetValueOrDefault("desktop", "Disconnected");
-        var tooltip = host.Status is HelperHostStatus.Ready ? TrayIcons.Tooltip(state) : host.StatusMessage ?? "Starting…";
+        var states = controller.States;
+        var state = states.GetValueOrDefault("desktop", "Disconnected");
+        var signInRequired = states.GetValueOrDefault("authorization") == "signInRequired";
+        var tooltip = host.Status is not HelperHostStatus.Ready ? host.StatusMessage ?? "Starting…"
+            : signInRequired ? "Sign in required" : TrayIcons.Tooltip(state);
         tray.Update(TrayIcons.For(host.Status is HelperHostStatus.Ready ? state : "Error"), "SSM Connect: " + tooltip);
     }
 

@@ -316,11 +316,20 @@ package struct HelperServices {
     private enum Progress { case running(String), done([String: String]), failed(HelperError) }
 
     /// Emits a state event at each change until the workflow settles; cancelling the command
-    /// tears the workflow down.
+    /// tears the workflow down. The authorization status is streamed alongside as its own
+    /// workflow: a connect waiting for an explicit sign-in shows `signInRequired`, so the shell can
+    /// tell the user to sign in, and the action resumes once they have.
     private func follow(_ workflow: String, _ events: EventSink, cancel: @escaping () -> Void,
                         _ check: () -> Progress) async throws -> [String: String] {
         var last = ""
+        var lastAuthorization = ""
         while true {
+            let authorizationState = authorization.status.eventName
+            if authorizationState != lastAuthorization {
+                events.emit(workflow: "authorization", name: "state",
+                            fields: ["state": authorizationState, "detail": authorization.detailLine ?? ""])
+                lastAuthorization = authorizationState
+            }
             let progress = check()
             let state: String
             switch progress {
@@ -355,5 +364,19 @@ package enum HelperExit {
     @MainActor package static func end(_ session: HelperSession, quit: AppQuitHandler? = nil) async {
         await session.shutdown()
         (quit ?? .shared).runShutdown()
+    }
+}
+
+extension AuthorizationSession.Status {
+    /// The status as it appears in the helper's `authorization` state events.
+    var eventName: String {
+        switch self {
+        case .idle: "idle"
+        case .ready: "ready"
+        case .refreshing: "refreshing"
+        case .signInRequired: "signInRequired"
+        case .signingIn: "signingIn"
+        case .unavailable: "unavailable"
+        }
     }
 }

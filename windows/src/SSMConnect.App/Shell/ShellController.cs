@@ -51,6 +51,9 @@ public sealed class ShellController
 
     static readonly IReadOnlyDictionary<string, string> Empty = new Dictionary<string, string>();
 
+    const string SignInRequiredBody =
+        "Your SSO session has ended. Choose Sign In with SSO in the SSM Connect menu; what you started continues after you sign in.";
+
     /// <summary>The actions the tray menu offers, in order.</summary>
     public static IReadOnlyList<ShellAction> MenuActions { get; } =
     [
@@ -106,7 +109,16 @@ public sealed class ShellController
         }
         if (name == "state" && workflow is not null && Field("state") is { } state)
         {
-            lock (states) states[workflow] = state;
+            string? previous;
+            lock (states)
+            {
+                previous = states.GetValueOrDefault(workflow);
+                states[workflow] = state;
+            }
+            // An action waits for an explicit sign-in once the SSO session can no longer be renewed:
+            // say so once, and name the menu item, since the tray only shows the action's state.
+            if (workflow == "authorization" && state == "signInRequired" && previous != state)
+                platform.Notify("Sign in required", SignInRequiredBody);
             StateChanged?.Invoke();
         }
     }

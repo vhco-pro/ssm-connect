@@ -240,6 +240,41 @@ public sealed class HelperHostTests
         Assert.True(changes > before);
     }
 
+    [Fact]
+    public async Task SignInRequiredNotifiesOnceAndNamesTheMenuItem()
+    {
+        var spawner = new FakeSpawner(() => new FakeHelper());
+        var host = Host(spawner, new FakeTimeProvider());
+        await host.StartAsync();
+        var platform = new NotifyingPlatform();
+        var controller = new SSMConnect.App.Shell.ShellController(host, platform);
+        var helper = spawner.Started[0];
+        helper.Emit("authorization", "state", new() { ["state"] = "refreshing" });
+        helper.Emit("authorization", "state", new() { ["state"] = "signInRequired" });
+        helper.Emit("authorization", "state", new() { ["state"] = "signInRequired" });
+        await Eventually(() => controller.States.GetValueOrDefault("authorization") == "signInRequired");
+        helper.Emit("authorization", "state", new() { ["state"] = "ready" });
+        await Eventually(() => controller.States.GetValueOrDefault("authorization") == "ready");
+        lock (platform.Notifications)
+        {
+            var notification = Assert.Single(platform.Notifications);
+            Assert.Equal("Sign in required", notification.Title);
+            Assert.Contains("Sign In with SSO", notification.Body);
+        }
+    }
+
+    sealed class NotifyingPlatform : SSMConnect.App.Shell.IShellPlatform
+    {
+        public readonly List<(string Title, string Body)> Notifications = [];
+        public string? DcvViewerPath => null;
+        public void OpenUrl(string url) { }
+        public void Start(string path, IReadOnlyList<string> arguments) { }
+        public void StartBrowser(string browser, string mode, string profile, int socksPort) { }
+        public void SetClipboard(string text) { }
+        public void Notify(string title, string body) { lock (Notifications) Notifications.Add((title, body)); }
+        public void ShowError(string action, string message) { }
+    }
+
     sealed class SilentPlatform : SSMConnect.App.Shell.IShellPlatform
     {
         public string? DcvViewerPath => null;

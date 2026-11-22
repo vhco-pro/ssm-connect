@@ -7,6 +7,11 @@
 
 namespace ssmconnect {
 
+namespace {
+constexpr const char *SignInRequiredBody =
+    "Your SSO session has ended. Choose Sign In with SSO in the SSM Connect menu; what you started continues after you sign in.";
+}
+
 ShellController::ShellController(HelperHost &host, ShellPlatform &platform, QObject *parent)
     : QObject(parent), host_(host), platform_(platform) {
     connect(&host_, &HelperHost::eventReceived, this, &ShellController::handle);
@@ -102,7 +107,12 @@ void ShellController::handle(const QJsonObject &frame) {
         return;
     }
     if (name == "state" && !workflow.isEmpty() && fields.contains("state")) {
-        states_.insert(workflow, fields.value("state").toString());
+        const QString state = fields.value("state").toString();
+        // An action waits for an explicit sign-in once the SSO session can no longer be renewed:
+        // say so once, and name the menu item, since the tray only shows the action's state.
+        if (workflow == "authorization" && state == "signInRequired" && states_.value(workflow).toString() != state)
+            platform_.notify(QStringLiteral("Sign in required"), QString::fromUtf8(SignInRequiredBody));
+        states_.insert(workflow, state);
         emit stateChanged();
     }
 }

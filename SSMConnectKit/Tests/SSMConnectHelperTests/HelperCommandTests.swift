@@ -105,14 +105,15 @@ struct HelperCommandTests {
     }
 
     static func fixture(auth: MockAuthProvider = MockAuthProvider(), browserSupported: Bool = true,
-                        files: ProfileFileSnapshot? = nil, dcvCleanupDelay: Duration = .seconds(5)) async throws -> Fixture {
+                        files: ProfileFileSnapshot? = nil, dcvCleanupDelay: Duration = .seconds(5),
+                        isRejectedAuthorization: @escaping @Sendable (any Error) -> Bool = { _ in false }) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("helper-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let ec2 = MockEC2Service()
         ec2.resolveResult = .success(EC2Instance(id: "i-0123456789abcdef0", state: .running, privateIpAddress: "10.0.0.1"))
         let requests = ShellRequests()
         let platform = WorkflowPlatform(terminateChildProcess: { _ in }, describeError: { _ in nil },
-            isRejectedAuthorization: { _ in false }, isPermissionDenied: { _ in false }, isExpiredCredentials: { _ in false },
+            isRejectedAuthorization: isRejectedAuthorization, isPermissionDenied: { _ in false }, isExpiredCredentials: { _ in false },
             resolveUsername: { _, _ in "ec2-user" }, identityToken: { _, _ in "token" },
             ownerOnlyFiles: OwnerOnlyFiles(isOwnerOnly: { _, _ in true }, withExclusiveLock: { _, body in try body() }))
         #if os(Windows)
@@ -231,6 +232,27 @@ struct HelperCommandTests {
         await HelperExit.end(f.session, quit: quit)
         #expect(ran == 1)
         #expect(await f.session.isEnded)
+    }
+
+    @Test("A connect after a rejected refresh reports that sign-in is required, then resumes after one explicit sign-in")
+    func signInRequiredThenResume() async throws {
+        let auth = MockAuthProvider(refreshOutcome: .failure(AuthError.signInRequired))
+        let f = try await Self.fixture(auth: auth, isRejectedAuthorization: { ($0 as? AuthError) == .signInRequired })
+        try await Self.save(f, Self.configured())
+        await f.session.receive(.command(id: "c", name: "connect", arguments: [:]))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !f.outbox.events("authorization").contains("signInRequired"), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(f.outbox.events("authorization").contains("signInRequired"))
+        #expect(f.outbox.result("c") == nil, "the connect waits for the sign-in")
+        await f.session.receive(.command(id: "s", name: "signIn", arguments: [:]))
+        await f.session.awaitIdle()
+        guard case let .completed(value) = f.outbox.result("c") else { Issue.record("connect: \(String(describing: f.outbox.result("c")))"); return }
+        #expect(value["state"] == ConnectionState.connected.rawValue)
+        #expect(f.outbox.events("authorization").last == "ready")
+        #expect(auth.authenticateCallCount == 1)
+        await Self.run(f, "d", "disconnect")
     }
 
     @Test("Stopping the workstation is refused while not connected")
