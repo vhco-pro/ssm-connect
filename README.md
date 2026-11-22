@@ -67,6 +67,8 @@ so nothing changes unless you opt in.
 
 ## Install
 
+### macOS
+
 ```bash
 brew install --cask vhco-pro/tap/ssm-connect
 ```
@@ -79,6 +81,28 @@ xattr -dr com.apple.quarantine "/Applications/SSMConnect.app"
 ```
 
 …or right-click **SSMConnect.app** in Finder → **Open**. Updates ship through `brew upgrade`.
+
+### Windows 11
+
+Download `SSMConnect-<version>-x64.msi` from the
+[latest release](https://github.com/vhco-pro/ssm-connect/releases/latest) and run it. It installs
+for your user only and needs no administrator rights. It requires Windows 11 24H2 or later on x64.
+
+The MSI is not code-signed yet, so Microsoft Defender SmartScreen may stop it with "Windows
+protected your PC". Choose **More info**, then **Run anyway**. To upgrade, run the newer MSI the
+same way. If SSM Connect is running, setup offers to close it first, or to cancel and leave it
+running.
+
+### Linux
+
+Download the package for your distribution from the
+[latest release](https://github.com/vhco-pro/ssm-connect/releases/latest) and install it with your
+package manager:
+
+```bash
+sudo dnf install ./SSMConnect-<version>-fedora43-x86_64.rpm      # Fedora 43
+sudo apt install ./SSMConnect-<version>-ubuntu24.04-amd64.deb    # Ubuntu 24.04
+```
 
 ## First launch
 
