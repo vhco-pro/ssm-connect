@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 add_compile_options(-Wall -Wextra -Werror)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core DBus Gui Widgets Qml Quick Test)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core DBus Gui Widgets Qml Quick Test)
 
 add_library(ssmconnect_host STATIC
     src/helper_host.cpp

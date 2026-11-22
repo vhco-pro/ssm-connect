@@ -9,13 +9,15 @@
 #            a macOS ZIP as latest, in the queued release-latest group, so Homebrew's sync (which
 #            reads the latest release) always finds a ZIP and a late older build never displaces it
 #   windows  the per-user MSI, its checksum and the WinGet manifest hashed from that MSI
+#   linux    the Fedora 43 .rpm and the Ubuntu 24.04 .deb, each with its checksum
 #
 # Published assets never change: a rerun uploads only assets still missing, and a bad asset is
 # fixed by releasing a new version, so Homebrew and WinGet checksums stay valid. Rerunning a whole
 # run on an already-released commit reuses its tag and release.
 #
 # A manual run with test_tag (such as v0.0.0-test.1) builds the selected commit as a prerelease
-# under that tag, without GitVersion and without the latest mark, to exercise the release path.
+# under that tag, without GitVersion and without the latest mark, to exercise the release path;
+# fail_job then makes one platform job fail at its start, to show the others publish regardless.
 
 name: Release
 
@@ -34,6 +36,12 @@ on:
         description: A prerelease test tag such as v0.0.0-test.1; empty releases the version GitVersion computes.
         required: false
         type: string
+      fail_job:
+        description: With a test tag only, fail one platform job at its start to show the others still publish.
+        required: false
+        type: choice
+        options: [none, macos, windows, linux]
+        default: none
 
 permissions: {}
 
@@ -127,6 +135,13 @@ jobs:
     permissions:
       contents: write # upload the ZIP
     steps:
+      - name: Fail on request (test run)
+        if: inputs.fail_job == 'macos' && needs.release.outputs.prerelease == 'true'
+        shell: bash
+        run: |
+          echo "::error::Failing the macos job on request for this test run."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -217,6 +232,13 @@ jobs:
     permissions:
       contents: write # upload the MSI
     steps:
+      - name: Fail on request (test run)
+        if: inputs.fail_job == 'windows' && needs.release.outputs.prerelease == 'true'
+        shell: bash
+        run: |
+          echo "::error::Failing the windows job on request for this test run."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -312,3 +334,69 @@ jobs:
           }
           ./wingetcreate.exe submit --token $env:WINGET_TOKEN '${{ steps.package.outputs.manifest }}'
           if ($LASTEXITCODE -ne 0) { throw "wingetcreate submit failed with $LASTEXITCODE." }
+
+  linux:
+    name: Linux packages
+    needs: release
+    if: needs.release.outputs.skip == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write # upload the packages
+    steps:
+      - name: Fail on request (test run)
+        if: inputs.fail_job == 'linux' && needs.release.outputs.prerelease == 'true'
+        shell: bash
+        run: |
+          echo "::error::Failing the linux job on request for this test run."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Swift helper and the Qt shell are built and tested on each distribution in containers.
+      - name: Build the packages
+        id: package
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          packaging/linux/build-packages.sh "$VERSION" "$VERSION+${GITHUB_SHA:0:12}"
+          cat dist/release-outputs-linux.txt >> "$GITHUB_OUTPUT"
+
+      # A rerun job continues with the packages already published: they are not byte-reproducible,
+      # so the checksums and the package checks must describe the published files.
+      - name: Use the published packages on a rerun
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          RPM: ${{ steps.package.outputs.rpm }}
+          DEB: ${{ steps.package.outputs.deb }}
+        run: |
+          for file in "$RPM" "$DEB"; do
+            result="$(bash scripts/release/release-assets.sh reuse-published "$TAG" "$file")"
+            echo "$result"
+            if [ "$(tail -1 <<<"$result")" = reused=true ]; then
+              (cd "$(dirname "$file")" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
+            fi
+          done
+
+      # Inspected, then installed over an older package, started and removed on clean Fedora 43
+      # and Ubuntu 24.04 containers.
+      - name: Inspect and install the packages
+        env:
+          RPM: ${{ steps.package.outputs.rpm }}
+          DEB: ${{ steps.package.outputs.deb }}
+          BUILD: ${{ steps.package.outputs.build }}
+          PRIOR_RPM: ${{ steps.package.outputs.prior_rpm }}
+          PRIOR_DEB: ${{ steps.package.outputs.prior_deb }}
+        run: packaging/linux/test-packages.sh "$RPM" "$DEB" "$BUILD" "$PRIOR_RPM" "$PRIOR_DEB"
+
+      - name: Upload the packages and their checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          RPM: ${{ steps.package.outputs.rpm }}
+          DEB: ${{ steps.package.outputs.deb }}
+        run: bash scripts/release/release-assets.sh upload-missing "$TAG" "$RPM" "$RPM.sha256" "$DEB" "$DEB.sha256"

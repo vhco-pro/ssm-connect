@@ -357,11 +357,17 @@ separate jobs build and upload each platform's assets:
 - **Windows:** `packaging/windows/Build-Release.ps1` builds the per-user
   `SSMConnect-<version>-x64.msi`, its SHA-256 and the WinGet manifest for `VHCo.SSMConnect`.
   `packaging/windows/Test-Package.ps1` inspects and installs the MSI before upload.
+- **Linux:** `packaging/linux/build-packages.sh` builds `SSMConnect-<version>-fedora43-x86_64.rpm`
+  and `SSMConnect-<version>-ubuntu24.04-amd64.deb` with their SHA-256 files, building the helper
+  and the Qt shell on each distribution in containers. `packaging/linux/test-packages.sh`
+  inspects them and installs, upgrades and removes them on clean Fedora 43 and Ubuntu 24.04
+  containers before upload.
 
 A failed platform job leaves only its own asset missing. Rerunning it uploads assets that are still
 missing and never replaces a published one; fix a bad asset by releasing a new version. To try the
 release path, run the workflow manually with `test_tag` set to a prerelease tag such as
-`v0.0.0-test.1`.
+`v0.0.0-test.1`; `fail_job` then fails one platform job on purpose, to show the others still
+publish.
 
 The Homebrew cask (`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest
 release version + sha256 via a scheduled workflow in that tap (no manual cask edit needed). WinGet

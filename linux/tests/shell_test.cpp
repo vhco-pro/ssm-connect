@@ -114,7 +114,7 @@ private slots:
         for (const auto &[button, command] : buttons) {
             auto *item = findItem(window, button);
             QVERIFY2(item, qPrintable(button));
-            QVERIFY(QMetaObject::invokeMethod(item, "click"));
+            QVERIFY(QMetaObject::invokeMethod(item, "clicked"));
             QTRY_VERIFY2(spawner.started[0]->commands().contains(command), qPrintable(command));
             if (button == "save") {
                 QTRY_COMPARE(spawner.started[0]->commands().count("listProfiles"), 2);

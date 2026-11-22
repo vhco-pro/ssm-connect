@@ -38,7 +38,9 @@ void LinuxShellPlatform::startBrowser(const QString &browser, const QString &mod
         showError_(QStringLiteral("Open Browser"), QStringLiteral("This browser and mode are not available on Linux yet. Use Chrome in Separate Browser mode."));
         return;
     }
-    const QString state = QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
+    // $XDG_STATE_HOME, or ~/.local/state, as the helper's LinuxPaths uses.
+    const QString xdgState = qEnvironmentVariable("XDG_STATE_HOME");
+    const QString state = xdgState.startsWith('/') ? xdgState : QDir::home().filePath(QStringLiteral(".local/state"));
     const QString directory = QDir(state).filePath(QStringLiteral("ssm-connect/Browsers/") + profile);
     QDir().mkpath(directory);
     QFile::setPermissions(directory, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);

@@ -9,8 +9,6 @@
 #include <QTimer>
 #include <QUuid>
 
-#include <csignal>
-#include <sys/prctl.h>
 #include <unistd.h>
 
 namespace ssmconnect {
@@ -27,7 +25,7 @@ QString run(const QString &program, const QStringList &arguments, int timeoutMs 
     return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
 }
 
-/// A helper running under `systemd-run --pipe`: frames go to its standard input and come back,
+/// A helper running under `setpriv ... systemd-run --pipe`: frames go to its standard input and come back,
 /// one per line, from its standard output. It ends when systemd-run reports the service gone.
 class PipeConnection : public HelperConnection {
 public:
@@ -104,9 +102,9 @@ HelperConnection *SystemdHelperSpawner::start() {
     // Diagnostics go to the shell's own standard error, never into the protocol stream.
     process->setProcessChannelMode(QProcess::ForwardedErrorChannel);
     // systemd-run stays in the shell's scope while it waits for the service. It must end with the
-    // shell, or a killed shell's scope would never empty and a hung helper would outlive it.
-    process->setChildProcessModifier([] { prctl(PR_SET_PDEATHSIG, SIGKILL); });
-    QStringList arguments{"--user", "--pipe", "--quiet", "--collect", "--unit=" + unit,
+    // shell, or a killed shell's scope would never empty and a hung helper would outlive it, so it
+    // runs under setpriv's parent-death signal (util-linux, on every supported distribution).
+    QStringList arguments{"--pdeathsig", "KILL", "--", "systemd-run", "--user", "--pipe", "--quiet", "--collect", "--unit=" + unit,
                           "--description=SSM Connect helper",
                           "--property=BindsTo=" + shellScope_, "--property=After=" + shellScope_,
                           // A hung helper gets SIGTERM, then SIGKILL five seconds later.
@@ -115,7 +113,7 @@ HelperConnection *SystemdHelperSpawner::start() {
     auto *connection = new PipeConnection(process);
     connection->setParent(this);
     units_.insert(connection, unit);
-    process->start(QStringLiteral("systemd-run"), arguments);
+    process->start(QStringLiteral("setpriv"), arguments);
     return connection;
 }
 
