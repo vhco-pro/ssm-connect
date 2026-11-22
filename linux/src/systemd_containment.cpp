@@ -38,8 +38,10 @@ public:
         });
     }
 
+    // QProcess holds what is written while the process is still starting and delivers it once it
+    // runs; the host writes its hello straight after starting the helper.
     void send(const QByteArray &line) override {
-        if (process_->state() == QProcess::Running) process_->write(line + '\n');
+        if (process_->state() != QProcess::NotRunning) process_->write(line + '\n');
     }
 
     void end() {

@@ -9,6 +9,7 @@
 // shell even when the helper is stopped, single instance, and user applications in their own
 // transient scopes. It is skipped where no systemd user instance is reachable.
 
+#include <algorithm>
 #include "fakes.h"
 #include "helper_host.h"
 #include "single_instance.h"
@@ -264,6 +265,20 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(empty, 15000);
         QVERIFY(unitGone(unit));
         QVERIFY(!processAlive(helper));
+    }
+
+    // The host writes its hello as soon as it has started the helper, before the process is running.
+    void aHelloSentRightAfterStartReachesTheHelper() {
+        SystemdHelperSpawner spawner(FAKE_HELPER_PATH, ensureOwnScope(), {});
+        auto *connection = spawner.start();
+        QSignalSpy received(connection, &HelperConnection::received);
+        connection->send(R"({"type":"hello","build":"test-build","protocolVersion":1})");
+        QTRY_VERIFY_WITH_TIMEOUT(std::any_of(received.cbegin(), received.cend(), [](const QList<QVariant> &frame) {
+            return QJsonDocument::fromJson(frame.at(0).toByteArray()).object().value("type").toString() == "welcome";
+        }), 10000);
+        bool empty = false;
+        spawner.terminateAndWaitEmpty(connection, [&] { empty = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(empty, 15000);
     }
 
     void aShellOutsideAScopeCreatesItsOwnScope() {
