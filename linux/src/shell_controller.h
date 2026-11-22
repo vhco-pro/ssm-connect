@@ -5,6 +5,7 @@
 
 #include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -48,7 +49,8 @@ public:
     /// The actions the tray menu offers, in order.
     static const QList<ShellAction> &menuActions();
 
-    /// Sends an action's command and reports a failure to the user.
+    /// Sends an action's command and reports a failure to the user. Disconnect while a Connect
+    /// runs cancels that Connect instead, and returns it.
     HelperCommand *run(const ShellAction &action);
 
     QVariantList profiles() const { return profiles_; }
@@ -76,6 +78,7 @@ private:
     ShellPlatform &platform_;
     QVariantList profiles_;
     QVariantMap states_;
+    QPointer<HelperCommand> connecting_;
 };
 
 } // namespace ssmconnect

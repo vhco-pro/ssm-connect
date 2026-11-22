@@ -67,13 +67,33 @@ public sealed class ShellController
         new("Open Browser", "openBrowser", Empty),
     ];
 
-    /// <summary>Sends an action's command and reports a failure to the user.</summary>
+    CancellationTokenSource? connecting;
+
+    /// <summary>
+    /// Sends an action's command and reports a failure to the user. The helper refuses a second
+    /// desktop command while Connect runs, so Disconnect then cancels the Connect, as Disconnect while
+    /// connecting does on macOS: the helper's cancel ends what the Connect started.
+    /// </summary>
     public async Task<HelperResult> RunAsync(ShellAction action, CancellationToken cancellationToken = default)
     {
-        var result = await host.SendAsync(action.Command, action.Arguments, cancellationToken);
-        if (result.Outcome is HelperOutcome.Failed or HelperOutcome.Rejected or HelperOutcome.CoreStopped)
-            platform.ShowError(action.Label, result.Message ?? HelperHost.UnavailableMessage);
-        return result;
+        if (action.Command == "disconnect" && Volatile.Read(ref connecting) is { } running)
+        {
+            running.Cancel();
+            return new HelperResult(HelperOutcome.Completed, null, null, Empty);
+        }
+        using var linked = action.Command == "connect" ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken) : null;
+        if (linked is not null) Volatile.Write(ref connecting, linked);
+        try
+        {
+            var result = await host.SendAsync(action.Command, action.Arguments, linked?.Token ?? cancellationToken);
+            if (result.Outcome is HelperOutcome.Failed or HelperOutcome.Rejected or HelperOutcome.CoreStopped)
+                platform.ShowError(action.Label, result.Message ?? HelperHost.UnavailableMessage);
+            return result;
+        }
+        finally
+        {
+            if (linked is not null) Interlocked.CompareExchange(ref connecting, null, linked);
+        }
     }
 
     /// <summary>

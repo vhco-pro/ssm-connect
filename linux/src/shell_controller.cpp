@@ -39,7 +39,15 @@ const QList<ShellAction> &ShellController::menuActions() {
 }
 
 HelperCommand *ShellController::run(const ShellAction &action) {
+    // The helper refuses a second desktop command while Connect runs, so Disconnect then cancels
+    // the Connect, as Disconnect while connecting does on macOS: the helper's cancel ends what the
+    // Connect started.
+    if (action.command == "disconnect" && connecting_ && !connecting_->isFinished()) {
+        connecting_->cancel();
+        return connecting_;
+    }
     HelperCommand *command = host_.send(action.command, action.arguments);
+    if (action.command == "connect") connecting_ = command;
     auto report = [this, command, label = action.label] {
         const HelperOutcome outcome = command->result().outcome;
         if (outcome == HelperOutcome::Failed || outcome == HelperOutcome::Rejected || outcome == HelperOutcome::CoreStopped)

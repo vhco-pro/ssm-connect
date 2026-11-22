@@ -80,9 +80,15 @@ public sealed class ShellDriveThroughTests
             var controller = new ShellController(host, platform);
 
             // The tray menu: click every action item.
+            // Each command is answered before the next item is clicked: Disconnect during a running
+            // Connect cancels it instead (ADisconnectDuringConnectCancelsTheConnect).
             var menu = TrayMenu.Build(controller, () => { }, () => { }, () => { });
             foreach (var item in menu.Items.OfType<MenuItem>().Where(i => i.Tag is string tag && ShellController.MenuActions.Any(a => a.Command == tag)))
+            {
                 item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                await Eventually(() => Commands(helper!).Contains((string)item.Tag));
+                await Task.Delay(50);
+            }
 
             // The settings window: load profiles, select one, edit and save, use it, import a file, set up VS Code.
             var settings = new SettingsWindow(controller, () => @"C:\Profiles\workstation.ssmconnect");
@@ -111,6 +117,44 @@ public sealed class ShellDriveThroughTests
                                          "stopWebForwards", "openBrowser", "listProfiles", "saveProfile", "setActiveProfile",
                                          "importProfile", "installEditorSetup" })
             Assert.Contains(expected, commands);
+        Assert.DoesNotContain(platform.Calls, c => c.StartsWith("error", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ADisconnectDuringConnectCancelsTheConnect()
+    {
+        // The helper refuses a second desktop command while Connect runs, so Disconnect then cancels
+        // the Connect, as Disconnect while connecting does on macOS; the helper's cancel ends what
+        // the Connect started.
+        HelperHostTests.FakeHelper? helper = null;
+        var platform = new RecordingPlatform();
+        HelperResult? connected = null;
+        RunOnSta(async () =>
+        {
+            var spawner = new HelperHostTests.FakeSpawner(() => helper = new HelperHostTests.FakeHelper
+            {
+                OnCommand = name => name == "connect" ? null : Completed(name),
+            });
+            var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
+            await host.StartAsync();
+            var controller = new ShellController(host, platform);
+            ShellAction Action(string command) => ShellController.MenuActions.Single(a => a.Command == command);
+            var connecting = controller.RunAsync(Action("connect"));
+            await Eventually(() => Commands(helper!).Contains("connect"));
+            await controller.RunAsync(Action("disconnect"));
+            connected = await connecting;
+            Assert.DoesNotContain("disconnect", Commands(helper!));
+
+            // With no Connect running, Disconnect is the helper's disconnect command.
+            await controller.RunAsync(Action("disconnect"));
+            Assert.Contains("disconnect", Commands(helper!));
+        });
+
+        Assert.Equal(HelperOutcome.Cancelled, connected!.Outcome);
+        List<JsonObject> frames;
+        lock (helper!.Received) frames = [.. helper.Received];
+        var connectID = (string?)frames.Single(f => (string?)f["type"] == "command" && (string?)f["name"] == "connect")["id"];
+        Assert.Equal([connectID], frames.Where(f => (string?)f["type"] == "cancel").Select(f => (string?)f["id"]));
         Assert.DoesNotContain(platform.Calls, c => c.StartsWith("error", StringComparison.Ordinal));
     }
 

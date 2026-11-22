@@ -93,8 +93,13 @@ private slots:
 
         // The tray menu: trigger every action item.
         Tray tray(controller, [] {}, [] {}, [] {});
+        // Each command finishes before the next item is triggered: Disconnect during a running
+        // Connect cancels it instead (aDisconnectDuringConnectCancelsTheConnect).
         for (QAction *action : tray.menu()->actions())
-            if (action->data().isValid()) action->trigger();
+            if (action->data().isValid()) {
+                action->trigger();
+                QTest::qWait(20);
+            }
         const QStringList menuCommands{"signIn", "connect", "disconnect", "stopWorkstation", "openEditor",
                                        "startWebForwards", "stopWebForwards", "openBrowser"};
         for (const QString &command : menuCommands) QTRY_VERIFY2(spawner.started[0]->commands().contains(command), qPrintable(command));
@@ -204,6 +209,48 @@ private slots:
         QTRY_COMPARE(controller.states().value("authorization").toString(), QStringLiteral("ready"));
         QCOMPARE(platform.calls.filter(QStringLiteral("notify")), QStringList({QStringLiteral("notify Sign in required")}));
         QVERIFY(platform.lastBody.contains(QStringLiteral("Sign In with SSO")));
+    }
+
+    void aDisconnectDuringConnectCancelsTheConnect() {
+        // The helper refuses a second desktop command while Connect runs, so Disconnect then cancels
+        // the Connect, as Disconnect while connecting does on macOS; the helper's cancel ends what
+        // the Connect started.
+        ManualClock clock;
+        FakeSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) {
+            helper.onCommand = [](const QString &name) -> std::optional<QJsonObject> {
+                if (name == "connect") return std::nullopt;
+                return respond(name);
+            };
+        };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        const auto action = [](const QString &command) {
+            for (const ShellAction &candidate : ShellController::menuActions())
+                if (candidate.command == command) return candidate;
+            return ShellAction{};
+        };
+        HelperCommand *connecting = controller.run(action("connect"));
+        QTRY_VERIFY(spawner.started[0]->commands().contains("connect"));
+        controller.run(action("disconnect"));
+        QTRY_VERIFY(connecting->isFinished());
+        QCOMPARE(connecting->result().outcome, HelperOutcome::Cancelled);
+        QString connectID;
+        QStringList cancelled;
+        for (const auto &frame : spawner.started[0]->receivedFrames) {
+            if (frame.value("type") == "command" && frame.value("name") == "connect") connectID = frame.value("id").toString();
+            if (frame.value("type") == "cancel") cancelled << frame.value("id").toString();
+        }
+        QCOMPARE(cancelled, QStringList({connectID}));
+        QVERIFY(!spawner.started[0]->commands().contains("disconnect"));
+        QVERIFY2(platform.calls.filter(QStringLiteral("error")).isEmpty(), qPrintable(platform.calls.join("; ")));
+
+        // With no Connect running, Disconnect is the helper's disconnect command.
+        controller.run(action("disconnect"));
+        QTRY_VERIFY(spawner.started[0]->commands().contains("disconnect"));
     }
 
     void savingAnAttachedFileAsksForConsentAndOffersTheFilesVersionOnAConflict() {
