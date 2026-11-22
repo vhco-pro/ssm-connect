@@ -343,12 +343,12 @@ QString systemctl(const QStringList &arguments) {
     return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
 }
 
-QString property(const QString &unit, const QString &name) {
+QString unitProperty(const QString &unit, const QString &name) {
     return systemctl({"show", unit, "--property=" + name, "--value"});
 }
 
 bool unitGone(const QString &unit) {
-    const QString state = property(unit, "ActiveState");
+    const QString state = unitProperty(unit, "ActiveState");
     return state.isEmpty() || state == "inactive" || state == "failed";
 }
 
@@ -391,10 +391,10 @@ private slots:
                                   .value("fields").toObject().value("helper").toString().toLongLong();
         const QString unit = spawner.unitFor(connection);
         QVERIFY2(unit.startsWith("ssm-connect-helper-") && unit.endsWith(".service"), qPrintable(unit));
-        QCOMPARE(property(unit, "ActiveState"), QStringLiteral("active"));
-        QCOMPARE(property(unit, "MainPID").toLongLong(), helper);
-        QVERIFY(property(unit, "BindsTo").split(' ').contains(scope));
-        QVERIFY(property(unit, "After").split(' ').contains(scope));
+        QCOMPARE(unitProperty(unit, "ActiveState"), QStringLiteral("active"));
+        QCOMPARE(unitProperty(unit, "MainPID").toLongLong(), helper);
+        QVERIFY(unitProperty(unit, "BindsTo").split(' ').contains(scope));
+        QVERIFY(unitProperty(unit, "After").split(' ').contains(scope));
         QCOMPARE(unitOf(helper), unit);
         connection->send(R"({"type":"hello","build":"test-build","protocolVersion":1})");
         QVERIFY(started.wait(10000));
@@ -443,7 +443,7 @@ private slots:
         QCOMPARE(words.size(), qsizetype(2));
         const QString unit = words[0];
         const qint64 helper = words[1].toLongLong();
-        QVERIFY(property(unit, "BindsTo").split(' ').contains(shellScope + ".scope"));
+        QVERIFY(unitProperty(unit, "BindsTo").split(' ').contains(shellScope + ".scope"));
         QVERIFY(::kill(pid_t(helper), SIGSTOP) == 0);
         shell.kill();
         shell.waitForFinished(5000);
