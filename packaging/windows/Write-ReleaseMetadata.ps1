@@ -32,6 +32,25 @@ $hash = (Get-FileHash $msi -Algorithm SHA256).Hash
 "$hash  $(Split-Path -Leaf $msi)" | Set-Content "$msi.sha256" -Encoding ascii -NoNewline
 Write-Host "$msi ($([math]::Round((Get-Item $msi).Length / 1MB, 1)) MB), SHA-256 $hash"
 
+# The MSI's own identity, which WinGet matches against the installed app: the product code changes
+# with every build, the upgrade code never does, and the display version is the MSI's numeric version.
+function Get-MsiProperty([string] $Name) {
+    $api = New-Object -ComObject WindowsInstaller.Installer
+    $database = $api.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $api, @([string] $msi, 0))
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database,
+        @("SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = '$Name'"))
+    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+    $value = if ($record) { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1)) }
+    $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
+    foreach ($handle in @($record, $view, $database) | Where-Object { $_ }) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+    if (-not $value) { throw "The MSI has no $Name property." }
+    $value
+}
+$productCode = Get-MsiProperty 'ProductCode'
+$upgradeCode = Get-MsiProperty 'UpgradeCode'
+$displayVersion = Get-MsiProperty 'ProductVersion'
+
 # The WinGet manifest, from that exact file.
 $manifest = Join-Path $Output "winget-$Version"
 New-Item -ItemType Directory -Force -Path $manifest | Out-Null
@@ -62,6 +81,13 @@ Installers:
   - Architecture: x64
     InstallerUrl: $url
     InstallerSha256: $hash
+    ProductCode: '$productCode'
+    AppsAndFeaturesEntries:
+      - DisplayName: SSM Connect
+        Publisher: VHCo
+        DisplayVersion: $displayVersion
+        ProductCode: '$productCode'
+        UpgradeCode: '$upgradeCode'
 ManifestType: installer
 ManifestVersion: 1.9.0
 "@ | Set-Content (Join-Path $manifest "$id.installer.yaml") -Encoding utf8

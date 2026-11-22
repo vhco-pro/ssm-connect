@@ -83,6 +83,16 @@ if ($Manifest) {
     $installer = Get-Content (Join-Path $Manifest 'VHCo.SSMConnect.installer.yaml') -Raw
     Check ($installer -match "InstallerSha256: $hash") "the WinGet manifest pins the MSI's SHA-256 $hash"
     Check ($installer -match [regex]::Escape((Split-Path -Leaf $Msi))) 'the WinGet manifest points at the MSI by name'
+    # WinGet finds the installed app for upgrade and uninstall by the MSI's product code.
+    $api = New-Object -ComObject WindowsInstaller.Installer
+    $database = $api.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $api, @([string] $Msi, 0))
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @("SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = 'ProductCode'"))
+    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+    $productCode = $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1))
+    $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
+    foreach ($handle in $record, $view, $database) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+    Check ($installer.Contains("ProductCode: '$productCode'")) "the WinGet manifest names the MSI's product code $productCode"
 }
 $runtimeHash = (Get-FileHash (Join-Path $root 'swiftCore.dll')).Hash
 Remove-Item $image -Recurse -Force -ErrorAction SilentlyContinue
