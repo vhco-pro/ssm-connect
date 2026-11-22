@@ -23,7 +23,6 @@ public sealed class ShellDriveThroughTests
         public string? DcvViewerPath => @"C:\Program Files\NICE\DCV\Client\bin\dcvviewer.exe";
         public void OpenUrl(string url) { lock (Calls) Calls.Add("open " + url); }
         public void Start(string path, IReadOnlyList<string> arguments) { lock (Calls) Calls.Add($"start {Path.GetFileName(path)} {string.Join(' ', arguments)}"); }
-        public void StartBrowser(string browser, string mode, string profile, int socksPort) { lock (Calls) Calls.Add($"browser {browser} {mode} {socksPort}"); }
         public void SetClipboard(string text) { lock (Calls) Calls.Add("clipboard " + text); }
         public void Notify(string title, string body) { lock (Calls) Calls.Add("notify " + title); }
         public void ShowError(string action, string message) { lock (Calls) Calls.Add($"error {action}: {message}"); }
@@ -129,15 +128,18 @@ public sealed class ShellDriveThroughTests
             helper!.Emit("shell", "openURL", new() { ["url"] = "https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD" });
             helper.Emit("shell", "launchApplication", new() { ["kind"] = "vsCode", ["path"] = @"C:\VSCode\bin\code.cmd", ["arguments"] = "--new-window\u001F--remote\u001Fssh-remote+alias" });
             helper.Emit("shell", "launchApplication", new() { ["kind"] = "dcvViewer", ["file"] = @"C:\Temp\ssm-connect-1.dcv" });
+            helper.Emit("shell", "launchApplication", new() { ["kind"] = "browser", ["path"] = @"C:\Chrome\chrome.exe", ["arguments"] = "--user-data-dir=C:\\P\u001F--proxy-pac-url=data:x" });
             helper.Emit("shell", "setClipboard", new() { ["text"] = "hunter2" });
             helper.Emit("shell", "notify", new() { ["title"] = "Connected to workstation", ["body"] = "b" });
             helper.Emit("desktop", "state", new() { ["state"] = "Connected" });
-            await Eventually(() => platform.Calls.Count >= 5 && controller.States.ContainsKey("desktop"));
+            await Eventually(() => platform.Calls.Count >= 6 && controller.States.ContainsKey("desktop"));
             Assert.Equal("Connected", controller.States["desktop"]);
         });
         Assert.Contains("open https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD", platform.Calls);
         Assert.Contains("start code.cmd --new-window --remote ssh-remote+alias", platform.Calls);
         Assert.Contains(@"start dcvviewer.exe C:\Temp\ssm-connect-1.dcv", platform.Calls);
+        // The core builds the browser's command line; the shell only starts it.
+        Assert.Contains(@"start chrome.exe --user-data-dir=C:\P --proxy-pac-url=data:x", platform.Calls);
         Assert.Contains("clipboard hunter2", platform.Calls);
         Assert.Contains("notify Connected to workstation", platform.Calls);
     }

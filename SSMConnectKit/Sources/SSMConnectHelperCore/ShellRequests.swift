@@ -78,26 +78,49 @@ package struct ShellDCVLauncher: DCVLaunching {
     }
 }
 
-/// The managed browser through the shell: the core checks the browser is supported, and the
-/// shell starts it with the profile's routing.
+/// The managed browser through the shell, with the routing macOS uses: the core picks the installed,
+/// supported browser and builds its command line, and the shell only starts it. The browser runs in
+/// its own owner-only profile folder, and a PAC sends only the profile's private suffixes through
+/// the SOCKS listener, with no direct fallback; everything else goes direct.
 @MainActor package final class ShellBrowserOpener: BrowserOpening {
     let requests: ShellRequests
-    let isSupported: (ConnectionProfile) -> Bool
+    let executable: (ConnectionProfile) -> String?
+    let profiles: URL
 
-    package init(requests: ShellRequests, isSupported: @escaping (ConnectionProfile) -> Bool) {
+    package init(requests: ShellRequests, executable: @escaping (ConnectionProfile) -> String?, profiles: URL) {
         self.requests = requests
-        self.isSupported = isSupported
+        self.executable = executable
+        self.profiles = profiles
     }
 
     package func preflight(profile: ConnectionProfile) throws {
-        guard isSupported(profile) else { throw CapabilityError.missing(.browser) }
+        guard executable(profile) != nil else { throw CapabilityError.missing(.browser) }
     }
 
     package func open(profile: ConnectionProfile) async throws {
-        requests.launch("browser", fields: ["profile": profile.id.uuidString,
-                                            "browser": profile.webForwards?.browser?.rawValue ?? "",
-                                            "mode": profile.webForwards?.browserMode?.rawValue ?? "",
-                                            "socksPort": String(profile.webForwards?.socksPort ?? 1080)])
+        guard let configuration = profile.webForwards, let choice = configuration.browser,
+              let path = executable(profile) else { throw CapabilityError.missing(.browser) }
+        try BrowserPrivateFiles.directory(profiles)
+        let directory = profiles.appendingPathComponent(profile.id.uuidString, isDirectory: true)
+        try BrowserPrivateFiles.directory(directory)
+        let pac = "data:application/x-ns-proxy-autoconfig;base64,"
+            + Data(try WebForwardsPAC.contents(configuration: configuration).utf8).base64EncodedString()
+        let arguments: [String]
+        switch choice {
+        case .zen, .firefox:
+            let preferences: [(String, String)] = [
+                ("network.proxy.type", "2"), ("network.proxy.autoconfig_url", "\"\(pac)\""),
+                ("network.proxy.socks_remote_dns", "true"), ("network.proxy.socks5_remote_dns", "true"),
+                ("network.proxy.failover_direct", "false"), ("network.dns.disablePrefetch", "true"),
+            ]
+            let userJS = preferences.map { "user_pref(\"\($0.0)\", \($0.1));" }.joined(separator: "\n") + "\n"
+            try BrowserPrivateFiles.write(Data(userJS.utf8), to: directory.appendingPathComponent("user.js"), createParent: false)
+            arguments = ["--new-instance", "--profile", directory.externalPath, "--new-window", "about:blank"]
+        default:
+            arguments = ["--user-data-dir=\(directory.externalPath)", "--proxy-pac-url=\(pac)",
+                         "--no-first-run", "--no-default-browser-check", "about:blank"]
+        }
+        requests.launch("browser", fields: ["path": path, "arguments": arguments.joined(separator: "\u{1F}")])
     }
 
     package func restore(profile: ConnectionProfile) throws {}

@@ -31,7 +31,7 @@ package enum HelperComposition {
         var writePrivate: @Sendable (Data, URL) throws -> Void
         var keyValues: KeyValueStoring
         var terminateChildProcess: @Sendable (Int32) -> Void
-        var browserSupported: @Sendable (ManagedBrowserChoice, BrowserMode) -> Bool
+        var browserExecutable: @Sendable (ManagedBrowserChoice, BrowserMode) -> String?
     }
 
     #if os(Windows)
@@ -54,7 +54,7 @@ package enum HelperComposition {
                 TerminateProcess(process, 1)
                 CloseHandle(process)
             },
-            browserSupported: { WindowsBrowserDiscovery().supported($0, mode: $1) != nil })
+            browserExecutable: { WindowsBrowserDiscovery().supported($0, mode: $1)?.executable.nativePath })
     }
     #else
     static func adapters() -> Adapters {
@@ -75,7 +75,7 @@ package enum HelperComposition {
                 usleep(300_000) // 0.3 s grace, as on macOS
                 kill(pid, SIGKILL)
             },
-            browserSupported: { LinuxBrowserDiscovery().supported($0, mode: $1) != nil })
+            browserExecutable: { LinuxBrowserDiscovery().supported($0, mode: $1)?.executable.path })
     }
     #endif
 
@@ -103,7 +103,7 @@ package enum HelperComposition {
         let proxyPath = adapters.proxyPath
         let sshPath = adapters.sshPath
         let dcvViewerPath = adapters.dcvViewerPath
-        let browserSupported = adapters.browserSupported
+        let browserExecutable = adapters.browserExecutable
         return HelperServices(
             platform: platform, auth: ClientAuthProvider(openURL: { requests.openURL($0) }),
             ec2: ClientEC2Service(), ssm: ClientSSMService(), secrets: ClientSecretsService(),
@@ -132,10 +132,11 @@ package enum HelperComposition {
                               if let plugin = adapters.pluginPath() { try check.plugin(at: plugin) }
                           },
                           owner: ProcessLeaseOwner(), sshAvailable: { sshPath() != nil }),
-            browserSupported: { profile in
-                guard let choice = profile.webForwards?.browser, let mode = profile.webForwards?.browserMode else { return false }
-                return browserSupported(choice, mode)
+            browserExecutable: { profile in
+                guard let choice = profile.webForwards?.browser, let mode = profile.webForwards?.browserMode else { return nil }
+                return browserExecutable(choice, mode)
             },
+            browserProfiles: local.appendingPathComponent("Browsers", isDirectory: true),
             requests: requests)
     }
     #endif

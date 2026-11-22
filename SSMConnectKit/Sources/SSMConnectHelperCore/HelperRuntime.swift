@@ -25,7 +25,10 @@ package struct HelperServices {
     package var notifier: Notifying
     package var writePAC: @Sendable (WebForwardsConfiguration, UUID) throws -> URL
     package var editor: EditorServices
-    package var browserSupported: @MainActor (ConnectionProfile) -> Bool
+    /// The installed, supported browser for a profile's choice and mode, or nil when unavailable.
+    package var browserExecutable: @MainActor (ConnectionProfile) -> String?
+    /// Where managed browsers keep their own profiles.
+    package var browserProfiles: URL
     package var requests: ShellRequests
 
     /// The editor workflow's platform pieces.
@@ -60,8 +63,8 @@ package struct HelperServices {
                  instanceIds: InstanceIdPersisting, keyValues: any KeyValueStoring, profileFiles: ProfileFileAccessing,
                  pasteboard: Pasteboard, notifier: Notifying,
                  writePAC: @escaping @Sendable (WebForwardsConfiguration, UUID) throws -> URL,
-                 editor: EditorServices, browserSupported: @escaping @MainActor (ConnectionProfile) -> Bool,
-                 requests: ShellRequests) {
+                 editor: EditorServices, browserExecutable: @escaping @MainActor (ConnectionProfile) -> String?,
+                 browserProfiles: URL, requests: ShellRequests) {
         self.platform = platform
         self.auth = auth
         self.ec2 = ec2
@@ -81,7 +84,8 @@ package struct HelperServices {
         self.notifier = notifier
         self.writePAC = writePAC
         self.editor = editor
-        self.browserSupported = browserSupported
+        self.browserExecutable = browserExecutable
+        self.browserProfiles = browserProfiles
         self.requests = requests
     }
 }
@@ -127,7 +131,8 @@ package struct HelperServices {
             },
             resumeStore: services.keyValues,
             leaseOwnerIsActive: { editorServices.owner.isActive($0.owner) }, sshAvailable: editorServices.sshAvailable)
-        browser = ShellBrowserOpener(requests: services.requests, isSupported: services.browserSupported)
+        browser = ShellBrowserOpener(requests: services.requests, executable: services.browserExecutable,
+                                     profiles: services.browserProfiles)
     }
 
     /// The command table for the helper session.

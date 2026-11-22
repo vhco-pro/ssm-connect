@@ -158,9 +158,9 @@ public sealed class ShellController
                 if (platform.DcvViewerPath is { } viewer) platform.Start(viewer, [file]);
                 else platform.ShowError("DCV Viewer", "Install Amazon DCV Viewer to open the desktop. The tunnel stays connected.");
                 break;
-            case "browser":
-                platform.StartBrowser((string?)fields["browser"] ?? "", (string?)fields["mode"] ?? "",
-                                      (string?)fields["profile"] ?? "", int.TryParse((string?)fields["socksPort"], out var port) ? port : 1080);
+            // The core picks the browser and builds its command line, routing included.
+            case "browser" when (string?)fields["path"] is { } browser:
+                platform.Start(browser, ((string?)fields["arguments"] ?? "").Split('\u001F', StringSplitOptions.RemoveEmptyEntries));
                 break;
         }
     }
@@ -172,7 +172,6 @@ public interface IShellPlatform
     string? DcvViewerPath { get; }
     void OpenUrl(string url);
     void Start(string path, IReadOnlyList<string> arguments);
-    void StartBrowser(string browser, string mode, string profile, int socksPort);
     void SetClipboard(string text);
     void Notify(string title, string body);
     void ShowError(string action, string message);
@@ -204,17 +203,6 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
     }
 
     public void Start(string path, IReadOnlyList<string> arguments) => UserApplications.Start(path, arguments).Dispose();
-
-    public void StartBrowser(string browser, string mode, string profile, int socksPort)
-    {
-        var profiles = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SSM Connect", "Browsers", profile);
-        Directory.CreateDirectory(profiles);
-        var chrome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe");
-        if (browser == "chrome" && File.Exists(chrome))
-            Start(chrome, [$"--user-data-dir={profiles}", $"--proxy-server=socks5://127.0.0.1:{socksPort}", "--new-window", "about:blank"]);
-        else
-            showError("Open Browser", "The managed browser could not be started.");
-    }
 
     public void SetClipboard(string text)
     {

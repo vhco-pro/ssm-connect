@@ -33,22 +33,6 @@ void LinuxShellPlatform::start(const QString &path, const QStringList &arguments
     if (UserApplications::launch(path, arguments).pid == 0) showError_(QStringLiteral("SSM Connect"), "Could not start " + path + ".");
 }
 
-void LinuxShellPlatform::startBrowser(const QString &browser, const QString &mode, const QString &profile, int socksPort) {
-    const QString chrome = QStringLiteral("/opt/google/chrome/chrome");
-    if (browser != QStringLiteral("chrome") || mode != QStringLiteral("separate") || !QFile::exists(chrome)) {
-        showError_(QStringLiteral("Open Browser"), QStringLiteral("This browser and mode are not available on Linux yet. Use Chrome in Separate Browser mode."));
-        return;
-    }
-    // $XDG_STATE_HOME, or ~/.local/state, as the helper's LinuxPaths uses.
-    const QString xdgState = qEnvironmentVariable("XDG_STATE_HOME");
-    const QString state = xdgState.startsWith('/') ? xdgState : QDir::home().filePath(QStringLiteral(".local/state"));
-    const QString directory = QDir(state).filePath(QStringLiteral("ssm-connect/Browsers/") + profile);
-    QDir().mkpath(directory);
-    QFile::setPermissions(directory, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
-    start(chrome, {QStringLiteral("--proxy-server=socks5://127.0.0.1:%1").arg(socksPort), "--user-data-dir=" + directory,
-                   QStringLiteral("--no-first-run")});
-}
-
 void LinuxShellPlatform::setClipboard(const QString &text) {
     QClipboard *clipboard = QGuiApplication::clipboard();
     clipboard->setText(text);

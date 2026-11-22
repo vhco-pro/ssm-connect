@@ -311,7 +311,6 @@ public sealed class HelperHostTests
         public string? DcvViewerPath => null;
         public void OpenUrl(string url) { }
         public void Start(string path, IReadOnlyList<string> arguments) { }
-        public void StartBrowser(string browser, string mode, string profile, int socksPort) { }
         public void SetClipboard(string text) { }
         public void Notify(string title, string body) { lock (Notifications) Notifications.Add((title, body)); }
         public readonly List<string> Errors = [];
@@ -326,7 +325,6 @@ public sealed class HelperHostTests
         public string? DcvViewerPath => null;
         public void OpenUrl(string url) { }
         public void Start(string path, IReadOnlyList<string> arguments) { }
-        public void StartBrowser(string browser, string mode, string profile, int socksPort) { }
         public void SetClipboard(string text) { }
         public void Notify(string title, string body) { }
         public void ShowError(string action, string message) { }

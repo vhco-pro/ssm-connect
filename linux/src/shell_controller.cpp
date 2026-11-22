@@ -152,11 +152,9 @@ void ShellController::launch(const QJsonObject &fields) {
         const QString viewer = platform_.dcvViewerPath();
         if (viewer.isEmpty()) platform_.showError("DCV Viewer", "Install Amazon DCV Viewer to open the desktop. The tunnel stays connected.");
         else platform_.start(viewer, {fields.value("file").toString()});
-    } else if (kind == "browser") {
-        bool ok = false;
-        const int port = fields.value("socksPort").toString().toInt(&ok);
-        platform_.startBrowser(fields.value("browser").toString(), fields.value("mode").toString(), fields.value("profile").toString(),
-                               ok ? port : 1080);
+    } else if (kind == "browser" && fields.contains("path")) {
+        // The core picks the browser and builds its command line, routing included.
+        platform_.start(fields.value("path").toString(), fields.value("arguments").toString().split(QChar(0x1F), Qt::SkipEmptyParts));
     }
 }
 

@@ -15,9 +15,9 @@ package struct WindowsBrowser: Equatable, Sendable {
 /// and any other product, is unavailable. Chrome supports Separate Browser; Zen supports both
 /// Separate Browser and Use My Browser.
 package struct WindowsBrowserDiscovery: Sendable {
-    /// Versions recorded by the Windows native acceptance run (T28). Empty until then, so no
-    /// browser is offered for managed browsing before it has passed on Windows.
-    package static let pinnedVersions: [ManagedBrowserChoice: Set<String>] = [:]
+    /// Versions recorded by the Windows native acceptance run (T28): a browser is offered for
+    /// managed browsing only at a version that passed there.
+    package static let pinnedVersions: [ManagedBrowserChoice: Set<String>] = [.chrome: ["158.0.8127.37"]]
 
     package var environment: [String: String]
     package var pinned: [ManagedBrowserChoice: Set<String>]

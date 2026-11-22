@@ -138,7 +138,8 @@ struct HelperCommandTests {
             editor: .init(root: root.appendingPathComponent("access"), sshConfig: root.appendingPathComponent("ssh/config"),
                           helperPath: { executable.path }, pluginPath: { executable.path }, editorPath: { executable.path },
                           editorPreflight: { _ in }, owner: Owner(), sshAvailable: { true }),
-            browserSupported: { _ in browserSupported }, requests: requests)
+            browserExecutable: { _ in browserSupported ? root.appendingPathComponent("chrome").path : nil },
+            browserProfiles: root.appendingPathComponent("Browsers", isDirectory: true), requests: requests)
         let runtime = HelperRuntime(services: services, pollInterval: .milliseconds(5))
         let outbox = Outbox()
         let session = HelperSession(build: "b", commands: runtime.commands(), send: { outbox.send($0) })
@@ -348,16 +349,46 @@ struct HelperCommandTests {
         #expect(f.outbox.result("x") == .completed(["state": WebForwardsStateMachine.State.off.rawValue]))
     }
 
-    @Test("The managed browser opens at the shell's hands, and an unsupported one is refused by name")
+    @Test("The managed browser opens with the private-domain routing macOS uses, and an unsupported one is refused by name")
     func browser() async throws {
         let f = try await Self.fixture()
-        try await Self.save(f, Self.configured(webForwards: true))
+        var chrome = Self.configured(webForwards: true)
+        chrome.webForwards?.browser = .chrome
+        chrome.webForwards?.browserMode = .separate
+        chrome.webForwards?.proxySuffixes = [".corp.example"]
+        try await Self.save(f, chrome)
         await Self.run(f, "b", "openBrowser")
         guard case .completed = f.outbox.result("b") else { Issue.record("browser: \(String(describing: f.outbox.result("b")))"); return }
-        #expect(f.outbox.launches("browser").first?["browser"] == "zen")
+        let launch = try #require(f.outbox.launches("browser").first)
+        #expect(launch["path"] == f.root.appendingPathComponent("chrome").path)
+        let arguments = (launch["arguments"] ?? "").split(separator: "\u{1F}").map(String.init)
+        // Only the private suffixes go through SOCKS, without a direct fallback; nothing else does.
+        #expect(!arguments.contains { $0.hasPrefix("--proxy-server") })
+        let pacArgument = try #require(arguments.first { $0.hasPrefix("--proxy-pac-url=data:application/x-ns-proxy-autoconfig;base64,") })
+        let pac = String(decoding: try #require(Data(base64Encoded: String(pacArgument.split(separator: ",", maxSplits: 1)[1]))), as: UTF8.self)
+        #expect(pac.contains("dnsDomainIs(host, \".corp.example\")) return \"SOCKS5 127.0.0.1:1080\";"))
+        #expect(pac.contains("return \"DIRECT\";"))
+        // Its own profile folder, owner-only, never the user's own browser profile.
+        let directory = try #require(arguments.first { $0.hasPrefix("--user-data-dir=") }).dropFirst("--user-data-dir=".count)
+        #expect(String(directory).hasSuffix(chrome.id.uuidString))
+        #expect(FileManager.default.fileExists(atPath: String(directory)))
+        #expect(arguments.contains("--no-first-run") && arguments.last == "about:blank")
+
+        // Zen keeps the same routing in its profile's preferences.
+        var zen = chrome
+        zen.webForwards?.browser = .zen
+        try await Self.save(f, zen)
+        await Self.run(f, "z", "openBrowser")
+        let zenLaunch = try #require(f.outbox.launches("browser").last)
+        let zenArguments = (zenLaunch["arguments"] ?? "").split(separator: "\u{1F}").map(String.init)
+        let profileIndex = try #require(zenArguments.firstIndex(of: "--profile"))
+        let preferences = try String(contentsOfFile: zenArguments[profileIndex + 1] + "/user.js", encoding: .utf8)
+        #expect(preferences.contains("user_pref(\"network.proxy.type\", 2);"))
+        #expect(preferences.contains("user_pref(\"network.proxy.failover_direct\", false);"))
+        #expect(preferences.contains("\"network.proxy.autoconfig_url\", \"data:application/x-ns-proxy-autoconfig;base64,"))
 
         let unsupported = try await Self.fixture(browserSupported: false)
-        try await Self.save(unsupported, Self.configured(webForwards: true))
+        try await Self.save(unsupported, chrome)
         await Self.run(unsupported, "b", "openBrowser")
         guard case let .failed(error) = unsupported.outbox.result("b") else { Issue.record("unsupported accepted"); return }
         #expect(error.message == CapabilityError.missing(.browser).errorDescription)

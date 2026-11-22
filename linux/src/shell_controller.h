@@ -25,7 +25,6 @@ public:
     virtual QString dcvViewerPath() const = 0;
     virtual void openUrl(const QString &url) = 0;
     virtual void start(const QString &path, const QStringList &arguments) = 0;
-    virtual void startBrowser(const QString &browser, const QString &mode, const QString &profile, int socksPort) = 0;
     virtual void setClipboard(const QString &text) = 0;
     virtual void notify(const QString &title, const QString &body) = 0;
     virtual void showError(const QString &action, const QString &message) = 0;

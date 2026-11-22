@@ -18,7 +18,6 @@ public:
     QString dcvViewerPath() const override;
     void openUrl(const QString &url) override;
     void start(const QString &path, const QStringList &arguments) override;
-    void startBrowser(const QString &browser, const QString &mode, const QString &profile, int socksPort) override;
     void setClipboard(const QString &text) override;
     void notify(const QString &title, const QString &body) override;
     void showError(const QString &action, const QString &message) override;

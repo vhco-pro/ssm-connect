@@ -175,7 +175,8 @@ struct WindowsAdapterTests {
         let unpinned = WindowsBrowserDiscovery(environment: environment, pinned: [:])
         #expect(Set(unpinned.installed().map { "\($0.choice.rawValue) \($0.version)" }) == ["chrome 131.0.6778.86", "zen 1.23.1b"])
         #expect(unpinned.installedSupported().isEmpty && unpinned.supported(.zen, mode: .separate) == nil)
-        #expect(WindowsBrowserDiscovery.pinnedVersions.isEmpty)
+        // Only what the Windows native acceptance run (T28) passed on.
+        #expect(WindowsBrowserDiscovery.pinnedVersions == [.chrome: ["158.0.8127.37"]])
 
         let pinned = WindowsBrowserDiscovery(environment: environment, pinned: [.chrome: ["131.0.6778.86"], .zen: ["1.23.1b"]])
         #expect(pinned.supported(.chrome, mode: .separate)?.version == "131.0.6778.86")

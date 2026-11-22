@@ -36,10 +36,6 @@ public:
     void start(const QString &path, const QStringList &arguments) override {
         calls << QStringLiteral("start %1 %2").arg(QFileInfo(path).fileName(), arguments.join(' '));
     }
-    void startBrowser(const QString &browser, const QString &mode, const QString &profile, int socksPort) override {
-        Q_UNUSED(profile);
-        calls << QStringLiteral("browser %1 %2 %3").arg(browser, mode).arg(socksPort);
-    }
     void setClipboard(const QString &text) override { calls << "clipboard " + text; }
     QString lastBody;
     void notify(const QString &title, const QString &body) override {
@@ -159,14 +155,15 @@ private slots:
         emitEvent(helper, "shell", "launchApplication",
                   {{"kind", "vsCode"}, {"path", "/usr/bin/code"}, {"arguments", QStringLiteral("--folder-uri%1vscode-remote://ssh-remote+ws/home").arg(QChar(0x1F))}});
         emitEvent(helper, "shell", "launchApplication", {{"kind", "dcvViewer"}, {"file", "/run/user/1000/ws.dcv"}});
-        emitEvent(helper, "shell", "launchApplication", {{"kind", "browser"}, {"browser", "chrome"}, {"mode", "separate"}, {"profile", "p"}, {"socksPort", "1080"}});
+        emitEvent(helper, "shell", "launchApplication",
+                  {{"kind", "browser"}, {"path", "/opt/google/chrome/chrome"}, {"arguments", QStringLiteral("--user-data-dir=/s/p%1--proxy-pac-url=data:x").arg(QChar(0x1F))}});
         emitEvent(helper, "shell", "setClipboard", {{"text", "password"}});
         emitEvent(helper, "shell", "notify", {{"title", "Connected"}, {"body", "Workstation"}});
         emitEvent(helper, "desktop", "state", {{"state", "Connected"}});
         QTRY_COMPARE(platform.calls.size(), qsizetype(6));
         QCOMPARE(platform.calls, QStringList({"open https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD",
                                               "start code --folder-uri vscode-remote://ssh-remote+ws/home",
-                                              "start dcvviewer /run/user/1000/ws.dcv", "browser chrome separate 1080",
+                                              "start dcvviewer /run/user/1000/ws.dcv", "start chrome --user-data-dir=/s/p --proxy-pac-url=data:x",
                                               "clipboard password", "notify Connected"}));
         QTRY_COMPARE(controller.states().value("desktop").toString(), QStringLiteral("Connected"));
     }
