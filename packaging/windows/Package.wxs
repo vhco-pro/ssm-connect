@@ -36,6 +36,12 @@
       Schedule="afterInstallInitialize"
       DowngradeErrorMessage="A newer version of SSM Connect is already installed." />
 
+    <!-- Every file is laid down whatever version the installed one carries. Costing runs before the
+         old product is removed, so a runtime DLL whose installed copy has a higher file version (a
+         build from a newer toolchain) would be skipped and then deleted with the old product,
+         leaving no copy at all. The app owns its folder, so overwriting every file is safe. -->
+    <Property Id="REINSTALLMODE" Value="amus" />
+
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Windows 11 24H2 (build 26100) is the baseline. msiexec is not manifested for Windows 10+, so

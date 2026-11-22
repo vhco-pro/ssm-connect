@@ -11,7 +11,10 @@
 
     With -Install (a disposable machine such as a CI runner), it also installs the MSI silently,
     starts SSM Connect, checks that a silent reinstall refuses while it runs and leaves it running,
-    quits it, reinstalls, and uninstalls, checking that the program folder is gone afterwards.
+    quits it, reinstalls, and uninstalls, checking that the program folder is gone afterwards. Then
+    it upgrades a prior copy whose Swift runtime carries a higher file version than this package's,
+    as a build from a newer toolchain leaves it, and checks that every file of this package is laid
+    down and the helper starts.
 #>
 [CmdletBinding()]
 param(
@@ -81,7 +84,13 @@ if ($Manifest) {
     Check ($installer -match "InstallerSha256: $hash") "the WinGet manifest pins the MSI's SHA-256 $hash"
     Check ($installer -match [regex]::Escape((Split-Path -Leaf $Msi))) 'the WinGet manifest points at the MSI by name'
 }
+$runtimeHash = (Get-FileHash (Join-Path $root 'swiftCore.dll')).Hash
 Remove-Item $image -Recurse -Force -ErrorAction SilentlyContinue
+
+# Late-bound calls into the Windows Installer automation object.
+function Invoke-Com($target, [string] $member, [string] $kind = 'InvokeMethod', [object[]] $arguments = @()) {
+    $target.GetType().InvokeMember($member, $kind, $null, $target, $arguments)
+}
 
 if ($Install) {
     $folder = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect'
@@ -110,6 +119,39 @@ if ($Install) {
     Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'a silent reinstall after quitting succeeds'
     Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'a silent uninstall succeeds'
     Check (-not (Test-Path $folder)) 'the uninstall leaves no program folder'
+
+    # A prior copy of this package under another product and package code, so this MSI upgrades it.
+    $prior = Join-Path ([IO.Path]::GetTempPath()) ('ssm-prior-' + [guid]::NewGuid().ToString('N') + '.msi')
+    Copy-Item $Msi $prior
+    $api = New-Object -ComObject WindowsInstaller.Installer
+    # A plain string: COM rejects the wrapped string Join-Path returns.
+    $database = Invoke-Com $api 'OpenDatabase' -arguments @([string] $prior, 1)
+    $view = Invoke-Com $database 'OpenView' -arguments @("UPDATE ``Property`` SET ``Value`` = '{$([guid]::NewGuid().ToString().ToUpper())}' WHERE ``Property`` = 'ProductCode'")
+    Invoke-Com $view 'Execute' | Out-Null
+    Invoke-Com $view 'Close' | Out-Null
+    $summary = Invoke-Com $database 'SummaryInformation' 'GetProperty' @(4)
+    Invoke-Com $summary 'Property' 'SetProperty' @(9, "{$([guid]::NewGuid().ToString().ToUpper())}") | Out-Null
+    Invoke-Com $summary 'Persist' | Out-Null
+    Invoke-Com $database 'Commit' | Out-Null
+    # Every handle is released, or msiexec cannot open the package.
+    foreach ($handle in $summary, $view, $database) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+    Check ((Invoke-Msi @('/i', "`"$prior`"", '/qn', '/norestart')) -eq 0) 'the prior copy installs'
+    # Its Swift runtime now carries a higher file version than this package's (kernel32.dll's 10.0).
+    Copy-Item (Join-Path $env:SystemRoot 'System32\kernel32.dll') (Join-Path $folder 'swiftCore.dll') -Force
+    Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the upgrade over the prior copy succeeds'
+    $installed = Join-Path $folder 'swiftCore.dll'
+    Check ((Test-Path $installed) -and (Get-FileHash $installed).Hash -eq $runtimeHash) "the upgrade lays down this package's swiftCore.dll over a higher-versioned one"
+    $saved = $env:Path
+    try {
+        $env:Path = "$env:SystemRoot\System32"
+        $ErrorActionPreference = 'Continue'
+        $reported = & (Join-Path $folder 'SSMConnectHelper.exe') --build 2>$null
+        Check ($LASTEXITCODE -eq 0 -and "$reported".Trim() -eq $Build) "the upgraded helper starts (exit $LASTEXITCODE)"
+        $ErrorActionPreference = 'Stop'
+    } finally { $env:Path = $saved }
+    Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the upgraded install uninstalls'
+    Check (-not (Test-Path $folder)) 'that uninstall leaves no program folder'
+    Remove-Item $prior -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) { throw "$($failures.Count) package check(s) failed." }
