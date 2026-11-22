@@ -106,6 +106,11 @@ if ($Install) {
     $folder = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect'
     Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'a silent install succeeds'
     foreach ($file in $required) { Check (Test-Path (Join-Path $folder $file)) "the install holds $file" }
+    # The installer has run the helper once, so its first start here fits the 10-second handshake
+    # even while Microsoft Defender checks new, unsigned executables.
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    & (Join-Path $folder 'SSMConnectHelper.exe') --build | Out-Null
+    Check ($watch.Elapsed.TotalSeconds -lt 10) "the helper's first start after the install takes under 10 seconds ($([math]::Round($watch.Elapsed.TotalSeconds, 1)) s)"
 
     # A tray app has no window; running means still alive after a few seconds.
     $app = Start-Process (Join-Path $folder 'SSMConnect.exe') -PassThru
