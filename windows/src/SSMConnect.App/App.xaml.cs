@@ -76,9 +76,24 @@ public partial class App : Application
     /// </summary>
     void StopHelper()
     {
+        if (helperStopped) return;
+        helperStopped = true;
         if (host is { } running) Task.Run(() => running.ShutdownAsync(TimeSpan.FromSeconds(5))).Wait(TimeSpan.FromSeconds(10));
         tray?.Dispose();
         instance?.Dispose();
+    }
+
+    bool helperStopped;
+
+    /// <summary>
+    /// WPF ends the application itself when Windows ends the session: it raises SessionEnding at
+    /// WM_QUERYENDSESSION and shuts down right away, before any WM_ENDSESSION arrives. So every exit
+    /// stops the helper first, letting it end its connections and remove its keys and leases.
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        StopHelper();
+        base.OnExit(e);
     }
 }
 

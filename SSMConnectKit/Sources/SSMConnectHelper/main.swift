@@ -36,6 +36,22 @@ let commands: [String: CommandSpec] = [:]
 let session = HelperSession(build: HelperBuild.current, commands: commands, send: { pipes.send($0) })
 requests.attach(session.events)
 
+// Signing out on Linux ends the helper without closing its stdin: systemd stops the helper's unit
+// with SIGTERM and kills it moments later. The helper first ends its session and runs the workflows'
+// quit work, so no key, lease or connection file outlives it. On Windows the shell asks the helper
+// to end when the session ends: the helper loads user32, so Windows sends it no console sign-out event.
+#if !os(Windows)
+signal(SIGTERM, SIG_IGN)
+let sessionEnd = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+sessionEnd.setEventHandler {
+    Task { @MainActor in
+        await HelperExit.end(session)
+        exit(0)
+    }
+}
+sessionEnd.resume()
+#endif
+
 let chunks = AsyncStream<Data> { continuation in
     Thread.detachNewThread {
         while true {

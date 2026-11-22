@@ -281,6 +281,34 @@ struct ProtocolTests {
         #expect(result.stderr.contains("malformed frame"))
     }
 
+    #if !os(Windows)
+    /// systemd stops the helper's unit with SIGTERM when the user signs out; the helper ends its
+    /// session and runs the workflows' quit work instead of dying by the signal.
+    @Test("The helper ends cleanly on SIGTERM")
+    func executableEndsOnSIGTERM() throws {
+        let version = try Self.run(["--build"], input: Data())
+        let build = String(decoding: version.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let process = Process()
+        process.executableURL = Self.helperExecutable
+        let stdin = Pipe(), stdout = Pipe()
+        process.standardInput = stdin; process.standardOutput = stdout; process.standardError = FileHandle.nullDevice
+        try process.run()
+        try stdin.fileHandleForWriting.write(contentsOf: try FrameCodec.encode(.hello(build: build, protocolVersion: 1)))
+        var reader = FrameReader()
+        var welcomed = false
+        while !welcomed {
+            let chunk = stdout.fileHandleForReading.availableData
+            if chunk.isEmpty { break }
+            welcomed = try reader.append(chunk).map(FrameCodec.decode).contains(.welcome(build: build))
+        }
+        #expect(welcomed)
+        kill(process.processIdentifier, SIGTERM)
+        process.waitUntilExit()
+        #expect(process.terminationReason == .exit && process.terminationStatus == 0,
+                "reason \(process.terminationReason.rawValue), status \(process.terminationStatus)")
+    }
+    #endif
+
     @Test("The helper exits non-zero after refusing a different build")
     func executableRefusesOtherBuild() throws {
         let result = try Self.run([], input: try FrameCodec.encode(.hello(build: "another-build", protocolVersion: 1)))

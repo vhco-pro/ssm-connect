@@ -6,9 +6,10 @@ namespace SSMConnect.App.Shell;
 /// <summary>
 /// The hidden top-level window that receives Restart Manager's close request. The tray's window is
 /// message-only, and message-only windows never receive WM_QUERYENDSESSION, so without this window
-/// the installer could not ask SSM Connect to close. Agreeing (the installer's close prompt, or the
-/// user signing out) runs <c>close</c> before returning from WM_ENDSESSION, because Windows may end
-/// the process once that message returns.
+/// the installer could not ask SSM Connect to close. Agreeing to the installer's close prompt runs
+/// <c>close</c> before returning from WM_ENDSESSION, because Windows may end the process once that
+/// message returns. Signing out never gets that far: WPF exits at WM_QUERYENDSESSION, and
+/// <c>App.OnExit</c> stops the helper then.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class SessionEndWindow : IDisposable
