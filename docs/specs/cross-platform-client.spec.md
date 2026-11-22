@@ -1068,6 +1068,7 @@ None.
 | 2026-11-21 | R-24 | spec | `b079c3b` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 | 2026-11-21 | R-25 | spec | `e74903d` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-21 | R-25 | spec | `e74903d` | n/a | n/a | accepted by owner |
+| 2026-11-22 | R-26 | spec | `a44b14c` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
 
 ### R-1
 
@@ -1600,6 +1601,36 @@ PROPOSAL: Preserve the standalone client results while recording the production 
 ### R-25
 
 NO FINDINGS
+
+### R-26
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:96-102; Scope / Windows and Linux interface parity:237-239; Design / Windows and Linux parity with the macOS interface:618-644; Acceptance Criteria / AC-29; Test Plan / AC-29
+EVIDENCE: The new parity section says its view-reading check lists every control, but its enumerated control types omit Stepper. SettingsView.swift:59-64 uses a Stepper for clipboard auto-clear seconds, a setting Design explicitly includes at lines 618-619. The scanner and inventory-driven tests can therefore pass while that setting has no inventory entry or Windows/Linux control. AboutView.swift:73-90 also contains Link and DisclosureGroup controls outside the enumerated types.
+PROPOSAL: Make discovery cover the control types present in the selected macOS surfaces, including Stepper. Demonstrate that removing the clipboard-setting entry causes the check to fail.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:96-102; Scope / Windows and Linux interface parity:237-239; Design / Windows and Linux parity with the macOS interface:588-644; Acceptance Criteria / AC-29; Test Plan / AC-29
+EVIDENCE: AC-29 requires macOS availability rules, but its shell proofs check control existence, command frames and confirmations. They never require visibility or enabled-state assertions. MenuContentView.swift:94-103 offers Stop Workstation only while connected, and lines 117-122 disable recovery entry during opening while offering Cancel Recovery during recovery. Existing TrayMenu.cs:11-15 and linux/src/tray.cpp:11-15 create always-enabled actions. Extending those menus with every command and confirmation can satisfy the stated drive-through checks while retaining incorrect availability.
+PROPOSAL: Add expected visibility and enabled states to the parity checks. Exercise representative disconnected, connecting, connected and recovering states, asserting that unavailable controls cannot dispatch commands.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary:96-102; Design / Integration and feasibility:354-379; Design / Windows and Linux parity with the macOS interface:607-611,633-650; Acceptance Criteria / AC-27, AC-29; Test Plan / AC-27, AC-29
+EVIDENCE: The new parity scope includes Cancel Recovery, Stop Remote Access and Restore Editor Setup, while requiring every new command to follow one-command-per-workflow admission. HelperSession.swift:108-110 rejects another command for a running workflow before executing its handler; cancellation instead uses a separate cancel frame at lines 78-79. On macOS, Cancel Recovery is available during recovery and cancels its active task directly (MenuContentView.swift:121-122; RemoteDevelopmentStateMachine.swift:159-168). The document does not specify how these interrupting controls reach that behavior while their workflow already has an admitted command. The command-table inventory requirement also does not explain how a cancellation frame qualifies.
+PROPOSAL: Raise an owner question selecting the interruption policy for these controls, preferably using the existing cancellation path where appropriate. Specify their inventory representation and test interruption during an active workflow, terminal results and preservation of unrelated workflows.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:103-107; Design / DCV connection file lifetime:660-669; Acceptance Criteria / AC-30; Test Plan / AC-30
+EVIDENCE: The new lifetime section says quit cleanup and the next-connect sweep already remove waiting or orphaned DCV files. ShellRequests.swift:60-77 implements delayed deletion and a sweep method, but registers no quit cleanup. HelperExit.end at HelperRuntime.swift:422-424 shuts down commands and runs registered handlers; ConnectionStateMachine.swift:131-140 registers only tunnel termination. The sole production call to dcv.sweepOrphanedFiles is ConnectionStateMachine.onLaunch at lines 170-172, and neither the helper entry point nor HelperRuntime invokes that method. The helper's connect path at HelperRuntime.swift:286-300 does not sweep. These are missing cleanup paths, not behavior preserved by changing the delay.
+PROPOSAL: Describe quit cleanup and the next-connect sweep as implementation work required by this revision. Require tests through the production helper shutdown and connect entry points, establishing cleanup before the 120-second timer expires and after a simulated crash.
 
 ## Sources
 
