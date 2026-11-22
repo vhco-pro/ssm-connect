@@ -42,15 +42,12 @@ package struct ProcessSSHTunnel: SSHTunnelProviding {
         for port in ports where tcpConnects(port: UInt16(port)) {
             throw TunnelError.localPortInUse(port: port, pid: nil, processName: nil)
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ssh)
-        process.arguments = try SSHArguments.webForwards(pluginPath: plugin, region: region, instanceId: instanceId,
-                                                        user: user, keyPath: keyPath, configuration: configuration, style: style)
-        process.environment = ProcessInfo.processInfo.environment.merging(
-            ["AWS_SSM_START_SESSION_RESPONSE": try session.pluginSessionJSON()]) { _, new in new }
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let process = ChildProcess(
+            executable: ssh,
+            arguments: try SSHArguments.webForwards(pluginPath: plugin, region: region, instanceId: instanceId,
+                                                    user: user, keyPath: keyPath, configuration: configuration, style: style),
+            environment: ProcessInfo.processInfo.environment.merging(
+                ["AWS_SSM_START_SESSION_RESPONSE": try session.pluginSessionJSON()]) { _, new in new })
         let handle = ProcessTunnelHandle(process: process)
         try process.run()
         let deadline = ContinuousClock.now.advanced(by: readinessTimeout)

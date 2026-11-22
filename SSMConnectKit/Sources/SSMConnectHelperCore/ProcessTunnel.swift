@@ -33,20 +33,15 @@ package struct ProcessTunnelProvider: TunnelProvider {
             throw TunnelError.pluginMissing(path: pluginPath() ?? "<unknown>")
         }
         try verify(path)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = try PluginArguments.portForward(session: session, region: region, instanceId: instanceId,
-                                                           localPort: localPort, remotePort: remotePort)
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let process = ChildProcess(executable: path, arguments: try PluginArguments.portForward(
+            session: session, region: region, instanceId: instanceId, localPort: localPort, remotePort: remotePort))
         let handle = ProcessTunnelHandle(process: process)
         try process.run()
         let deadline = ContinuousClock.now.advanced(by: readinessTimeout)
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             guard process.isRunning else {
-                throw TunnelError.launchFailed(reason: "The plugin exited with code \(process.terminationStatus).")
+                throw TunnelError.launchFailed(reason: "The plugin exited with code \(process.terminationStatus ?? -1).")
             }
             if tcpConnects(port: UInt16(localPort)) { return handle }
             try await Task.sleep(for: .milliseconds(250))
@@ -57,19 +52,20 @@ package struct ProcessTunnelProvider: TunnelProvider {
 }
 
 final class ProcessTunnelHandle: TunnelHandle, @unchecked Sendable {
-    private let process: Process
+    private let process: ChildProcess
     private let lock = NSLock()
     private var userTerminated = false
     let onDisconnect: AsyncStream<TunnelDropReason>
 
-    init(process: Process) {
+    /// Watches `process` for its exit; create it before the process runs.
+    init(process: ChildProcess) {
         self.process = process
         var continuation: AsyncStream<TunnelDropReason>.Continuation!
         onDisconnect = AsyncStream { continuation = $0 }
         let stream = continuation!
-        process.terminationHandler = { [weak self] process in
+        process.onExit { [weak self] code in
             let byUser = self?.lock.withLock { self?.userTerminated ?? false } ?? false
-            stream.yield(byUser ? .terminatedByUser : .processExited(code: process.terminationStatus, stderr: ""))
+            stream.yield(byUser ? .terminatedByUser : .processExited(code: code, stderr: ""))
             stream.finish()
         }
     }

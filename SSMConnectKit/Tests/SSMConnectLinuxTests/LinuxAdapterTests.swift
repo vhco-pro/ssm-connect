@@ -196,6 +196,62 @@ struct LinuxAdapterTests {
         #expect(otherVersion.supported(.chrome, mode: .separate) == nil)
     }
 
+    @Test("Chrome's version is read while a child that closed its inherited descriptors still runs")
+    func chromeVersionBesideSSH() throws {
+        // OpenSSH closes every descriptor above stderr when it starts. Started with Foundation's
+        // Process, as web forwards start it, such a child left Foundation's process monitor
+        // blocked in waitpid until it exited, so no other child was reaped: the version probe
+        // never returned and the helper hung on Open Browser.
+        let root = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let closer = Process()
+        closer.executableURL = URL(fileURLWithPath: "/bin/bash")
+        closer.arguments = ["-c", "for f in /proc/$$/fd/*; do n=${f##*/}; [ \"$n\" -gt 2 ] && eval \"exec $n>&-\"; done; sleep 8"]
+        try closer.run()
+        defer { closer.terminate() }
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let chrome = root.appendingPathComponent("chrome")
+        try Data("#!/bin/sh\necho 'Google Chrome 158.0.8127.36 '\n".utf8).write(to: chrome)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: chrome.path)
+        let answered = DispatchSemaphore(value: 0)
+        let version = Locked<String?>(nil)
+        Thread.detachNewThread {
+            version.set(LinuxBrowserDiscovery.runChromeVersion(chrome))
+            answered.signal()
+        }
+        #expect(answered.wait(timeout: .now() + 3) == .success)
+        #expect(version.get() == "158.0.8127.36")
+    }
+
+    @Test("A child's exit is seen while another closed its descriptors, and SIGTERM reaches children")
+    func childProcessesAreWaitedForAlone() throws {
+        // The helper ignores SIGTERM to handle it through a dispatch source; children must not
+        // inherit that, or terminate() could not end ssh or the plugin.
+        let previous = signal(SIGTERM, SIG_IGN)
+        defer { signal(SIGTERM, previous) }
+        let closer = ChildProcess(executable: "/bin/bash", arguments: [
+            "-c", "for f in /proc/$$/fd/*; do n=${f##*/}; [ \"$n\" -gt 2 ] && eval \"exec $n>&-\"; done; sleep 30",
+        ])
+        try closer.run()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let exited = DispatchSemaphore(value: 0)
+        let code = Locked<Int32?>(nil)
+        let short = ChildProcess(executable: "/bin/sh", arguments: ["-c", "exit 3"])
+        short.onExit { code.set($0); exited.signal() }
+        try short.run()
+        #expect(exited.wait(timeout: .now() + 2) == .success)
+        #expect(code.get() == 3 && short.terminationStatus == 3 && !short.isRunning)
+
+        #expect(closer.isRunning)
+        closer.terminate()
+        let ended = DispatchSemaphore(value: 0)
+        Thread.detachNewThread { closer.waitUntilExit(); ended.signal() }
+        #expect(ended.wait(timeout: .now() + 2) == .success)
+        #expect(closer.terminationStatus == SIGTERM)
+    }
+
     @Test("Chrome's version is read from its --version output")
     func chromeVersionOutput() {
         #expect(LinuxBrowserDiscovery.parseChromeVersion("Google Chrome 131.0.6778.85 \n") == "131.0.6778.85")
@@ -209,5 +265,13 @@ struct LinuxAdapterTests {
         #expect(candidates.chrome.map(\.path) == ["/opt/google/chrome/chrome"])
         #expect(candidates.zen.map(\.path) == ["/home/u/.tarball-installations/zen", "/opt/zen"])
     }
+}
+/// A value shared with the thread that produces it.
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+    init(_ value: Value) { self.value = value }
+    func get() -> Value { lock.withLock { value } }
+    func set(_ newValue: Value) { lock.withLock { value = newValue } }
 }
 #endif

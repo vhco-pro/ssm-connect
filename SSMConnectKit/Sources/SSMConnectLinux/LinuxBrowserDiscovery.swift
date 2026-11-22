@@ -85,16 +85,9 @@ package struct LinuxBrowserDiscovery: Sendable {
 
     /// Chrome on Linux keeps no version file, so its version comes from `--version`.
     package static func runChromeVersion(_ executable: URL) -> String? {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["--version"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
+        let process = ChildProcess(executable: executable.path, arguments: ["--version"], captureOutput: true)
         guard (try? process.run()) != nil else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        let data = process.capturedOutput()
         guard process.terminationStatus == 0 else { return nil }
         return parseChromeVersion(String(decoding: data, as: UTF8.self))
     }
