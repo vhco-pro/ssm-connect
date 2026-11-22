@@ -116,7 +116,7 @@ package enum HelperComposition {
                                   viewerInstalled: { dcvViewerPath() != nil }, writePrivate: writePrivate),
             readiness: TLSReadinessProbe(), tunnelListener: TCPPortListenerProbe(),
             instanceIds: UserDefaultsInstanceIdStore(), keyValues: adapters.keyValues,
-            profileFiles: PortableProfileFiles(replace: writePrivate),
+            profileFiles: PortableProfileFiles(replace: AttachedFileWriter.replace),
             pasteboard: ShellPasteboard(requests: requests), notifier: ShellNotifier(requests: requests),
             writePAC: { configuration, id in
                 let url = local.appendingPathComponent("WebForwards/\(id.uuidString).pac")
