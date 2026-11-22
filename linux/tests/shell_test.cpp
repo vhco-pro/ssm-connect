@@ -47,6 +47,12 @@ public:
         calls << "notify " + title;
     }
     void showError(const QString &action, const QString &message) override { calls << QStringLiteral("error %1: %2").arg(action, message); }
+    bool confirmAnswer = false;
+    bool confirm(const QString &title, const QString &message) override {
+        Q_UNUSED(message);
+        calls << "confirm " + title;
+        return confirmAnswer;
+    }
     QString chooseProfileFile() override { return QStringLiteral("/home/u/workstation.ssmconnect"); }
 };
 
@@ -201,6 +207,54 @@ private slots:
         QTRY_COMPARE(controller.states().value("authorization").toString(), QStringLiteral("ready"));
         QCOMPARE(platform.calls.filter(QStringLiteral("notify")), QStringList({QStringLiteral("notify Sign in required")}));
         QVERIFY(platform.lastBody.contains(QStringLiteral("Sign In with SSO")));
+    }
+
+    void savingAnAttachedFileAsksForConsentAndOffersTheFilesVersionOnAConflict() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        int saves = 0;
+        spawner.configure = [&saves](FakeHelper &helper) {
+            helper.onCommand = [&saves](const QString &name) -> std::optional<QJsonObject> {
+                auto failed = [](const QString &code) {
+                    return QJsonObject{{"type", "result"}, {"outcome", "failed"}, {"error", QJsonObject{{"code", code}, {"message", code}}}};
+                };
+                if (name == "saveProfile") {
+                    ++saves;
+                    if (saves == 1) return failed("formattingConsentRequired");
+                    if (saves == 2) return completed();
+                    return failed("fileConflict");
+                }
+                if (name == "listProfiles") return completed({{"profiles", "[]"}, {"active", ""}});
+                return completed();
+            };
+        };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        platform.confirmAnswer = true;
+        ShellController controller(host, platform);
+        const QVariantMap profile{{"id", "55555555-5555-4555-8555-555555555555"}, {"name", "Workstation"}};
+        controller.saveProfile(profile);
+        QTRY_COMPARE(saves, 2);
+        controller.saveProfile(profile);
+        QTRY_VERIFY(spawner.started[0]->commands().contains("applyFileChanges"));
+        QStringList sent;
+        QStringList accepted;
+        QString appliedID;
+        for (const auto &frame : spawner.started[0]->receivedFrames) {
+            if (frame.value("type") != "command") continue;
+            const QString name = frame.value("name").toString();
+            if (name == "listProfiles") continue;
+            sent << name;
+            if (name == "saveProfile") accepted << frame.value("arguments").toObject().value("acceptFormatting").toString();
+            if (name == "applyFileChanges") appliedID = frame.value("arguments").toObject().value("id").toString();
+        }
+        QCOMPARE(sent, QStringList({"saveProfile", "saveProfile", "saveProfile", "applyFileChanges"}));
+        QCOMPARE(accepted, QStringList({"", "true", ""}));
+        QCOMPARE(appliedID, QStringLiteral("55555555-5555-4555-8555-555555555555"));
+        QCOMPARE(platform.calls.filter(QStringLiteral("confirm")).size(), qsizetype(2));
+        for (const QString &call : platform.calls) QVERIFY2(!call.startsWith("error"), qPrintable(call));
     }
 
     void startingAtSignInIsAnXdgAutostartEntry() {

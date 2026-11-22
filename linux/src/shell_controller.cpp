@@ -72,10 +72,37 @@ void ShellController::saveProfile(const QVariantMap &edited) {
     }
     const QString id = profile.value("id").toString();
     const QByteArray json = QJsonDocument(QJsonObject::fromVariantMap(profile)).toJson(QJsonDocument::Compact);
-    HelperCommand *command = run({QStringLiteral("Save Profile"), QStringLiteral("saveProfile"), {{"profile", QString::fromUtf8(json)}}});
-    // Reloading keeps the saved profile selected, so Use acts on it.
-    if (command->isFinished()) reloadProfiles(id);
-    else connect(command, &HelperCommand::finished, this, [this, id] { reloadProfiles(id); });
+    sendSave(id, QString::fromUtf8(json), false);
+}
+
+void ShellController::sendSave(const QString &id, const QString &json, bool acceptFormatting) {
+    QVariantMap arguments{{"profile", json}};
+    if (acceptFormatting) arguments.insert("acceptFormatting", "true");
+    HelperCommand *command = host_.send(QStringLiteral("saveProfile"), arguments);
+    auto finished = [this, command, id, json] {
+        const HelperResult result = command->result();
+        // An attached file needs consent to its canonical formatting once, and is never saved
+        // over changes made outside SSM Connect: the user can load the file's version instead.
+        if (result.code == "formattingConsentRequired") {
+            if (platform_.confirm(QStringLiteral("Save Profile"), result.message)) sendSave(id, json, true);
+            return;
+        }
+        if (result.code == "fileConflict") {
+            if (platform_.confirm(QStringLiteral("Save Profile"),
+                                  result.message + QStringLiteral(" Load the file's version now? Your edits are not saved."))) {
+                HelperCommand *apply = run({QStringLiteral("Load File Changes"), QStringLiteral("applyFileChanges"), {{"id", id}}});
+                if (apply->isFinished()) reloadProfiles(id);
+                else connect(apply, &HelperCommand::finished, this, [this, id] { reloadProfiles(id); });
+            }
+            return;
+        }
+        if (result.outcome == HelperOutcome::Failed || result.outcome == HelperOutcome::Rejected || result.outcome == HelperOutcome::CoreStopped)
+            platform_.showError(QStringLiteral("Save Profile"), result.message.isEmpty() ? HelperHost::UnavailableMessage : result.message);
+        // Reloading keeps the saved profile selected, so Use acts on it.
+        reloadProfiles(id);
+    };
+    if (command->isFinished()) finished();
+    else connect(command, &HelperCommand::finished, this, finished);
 }
 
 void ShellController::useProfile(const QString &id) {

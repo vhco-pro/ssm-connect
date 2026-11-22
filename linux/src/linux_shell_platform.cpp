@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QGuiApplication>
+#include <QMessageBox>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
@@ -60,6 +61,10 @@ void LinuxShellPlatform::setClipboard(const QString &text) {
 void LinuxShellPlatform::notify(const QString &title, const QString &body) { notify_(title, body); }
 
 void LinuxShellPlatform::showError(const QString &action, const QString &message) { showError_(action, message); }
+
+bool LinuxShellPlatform::confirm(const QString &title, const QString &message) {
+    return QMessageBox::question(nullptr, title, message) == QMessageBox::Yes;
+}
 
 QString LinuxShellPlatform::chooseProfileFile() {
     return QFileDialog::getOpenFileName(nullptr, QStringLiteral("Import a profile"), QDir::homePath(),

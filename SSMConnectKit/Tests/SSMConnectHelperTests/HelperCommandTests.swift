@@ -106,7 +106,8 @@ struct HelperCommandTests {
 
     static func fixture(auth: MockAuthProvider = MockAuthProvider(), browserSupported: Bool = true,
                         files: ProfileFileSnapshot? = nil, dcvCleanupDelay: Duration = .seconds(5),
-                        isRejectedAuthorization: @escaping @Sendable (any Error) -> Bool = { _ in false }) async throws -> Fixture {
+                        isRejectedAuthorization: @escaping @Sendable (any Error) -> Bool = { _ in false },
+                        profileFiles: (any ProfileFileAccessing)? = nil) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("helper-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let ec2 = MockEC2Service()
@@ -132,7 +133,7 @@ struct HelperCommandTests {
             dcv: ShellDCVLauncher(requests: requests, directory: root, viewerInstalled: { true },
                                   writePrivate: { data, url in try data.write(to: url) }, cleanupDelay: dcvCleanupDelay),
             readiness: Ready(), tunnelListener: Listening(), instanceIds: InstanceIds(), keyValues: InMemoryKeyValueStore(),
-            profileFiles: Files(snapshot: files), pasteboard: Board(), notifier: SilentNotificationService(),
+            profileFiles: profileFiles ?? Files(snapshot: files), pasteboard: Board(), notifier: SilentNotificationService(),
             writePAC: { _, _ in root.appendingPathComponent("proxy.pac") },
             editor: .init(root: root.appendingPathComponent("access"), sshConfig: root.appendingPathComponent("ssh/config"),
                           helperPath: { executable.path }, pluginPath: { executable.path }, editorPath: { executable.path },
@@ -178,6 +179,43 @@ struct HelperCommandTests {
         await Self.run(f, "bad", "setActiveProfile", ["id": UUID().uuidString])
         guard case let .failed(error) = f.outbox.result("bad") else { Issue.record("bad id accepted"); return }
         #expect(error.code == "unknownProfile")
+    }
+
+    @Test("An attached profile file is saved only with consent and never over outside changes, which can be applied instead")
+    func attachedFileSave() async throws {
+        let f = try await Self.fixture(profileFiles: PortableProfileFiles(replace: { data, url in try data.write(to: url, options: .atomic) }))
+        let file = f.root.appendingPathComponent("workstation.json")
+        try ProfileDocumentCodec.write(try PortableProfileDocument(profile: Self.configured()), format: .json).write(to: file)
+        await Self.run(f, "i", "importProfile", ["path": file.path, "attach": "true"])
+        guard case let .completed(imported) = f.outbox.result("i"), let id = imported["id"] else { Issue.record("import failed"); return }
+        await Self.run(f, "l", "listProfiles")
+        guard case let .completed(listed) = f.outbox.result("l") else { Issue.record("list failed"); return }
+        let files = try JSONDecoder().decode([[String: String]].self, from: Data(try #require(listed["files"]).utf8))
+        #expect(files == [["id": id, "path": file.path, "pending": "false", "error": ""]])
+        var profile = try #require(f.runtime.profiles.profiles.first { $0.id.uuidString == id })
+        profile.roleName = "Developer"
+        let json = String(decoding: try JSONEncoder().encode(profile), as: UTF8.self)
+
+        // The first save to an attached file needs consent to its canonical formatting.
+        await Self.run(f, "s1", "saveProfile", ["profile": json])
+        #expect(f.outbox.result("s1").flatMap { if case let .failed(e) = $0 { e.code } else { nil } } == "formattingConsentRequired")
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("Admin"))
+        await Self.run(f, "s2", "saveProfile", ["profile": json, "acceptFormatting": "true"])
+        #expect(f.outbox.result("s2").map { if case .completed = $0 { true } else { false } } == true)
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("Developer"))
+
+        // A change made outside SSM Connect is never overwritten; it can be applied instead.
+        let saved = try String(contentsOf: file, encoding: .utf8)
+        try Data(saved.replacingOccurrences(of: "Developer", with: "Auditor").utf8).write(to: file)
+        let outsideBytes = try Data(contentsOf: file)
+        profile.roleName = "Operator"
+        await Self.run(f, "s3", "saveProfile", ["profile": String(decoding: try JSONEncoder().encode(profile), as: UTF8.self),
+                                               "acceptFormatting": "true"])
+        #expect(f.outbox.result("s3").flatMap { if case let .failed(e) = $0 { e.code } else { nil } } == "fileConflict")
+        #expect(try Data(contentsOf: file) == outsideBytes)
+        await Self.run(f, "a", "applyFileChanges", ["id": id])
+        #expect(f.outbox.result("a").map { if case .completed = $0 { true } else { false } } == true)
+        #expect(f.runtime.profiles.profiles.first { $0.id.uuidString == id }?.roleName == "Auditor")
     }
 
     // MARK: Desktop
@@ -329,7 +367,7 @@ struct HelperCommandTests {
     @Test("Every shell action has a command")
     func table() async throws {
         let f = try await Self.fixture()
-        #expect(Set(f.runtime.commands().keys) == ["listProfiles", "saveProfile", "setActiveProfile", "importProfile", "signIn",
+        #expect(Set(f.runtime.commands().keys) == ["listProfiles", "saveProfile", "setActiveProfile", "importProfile", "applyFileChanges", "signIn",
                                                     "connect", "disconnect", "stopWorkstation", "installEditorSetup", "openEditor",
                                                     "startWebForwards", "stopWebForwards", "openBrowser"])
     }

@@ -263,6 +263,48 @@ public sealed class HelperHostTests
         }
     }
 
+    static JsonObject Failed(string code, string message) =>
+        new() { ["type"] = "result", ["outcome"] = "failed", ["error"] = new JsonObject { ["code"] = code, ["message"] = message } };
+    static JsonObject Done() => new() { ["type"] = "result", ["outcome"] = "completed", ["value"] = new JsonObject() };
+
+    [Fact]
+    public async Task SavingAnAttachedFileAsksForConsentAndOffersTheFilesVersionOnAConflict()
+    {
+        var saves = 0;
+        var spawner = new FakeSpawner(() => new FakeHelper
+        {
+            OnCommand = name => name switch
+            {
+                "saveProfile" => ++saves switch
+                {
+                    1 => Failed("formattingConsentRequired", "Saving this attached file uses canonical formatting."),
+                    2 => Done(),
+                    _ => Failed("fileConflict", "The profile file changed since it was loaded."),
+                },
+                _ => Done(),
+            },
+        });
+        var host = Host(spawner, new FakeTimeProvider());
+        await host.StartAsync();
+        var platform = new NotifyingPlatform { ConfirmAnswer = true };
+        var controller = new SSMConnect.App.Shell.ShellController(host, platform);
+        const string profile = """{"id":"55555555-5555-4555-8555-555555555555","name":"Workstation"}""";
+
+        var first = await controller.SaveProfileAsync(profile);
+        Assert.Equal(HelperOutcome.Completed, first.Outcome);
+        var conflict = await controller.SaveProfileAsync(profile);
+        Assert.Equal(HelperOutcome.Completed, conflict.Outcome);
+
+        List<JsonObject> frames;
+        lock (spawner.Started[0].Received) frames = spawner.Started[0].Received.Where(f => (string?)f["type"] == "command").ToList();
+        Assert.Equal(["saveProfile", "saveProfile", "saveProfile", "applyFileChanges"], frames.Select(f => (string)f["name"]!));
+        Assert.Null(frames[0]["arguments"]?["acceptFormatting"]);
+        Assert.Equal("true", (string?)frames[1]["arguments"]?["acceptFormatting"]);
+        Assert.Equal("55555555-5555-4555-8555-555555555555", (string?)frames[3]["arguments"]?["id"]);
+        Assert.Equal(2, platform.Confirmations.Count);
+        Assert.Empty(platform.Errors);
+    }
+
     sealed class NotifyingPlatform : SSMConnect.App.Shell.IShellPlatform
     {
         public readonly List<(string Title, string Body)> Notifications = [];
@@ -272,7 +314,11 @@ public sealed class HelperHostTests
         public void StartBrowser(string browser, string mode, string profile, int socksPort) { }
         public void SetClipboard(string text) { }
         public void Notify(string title, string body) { lock (Notifications) Notifications.Add((title, body)); }
-        public void ShowError(string action, string message) { }
+        public readonly List<string> Errors = [];
+        public void ShowError(string action, string message) { lock (Errors) Errors.Add(message); }
+        public bool ConfirmAnswer;
+        public readonly List<string> Confirmations = [];
+        public bool Confirm(string title, string message) { lock (Confirmations) Confirmations.Add(message); return ConfirmAnswer; }
     }
 
     sealed class SilentPlatform : SSMConnect.App.Shell.IShellPlatform
@@ -284,6 +330,7 @@ public sealed class HelperHostTests
         public void SetClipboard(string text) { }
         public void Notify(string title, string body) { }
         public void ShowError(string action, string message) { }
+        public bool Confirm(string title, string message) => false;
     }
 
     [Fact]

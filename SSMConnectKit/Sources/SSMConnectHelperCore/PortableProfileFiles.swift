@@ -20,7 +20,7 @@ package struct PortableProfileFiles: ProfileFileAccessing {
 
     package func save(_ document: PortableProfileDocument, to url: URL, expected: ProfileFileRevision?,
                       beforeCommit: () throws -> Void) throws -> ProfileFileRevision {
-        guard try existingRevision(url) == expected else { throw CocoaError(.fileWriteUnknown) }
+        guard try existingRevision(url) == expected else { throw PortableProfileError.conflict }
         let data = try ProfileDocumentCodec.write(document, format: ProfileFileFormat(url: url))
         try beforeCommit()
         try replace(data, url)

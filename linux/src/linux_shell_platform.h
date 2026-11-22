@@ -23,6 +23,7 @@ public:
     void notify(const QString &title, const QString &body) override;
     void showError(const QString &action, const QString &message) override;
     QString chooseProfileFile() override;
+    bool confirm(const QString &title, const QString &message) override;
 
 private:
     std::function<void(const QString &, const QString &)> notify_;

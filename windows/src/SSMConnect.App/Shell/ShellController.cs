@@ -76,8 +76,31 @@ public sealed class ShellController
         return result;
     }
 
-    public Task<HelperResult> SaveProfileAsync(string profileJson) =>
-        RunAsync(new("Save Profile", "saveProfile", new Dictionary<string, string> { ["profile"] = profileJson }));
+    /// <summary>
+    /// Saves a profile. An attached file needs consent to its canonical formatting once, and is never
+    /// saved over changes made outside SSM Connect: the user can load the file's version instead.
+    /// </summary>
+    public async Task<HelperResult> SaveProfileAsync(string profileJson)
+    {
+        var arguments = new Dictionary<string, string> { ["profile"] = profileJson };
+        var result = await host.SendAsync("saveProfile", arguments, CancellationToken.None);
+        if (result.Code == "formattingConsentRequired")
+        {
+            if (!platform.Confirm("Save Profile", result.Message ?? "")) return result;
+            arguments["acceptFormatting"] = "true";
+            result = await host.SendAsync("saveProfile", arguments, CancellationToken.None);
+        }
+        if (result.Code == "fileConflict")
+        {
+            if (platform.Confirm("Save Profile", (result.Message ?? "") + " Load the file's version now? Your edits are not saved.")
+                && JsonNode.Parse(profileJson)?["id"]?.GetValue<string>() is { } id)
+                return await RunAsync(new("Load File Changes", "applyFileChanges", new Dictionary<string, string> { ["id"] = id }));
+            return result;
+        }
+        if (result.Outcome is HelperOutcome.Failed or HelperOutcome.Rejected or HelperOutcome.CoreStopped)
+            platform.ShowError("Save Profile", result.Message ?? HelperHost.UnavailableMessage);
+        return result;
+    }
 
     public Task<HelperResult> SetActiveProfileAsync(string id) =>
         RunAsync(new("Use Profile", "setActiveProfile", new Dictionary<string, string> { ["id"] = id }));
@@ -153,6 +176,8 @@ public interface IShellPlatform
     void SetClipboard(string text);
     void Notify(string title, string body);
     void ShowError(string action, string message);
+    /// <summary>Asks the user a yes-or-no question; true for yes.</summary>
+    bool Confirm(string title, string message);
 }
 
 /// <summary>The real Windows platform for the shell.</summary>
@@ -204,4 +229,8 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
 
     public void Notify(string title, string body) => notify(title, body);
     public void ShowError(string action, string message) => showError(action, message);
+
+    public bool Confirm(string title, string message) =>
+        System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question)
+            == System.Windows.MessageBoxResult.Yes;
 }

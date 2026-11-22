@@ -29,6 +29,8 @@ public:
     virtual void setClipboard(const QString &text) = 0;
     virtual void notify(const QString &title, const QString &body) = 0;
     virtual void showError(const QString &action, const QString &message) = 0;
+    /// Asks the user a yes-or-no question; true for yes.
+    virtual bool confirm(const QString &title, const QString &message) = 0;
     /// A profile file the user picks, or empty when they cancel.
     virtual QString chooseProfileFile() = 0;
 };
@@ -69,6 +71,7 @@ signals:
 private:
     void handle(const QJsonObject &frame);
     void launch(const QJsonObject &fields);
+    void sendSave(const QString &id, const QString &json, bool acceptFormatting);
 
     HelperHost &host_;
     ShellPlatform &platform_;

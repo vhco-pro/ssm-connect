@@ -143,6 +143,7 @@ package struct HelperServices {
             "saveProfile": spec("profiles") { arguments, _ in try self.saveProfile(arguments) },
             "setActiveProfile": spec("profiles") { arguments, _ in try self.setActiveProfile(arguments) },
             "importProfile": spec("profiles") { arguments, _ in try self.importProfile(arguments) },
+            "applyFileChanges": spec("profiles") { arguments, _ in try self.applyFileChanges(arguments) },
             "signIn": spec("authorization", admit: { _ in try self.requireConfigured() }) { _, _ in try await self.signIn() },
             "connect": spec("desktop", admit: { _ in try self.requireConfigured() }) { _, events in try await self.connect(events) },
             "disconnect": spec("desktop") { _, events in try await self.disconnect(events) },
@@ -191,9 +192,17 @@ package struct HelperServices {
 
     // MARK: Profiles
 
+    /// The profiles, the active one, and each attached file with whether it changed outside SSM
+    /// Connect or cannot be read.
     private func listProfiles() throws -> [String: String] {
+        profiles.refreshAttachedFiles()
         let data = try JSONEncoder().encode(profiles.profiles)
-        return ["profiles": String(decoding: data, as: UTF8.self), "active": profiles.activeProfileID?.uuidString ?? ""]
+        let files = profiles.attachments.sorted { $0.key.uuidString < $1.key.uuidString }.map { id, attachment in
+            ["id": id.uuidString, "path": attachment.url.path, "pending": String(profiles.pendingFiles[id] != nil),
+             "error": profiles.fileErrors[id] ?? ""]
+        }
+        return ["profiles": String(decoding: data, as: UTF8.self), "active": profiles.activeProfileID?.uuidString ?? "",
+                "files": String(decoding: try JSONEncoder().encode(files), as: UTF8.self)]
     }
 
     private func saveProfile(_ arguments: [String: String]) throws -> [String: String] {
@@ -201,9 +210,39 @@ package struct HelperServices {
               let profile = try? JSONDecoder().decode(ConnectionProfile.self, from: Data(json.utf8)) else {
             throw HelperError(code: "invalidProfile", message: "The profile could not be read.")
         }
-        if !profiles.updateProfile(profile) { profiles.addProfile(profile) }
+        if let attachment = profiles.attachments[profile.id] {
+            // An attached file is saved as on macOS: with consent to canonical formatting, and
+            // only while the file is unchanged since SSM Connect last read it.
+            do {
+                try profiles.saveEditedProfile(profile, expected: attachment.revision,
+                                               acceptCanonicalFormatting: arguments["acceptFormatting"] == "true")
+            } catch let error as PortableProfileError {
+                switch error {
+                case .formattingConsentRequired:
+                    throw HelperError(code: "formattingConsentRequired", message: error.localizedDescription)
+                case .conflict:
+                    throw HelperError(code: "fileConflict", message: error.localizedDescription)
+                case .invalid:
+                    throw HelperError(code: "invalidProfile", message: error.localizedDescription)
+                }
+            }
+        } else if !profiles.updateProfile(profile) {
+            profiles.addProfile(profile)
+        }
         apply()
         return ["id": profile.id.uuidString]
+    }
+
+    /// Takes an attached file's outside changes into its local profile.
+    private func applyFileChanges(_ arguments: [String: String]) throws -> [String: String] {
+        guard let id = arguments["id"].flatMap(UUID.init(uuidString:)) else {
+            throw HelperError(code: "unknownProfile", message: "That profile does not exist.")
+        }
+        profiles.refreshAttachedFiles()
+        do { try profiles.applyPendingFile(id) }
+        catch { throw HelperError(code: "applyFailed", message: error.localizedDescription) }
+        apply()
+        return ["id": id.uuidString]
     }
 
     private func setActiveProfile(_ arguments: [String: String]) throws -> [String: String] {

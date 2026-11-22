@@ -27,6 +27,7 @@ public sealed class ShellDriveThroughTests
         public void SetClipboard(string text) { lock (Calls) Calls.Add("clipboard " + text); }
         public void Notify(string title, string body) { lock (Calls) Calls.Add("notify " + title); }
         public void ShowError(string action, string message) { lock (Calls) Calls.Add($"error {action}: {message}"); }
+        public bool Confirm(string title, string message) { lock (Calls) Calls.Add("confirm " + title); return false; }
     }
 
     static JsonObject Completed(string name) => name switch
