@@ -12,9 +12,9 @@ package protocol SSOCacheReading: Sendable {
     func token(startUrl: String, region: String) throws -> SSOToken?
 
     /// Persists a token to the standard SSO cache so subsequent connects can reuse / silently
-    /// refresh it (the same `~/.aws/sso/cache/` that `aws sso login` writes — NF-01). Overwrites
+    /// refresh it (the same `~/.aws/sso/cache/` that `aws sso login` writes, NF-01). Overwrites
     /// the existing file matching `startUrl` + `region`, preserving any unmodelled fields, or
-    /// creates a `0600` file if none exists yet.
+    /// creates one if none exists yet. Either way the file is left owner-only.
     func update(_ token: SSOToken) throws
 }
 
@@ -36,7 +36,7 @@ package struct SSOCacheReader: SSOCacheReading {
 
     package func update(_ token: SSOToken) throws {
         // Overwrite the existing matching file (preserving unmodelled fields) or create a new
-        // 0600 cache file named like the AWS CLI (sha1 of the start URL).
+        // cache file named like the AWS CLI (sha1 of the start URL).
         let url: URL
         var object: [String: Any]
         if let match = try matchingFile(startUrl: token.startUrl, region: token.region) {
@@ -52,7 +52,7 @@ package struct SSOCacheReader: SSOCacheReading {
         object["region"] = token.region
         object["accessToken"] = token.accessToken
         object["expiresAt"] = Self.isoString(from: token.expiresAt)
-        // clientId/secret/refreshToken/registration must travel together — a device-auth login
+        // clientId/secret/refreshToken/registration must travel together: a device-auth login
         // re-registers the client, so persist all of them or a later refresh would mismatch.
         if let clientId = token.clientId { object["clientId"] = clientId }
         if let clientSecret = token.clientSecret { object["clientSecret"] = clientSecret }
@@ -61,9 +61,10 @@ package struct SSOCacheReader: SSOCacheReading {
             object["registrationExpiresAt"] = Self.isoString(from: registration)
         }
         let updated = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-        try updated.write(to: url, options: .atomic)
-        // SSO cache files hold tokens — keep them owner-only (matches the AWS CLI).
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        // SSO cache files hold tokens: written owner-only from the start by the platform's own
+        // rules (a mode-0600 temporary renamed into place, or a protected DACL for the current user
+        // on Windows), never chmodded after an ordinary write.
+        try BrowserPrivateFiles.write(updated, to: url, createParent: false)
     }
 
     /// AWS CLI cache filename stem: lowercase hex sha1 of the start URL.
