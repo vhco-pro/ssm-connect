@@ -126,6 +126,23 @@ struct WindowsAdapterTests {
         #expect(tools.vsCodePath?.hasSuffix("code.cmd") == true)
     }
 
+    @Test("DCV Viewer is found where its MSI installs it, under Program Files (x86), or under Program Files")
+    func dcvViewer() throws {
+        let root = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let x64 = root.appendingPathComponent("PF"), x86 = root.appendingPathComponent("PF86")
+        let environment = ["ProgramFiles": x64.path, "ProgramFiles(x86)": x86.path]
+        #expect(WindowsTools(helperDirectory: root, environment: environment).dcvViewerPath == nil)
+        let viewer = x86.appendingPathComponent("NICE/DCV/Client/bin/dcvviewer.exe")
+        try FileManager.default.createDirectory(at: viewer.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: Self.system32 + "\\where.exe", toPath: viewer.path)
+        #expect(WindowsTools(helperDirectory: root, environment: environment).dcvViewerPath == viewer.nativePath)
+        let native = x64.appendingPathComponent("NICE/DCV/Client/bin/dcvviewer.exe")
+        try FileManager.default.createDirectory(at: native.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: Self.system32 + "\\where.exe", toPath: native.path)
+        #expect(WindowsTools(helperDirectory: root, environment: environment).dcvViewerPath == native.nativePath)
+    }
+
     @Test("A child process is started with the shared plugin command line")
     func launch() throws {
         let process = try WindowsProcessLauncher.start(Self.system32 + "\\cmd.exe", arguments: ["/c", "exit", "3"])

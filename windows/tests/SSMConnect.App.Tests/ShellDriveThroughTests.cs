@@ -217,3 +217,23 @@ public sealed partial class SessionEndWindowTests
         if (failure is not null) throw failure;
     }
 }
+
+/// DCV Viewer's MSI installs under Program Files (x86); the shell finds it there or under Program Files.
+public sealed class DcvViewerLocationTests
+{
+    [Fact]
+    public void DcvViewerIsFoundUnderEitherProgramFilesFolder()
+    {
+        var root = Directory.CreateTempSubdirectory("ssm-dcv-").FullName;
+        try
+        {
+            string x64 = Path.Combine(root, "PF"), x86 = Path.Combine(root, "PF86");
+            Assert.Null(WindowsShellPlatform.FindDcvViewer([x64, x86]));
+            var viewer = Path.Combine(x86, "NICE", "DCV", "Client", "bin", "dcvviewer.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(viewer)!);
+            File.WriteAllText(viewer, "");
+            Assert.Equal(viewer, WindowsShellPlatform.FindDcvViewer([x64, x86]));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+}

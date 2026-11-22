@@ -39,9 +39,6 @@ package enum HelperComposition {
     static func adapters() -> Adapters {
         let tools = WindowsTools()
         let environment = ProcessInfo.processInfo.environment
-        let dcvViewer = environment["ProgramFiles"].map {
-            URL(fileURLWithPath: $0).appendingPathComponent("NICE/DCV/Client/bin/dcvviewer.exe").nativePath
-        }
         return Adapters(
             local: URL(fileURLWithPath: environment["LOCALAPPDATA"] ?? NSTemporaryDirectory())
                 .appendingPathComponent("SSM Connect", isDirectory: true),
@@ -49,7 +46,7 @@ package enum HelperComposition {
             pluginPath: { tools.pluginPath },
             proxyPath: { tools.helperDirectory.appendingPathComponent("ssm-connect-proxy.exe").nativePath },
             sshPath: { tools.sshPath }, sshKeygenPath: { tools.sshKeygenPath }, vsCodePath: { tools.vsCodePath },
-            dcvViewerPath: { dcvViewer.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } },
+            dcvViewerPath: { tools.dcvViewerPath },
             sshStyle: .windows, ownerOnlyFiles: .windows,
             writePrivate: { try WindowsPrivateFiles.write($0, to: $1) },
             keyValues: WindowsKeyValueStore.make(),

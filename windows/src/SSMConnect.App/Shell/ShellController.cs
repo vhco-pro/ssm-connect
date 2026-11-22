@@ -130,14 +130,19 @@ public interface IShellPlatform
 /// <summary>The real Windows platform for the shell.</summary>
 public sealed class WindowsShellPlatform(Action<string, string> notify, Action<string, string> showError, Func<int> clipboardClearSeconds) : IShellPlatform
 {
-    public string? DcvViewerPath
-    {
-        get
-        {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "NICE", "DCV", "Client", "bin", "dcvviewer.exe");
-            return File.Exists(path) ? path : null;
-        }
-    }
+    public string? DcvViewerPath => FindDcvViewer([
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+    ]);
+
+    /// <summary>
+    /// DCV Viewer under the first Program Files folder that has it. AWS's Windows MSI installs it
+    /// under Program Files (x86).
+    /// </summary>
+    internal static string? FindDcvViewer(IEnumerable<string> programFiles) =>
+        programFiles.Where(root => !string.IsNullOrEmpty(root))
+            .Select(root => Path.Combine(root, "NICE", "DCV", "Client", "bin", "dcvviewer.exe"))
+            .FirstOrDefault(File.Exists);
 
     public void OpenUrl(string url)
     {

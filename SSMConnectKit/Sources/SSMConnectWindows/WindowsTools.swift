@@ -33,6 +33,12 @@ package struct WindowsTools: Sendable {
 
     package var sshKeygenPath: String? { existing([path("SystemRoot", "System32", "OpenSSH", "ssh-keygen.exe")]) }
 
+    /// DCV Viewer under Program Files or Program Files (x86), where AWS's Windows MSI installs it.
+    package var dcvViewerPath: String? {
+        existing([path("ProgramFiles", "NICE", "DCV", "Client", "bin", "dcvviewer.exe"),
+                  path("ProgramFiles(x86)", "NICE", "DCV", "Client", "bin", "dcvviewer.exe")])
+    }
+
     package var vsCodePath: String? {
         existing([path("LOCALAPPDATA", "Programs", "Microsoft VS Code", "bin", "code.cmd"),
                   path("ProgramFiles", "Microsoft VS Code", "bin", "code.cmd")])
