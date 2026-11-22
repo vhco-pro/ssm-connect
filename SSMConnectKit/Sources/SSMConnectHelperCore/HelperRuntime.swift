@@ -351,8 +351,9 @@ package struct HelperServices {
 /// quits. That ends a connected desktop's plugin, removes the web forwards key and the editor's
 /// leases and keys, so no transient access artifact outlives the helper.
 package enum HelperExit {
-    @MainActor package static func end(_ session: HelperSession, quit: AppQuitHandler = .shared) async {
+    /// `quit` defaults to the shared handler the workflows register with.
+    @MainActor package static func end(_ session: HelperSession, quit: AppQuitHandler? = nil) async {
         await session.shutdown()
-        quit.runShutdown()
+        (quit ?? .shared).runShutdown()
     }
 }
