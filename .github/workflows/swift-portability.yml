@@ -23,6 +23,8 @@ on:
       - SSMConnectKit/Tests/SSMConnectAWSTests/**
       - SSMConnectKit/Sources/SSMConnectWindows/**
       - SSMConnectKit/Tests/SSMConnectWindowsTests/**
+      - SSMConnectKit/Sources/SSMConnectLinux/**
+      - SSMConnectKit/Tests/SSMConnectLinuxTests/**
   workflow_dispatch:
 
 permissions:
@@ -140,6 +142,6 @@ jobs:
           elif [ "$RUNNER_OS" = "macOS" ]; then
             swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests'
           else
-            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests'
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests|SSMConnectLinuxTests'
           fi
 

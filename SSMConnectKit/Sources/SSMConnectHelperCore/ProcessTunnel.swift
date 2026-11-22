@@ -11,10 +11,14 @@ import Glibc
 /// with the shared command line, ready once its local port accepts a TCP connection.
 package struct ProcessTunnelProvider: TunnelProvider {
     let pluginPath: @Sendable () -> String?
+    let verify: @Sendable (String) throws -> Void
     let readinessTimeout: Duration
 
-    package init(pluginPath: @escaping @Sendable () -> String?, readinessTimeout: Duration = .seconds(15)) {
+    /// `verify` checks the exact plugin file before each launch (`InstallationCheck.plugin`).
+    package init(pluginPath: @escaping @Sendable () -> String?, verify: @escaping @Sendable (String) throws -> Void = { _ in },
+                 readinessTimeout: Duration = .seconds(15)) {
         self.pluginPath = pluginPath
+        self.verify = verify
         self.readinessTimeout = readinessTimeout
     }
 
@@ -28,6 +32,7 @@ package struct ProcessTunnelProvider: TunnelProvider {
         guard let path = pluginPath(), FileManager.default.fileExists(atPath: path) else {
             throw TunnelError.pluginMissing(path: pluginPath() ?? "<unknown>")
         }
+        try verify(path)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = try PluginArguments.portForward(session: session, region: region, instanceId: instanceId,

@@ -89,14 +89,14 @@ struct WindowsAdapterTests {
         let root = try Self.temporary()
         defer { try? FileManager.default.removeItem(at: root) }
         let url = root.appendingPathComponent("SSM Connect/settings.json")
-        let store = WindowsKeyValueStore(url: url)
+        let store = WindowsKeyValueStore.make(url: url)
         store.set(Data([1, 2, 3]), forKey: "ssmconnect.profiles.v1")
         store.set("22222222-2222-4222-8222-222222222222", forKey: "ssmconnect.activeProfileID.v1")
-        let reopened = WindowsKeyValueStore(url: url)
+        let reopened = WindowsKeyValueStore.make(url: url)
         #expect(reopened.data(forKey: "ssmconnect.profiles.v1") == Data([1, 2, 3]))
         #expect(reopened.string(forKey: "ssmconnect.activeProfileID.v1") == "22222222-2222-4222-8222-222222222222")
         reopened.set(nil, forKey: "ssmconnect.profiles.v1")
-        #expect(WindowsKeyValueStore(url: url).data(forKey: "ssmconnect.profiles.v1") == nil)
+        #expect(WindowsKeyValueStore.make(url: url).data(forKey: "ssmconnect.profiles.v1") == nil)
         #expect(WindowsPrivateFiles.isOwnerOnly(url))
     }
 

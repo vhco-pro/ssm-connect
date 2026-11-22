@@ -1,6 +1,7 @@
 #if os(Windows)
 import Foundation
 import SSMConnectDomain
+import SSMConnectWorkflow
 
 /// A browser installed on this Windows machine.
 package struct WindowsBrowser: Equatable, Sendable {
@@ -74,12 +75,7 @@ package struct WindowsBrowserDiscovery: Sendable {
         }
     }
 
-    /// Zen records its version as `Version=` in application.ini beside zen.exe.
-    static func zenVersion(in directory: URL) -> String? {
-        guard let text = try? String(contentsOf: directory.appendingPathComponent("application.ini"), encoding: .utf8) else { return nil }
-        return text.split(whereSeparator: \.isNewline).lazy
-            .first { $0.hasPrefix("Version=") }
-            .map { String($0.dropFirst("Version=".count)).trimmingCharacters(in: .whitespaces) }
-    }
+    /// Zen records its version in application.ini beside zen.exe.
+    static func zenVersion(in directory: URL) -> String? { BrowserVersions.zen(in: directory) }
 }
 #endif

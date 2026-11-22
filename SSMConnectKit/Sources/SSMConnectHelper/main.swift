@@ -26,11 +26,11 @@ if CommandLine.arguments.dropFirst().first == "--build" {
 
 let pipes = Pipes()
 let requests = ShellRequests()
-#if os(Windows)
+#if os(Windows) || os(Linux)
 let runtime = HelperRuntime(services: HelperComposition.production(requests: requests))
 let commands = runtime.commands()
 #else
-// Linux composes its adapters into the helper with T22.
+// The helper ships on Windows and Linux only; elsewhere it serves the protocol with no commands.
 let commands: [String: CommandSpec] = [:]
 #endif
 let session = HelperSession(build: HelperBuild.current, commands: commands, send: { pipes.send($0) })

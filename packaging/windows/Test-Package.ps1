@@ -52,6 +52,15 @@ foreach ($component in 'Swift runtime', 'ICU', 'SwiftCrypto', 'Yams', 'LibYAML',
     Check ($notices.Contains($component)) "the notices cover $component"
 }
 
+# The helper and proxy carry this build's marker and the bundled plugin's SHA-256, which they check
+# before each launch.
+$pluginHash = (Get-FileHash (Join-Path $root 'session-manager-plugin.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+foreach ($executable in 'SSMConnectHelper.exe', 'ssm-connect-proxy.exe') {
+    $bytes = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes((Join-Path $root $executable)))
+    Check ($bytes.Contains("ssm-connect-build:$Build;")) "$executable carries the build marker for $Build"
+    Check ($bytes.Contains($pluginHash)) "$executable records the bundled plugin's SHA-256"
+}
+
 # The runtime closure is complete: with only System32 on PATH, a missing DLL fails the start with
 # STATUS_DLL_NOT_FOUND (0xC0000135).
 $saved = $env:Path

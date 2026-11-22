@@ -13,13 +13,17 @@ package struct ProcessSSHTunnel: SSHTunnelProviding {
     let sshPath: @Sendable () -> String?
     let pluginPath: @Sendable () -> String?
     let style: SSHArguments.Style
+    let verify: @Sendable (String) throws -> Void
     let readinessTimeout: Duration
 
+    /// `verify` checks the exact plugin file before each launch (`InstallationCheck.plugin`).
     package init(sshPath: @escaping @Sendable () -> String?, pluginPath: @escaping @Sendable () -> String?,
-                 style: SSHArguments.Style, readinessTimeout: Duration = .seconds(15)) {
+                 style: SSHArguments.Style, verify: @escaping @Sendable (String) throws -> Void = { _ in },
+                 readinessTimeout: Duration = .seconds(15)) {
         self.sshPath = sshPath
         self.pluginPath = pluginPath
         self.style = style
+        self.verify = verify
         self.readinessTimeout = readinessTimeout
     }
 
@@ -33,6 +37,7 @@ package struct ProcessSSHTunnel: SSHTunnelProviding {
     package func start(session: SSMSessionResponse, region: String, instanceId: String, user: String,
                        keyPath: String, configuration: WebForwardsConfiguration) async throws -> TunnelHandle {
         guard let ssh = sshPath(), let plugin = pluginPath() else { throw WebForwardsError.sshNotReady }
+        try verify(plugin)
         let ports = configuration.localForwards.map(\.localPort) + (configuration.socksPort.map { [$0] } ?? [])
         for port in ports where tcpConnects(port: UInt16(port)) {
             throw TunnelError.localPortInUse(port: port, pid: nil, processName: nil)

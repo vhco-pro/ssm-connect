@@ -18,12 +18,14 @@ package struct EditorProxy {
     /// Ends a child process that ignored termination.
     package var forceTerminate: @Sendable (Process) -> Void
     package var build: String
+    /// Checks the exact plugin file before it starts (`InstallationCheck.plugin`).
+    package var installation: InstallationCheck
     package var now: @Sendable () -> Date
 
     package init(owner: LeaseOwnerProbing, files: OwnerOnlyFiles, auth: AuthProviding, ec2: EC2Providing, ssm: SSMProviding,
                  instanceConnect: InstanceConnectProviding, isRejectedAuthorization: @escaping @Sendable (Error) -> Bool,
                  forceTerminate: @escaping @Sendable (Process) -> Void, build: String = InstalledBuild.current,
-                 now: @escaping @Sendable () -> Date = { Date() }) {
+                 installation: InstallationCheck = InstallationCheck(), now: @escaping @Sendable () -> Date = { Date() }) {
         self.owner = owner
         self.files = files
         self.auth = auth
@@ -33,6 +35,7 @@ package struct EditorProxy {
         self.isRejectedAuthorization = isRejectedAuthorization
         self.forceTerminate = forceTerminate
         self.build = build
+        self.installation = installation
         self.now = now
     }
 
@@ -80,6 +83,7 @@ package struct EditorProxy {
             throw error
         }
         guard isCurrent(lease, path: configurationPath) else { throw RemoteSSHError.invalidLease }
+        try installation.plugin(at: lease.pluginPath)
         let request: [String: Any] = ["Target": lease.instanceID, "DocumentName": SSHArguments.sshDocument,
                                       "Parameters": ["portNumber": ["22"]]]
         let process = Process()
@@ -141,6 +145,7 @@ package struct EditorProxy {
         if isRejectedAuthorization(error) {
             return "SSM Connect needs AWS sign-in for this SSH channel. Choose Sign In with SSO in the app, then Reconnect Existing Workspace and retry the existing VS Code window. No new editor window is required.\n"
         }
+        if let change = error as? InstallationChange { return change.localizedDescription + "\n" }
         guard let error = error as? RemoteSSHError else { return failureMessage }
         switch error {
         case .targetChanged, .replacementApprovalRequired:

@@ -40,6 +40,8 @@ var helperCoreDependencies: [Target.Dependency] = [
 ]
 #if os(Windows)
 helperCoreDependencies.append("SSMConnectWindows")
+#elseif os(Linux)
+helperCoreDependencies.append("SSMConnectLinux")
 #endif
 
 var targets: [Target] = [
@@ -54,7 +56,11 @@ var targets: [Target] = [
     // Authorization and the desktop, web and editor connection workflows, written against
     // injected ports. Like SSMConnectDomain, no macOS framework and no AWS SDK module; the
     // platform implementations of its ports stay in the platform targets.
-    .target(name: "SSMConnectWorkflow", dependencies: ["SSMConnectDomain"]),
+    .target(name: "SSMConnectWorkflow", dependencies: [
+        "SSMConnectDomain",
+        // SHA-256 for the installation check of the bundled plugin.
+        .product(name: "Crypto", package: "swift-crypto"),
+    ]),
     // The helper protocol: framing, the build handshake, command admission, terminal results,
     // cancellation, heartbeats and events. Foundation only.
     .target(name: "SSMConnectHelperProtocol"),
@@ -91,6 +97,15 @@ targets += [
     // and process launch, and browser discovery.
     .target(name: "SSMConnectWindows", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow"]),
     .testTarget(name: "SSMConnectWindowsTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectWindows"]),
+]
+#endif
+
+#if os(Linux)
+targets += [
+    // The core-side Linux adapters: XDG paths, the key-value store, tool discovery and browser
+    // discovery. User-only files live in SSMConnectWorkflow beside the Windows writer.
+    .target(name: "SSMConnectLinux", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow"]),
+    .testTarget(name: "SSMConnectLinuxTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectLinux"]),
 ]
 #endif
 

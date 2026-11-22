@@ -8,7 +8,8 @@
     Windows machine. It:
 
     1. stamps the build into the Swift helper and editor proxy and the .NET shell, so the shell
-       refuses a helper of another build at handshake and a proxy refuses another build's lease;
+       refuses a helper of another build at handshake and a proxy refuses another build's lease,
+       and stamps the bundled plugin's SHA-256, which the helper and proxy check before each launch;
     2. builds SSMConnectHelper.exe and ssm-connect-proxy.exe with SwiftPM in release mode;
     3. copies the Swift runtime DLLs those two import, found by walking their PE import tables,
        from the installed Swift runtime;
@@ -108,14 +109,22 @@ function Find-SwiftRuntime {
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $payload, $Output | Out-Null
 
-# 1-2. The helper and proxy, stamped with the build. The stamped file is restored afterwards so the
-# working tree is left as it was.
+# The plugin first, verified against its pinned hashes: its SHA-256 is compiled into the helper
+# and proxy, which check the exact file before each launch.
+$plugin = & (Join-Path $repository 'scripts\fetch-plugin.ps1') | Select-Object -Last 1
+$pluginHash = (Get-FileHash (Join-Path $plugin 'bin\session-manager-plugin.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+
+# 1-2. The helper and proxy, stamped with the build and the plugin's hash. The stamped file is
+# restored afterwards so the working tree is left as it was.
 $buildFile = Join-Path $kit 'Sources\SSMConnectWorkflow\InstalledBuild.swift'
 $original = [IO.File]::ReadAllBytes($buildFile)
 try {
     $text = [Text.Encoding]::UTF8.GetString($original)
-    $stamped = $text.Replace('package static let current = "dev"', "package static let current = `"$Build`"")
-    if ($stamped -eq $text) { throw "Could not stamp the build into $buildFile." }
+    $stamped = $text.Replace('package static let marker = "ssm-connect-build:dev;"', "package static let marker = `"ssm-connect-build:$Build;`"")
+    $stamped = $stamped.Replace('package static let pluginSHA256: String? = nil', "package static let pluginSHA256: String? = `"$pluginHash`"")
+    if (-not $stamped.Contains("ssm-connect-build:$Build;") -or -not $stamped.Contains($pluginHash)) {
+        throw "Could not stamp the build and plugin hash into $buildFile."
+    }
     [IO.File]::WriteAllText($buildFile, $stamped, [Text.UTF8Encoding]::new($false))
     # Swift 6.4.2 bundles Clang 21; current MSVC STLs reject Clang older than 22 when swift-crypto's C++ builds.
     foreach ($product in 'SSMConnectHelper', 'ssm-connect-proxy') {
@@ -166,8 +175,7 @@ Invoke-Native 'dotnet publish' {
 }
 Copy-Item (Join-Path $work 'shell\SSMConnect.exe') $payload
 
-# 5. The plugin, verified against its pinned hashes, beside the helper, with its notices.
-$plugin = & (Join-Path $repository 'scripts\fetch-plugin.ps1') | Select-Object -Last 1
+# 5. The plugin beside the helper, with its notices.
 Copy-Item (Join-Path $plugin 'bin\session-manager-plugin.exe') $payload
 New-Item -ItemType Directory -Force -Path (Join-Path $payload 'session-manager-plugin') | Out-Null
 foreach ($notice in 'LICENSE', 'NOTICE', 'THIRD-PARTY') {
