@@ -1,5 +1,3 @@
-import AWSSSO
-import AWSSSOOIDC
 import Foundation
 import Testing
 @testable import SSMConnectKit
@@ -123,17 +121,9 @@ struct AuthorizationSessionTests {
             accessToken: "stale-fixture", expiresAt: now.addingTimeInterval(-1),
             clientId: "fixture-client", clientSecret: "fixture-secret", refreshToken: "fixture-refresh",
             registrationExpiresAt: now.addingTimeInterval(3600)))
-        let oidc = MockOIDCClient()
-        oidc.createTokenResults = [
-            .failure(AWSSSOOIDC.InvalidRequestException()),
-            .success(CreateTokenOutput(accessToken: "new-fixture", expiresIn: 3600))
-        ]
-        let sso = MockSSOClient()
-        sso.output = GetRoleCredentialsOutput(roleCredentials: SSOClientTypes.RoleCredentials(
-            accessKeyId: "fixture", expiration: Int(now.addingTimeInterval(3600).timeIntervalSince1970 * 1000),
-            secretAccessKey: "fixture", sessionToken: "fixture"))
+        let sso = ScriptedSSO(tokens: [ScriptedSSO.error("InvalidRequestException"), ScriptedSSO.token("new-fixture")])
         let recorder = URLRecorder()
-        let provider = AWSAuthProvider(cache: cache, makeOIDCClient: { _ in oidc }, makeSSOClient: { _ in sso },
+        let provider = ClientAuthProvider(cache: cache, clients: AWSClientFactory(transport: sso),
             openURL: { recorder.record($0) }, pollIntervalOverride: .milliseconds(1))
         let session = AuthorizationSession(profile: profile, provider: provider)
         defer { session.cancel() }
@@ -143,12 +133,12 @@ struct AuthorizationSessionTests {
         }
         defer { operation.cancel() }
         try await wait { session.status == .signInRequired }
-        #expect(!resumed && recorder.urls.isEmpty && oidc.registerCount == 0)
+        #expect(!resumed && recorder.urls.isEmpty && sso.registerCount == 0)
         #expect(session.detailLine?.contains("Sign In Required") == true)
         session.signIn()
         session.signIn()
         #expect(try await operation.value == profile.id)
-        #expect(resumed && recorder.urls.count == 1 && oidc.registerCount == 1)
+        #expect(resumed && recorder.urls.count == 1 && sso.registerCount == 1)
         #expect(session.status == .ready)
     }
 

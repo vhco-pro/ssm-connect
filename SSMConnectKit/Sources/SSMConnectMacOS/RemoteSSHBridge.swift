@@ -39,19 +39,19 @@ extension RemoteSSHLease {
 
 public enum RemoteSSHProxyRuntime {
     /// The shared editor proxy with the macOS owner, files and AWS services.
-    static func proxy(auth: AuthProviding = AWSAuthProvider(), ec2: EC2Providing = EC2Service(),
-                      instanceConnect: InstanceConnectProviding = InstanceConnectService(),
-                      ssm: SSMProviding = SSMService()) -> EditorProxy {
+    static func proxy(auth: AuthProviding = ClientAuthProvider(openURL: { url in Task { @MainActor in NSWorkspace.shared.open(url) } }), ec2: EC2Providing = ClientEC2Service(),
+                      instanceConnect: InstanceConnectProviding = ClientInstanceConnectService(),
+                      ssm: SSMProviding = ClientSSMService()) -> EditorProxy {
         EditorProxy(owner: ApplicationLeaseOwner(), files: .posix, auth: auth, ec2: ec2, ssm: ssm,
                     instanceConnect: instanceConnect,
-                    isRejectedAuthorization: { AWSAuthProvider.isRejectedAuthorization($0) },
+                    isRejectedAuthorization: { ClientAuthProvider.isRejectedAuthorization($0) },
                     forceTerminate: { kill($0.processIdentifier, SIGKILL) })
     }
 
-    package static func authorizeChannel(_ lease: RemoteSSHLease, auth: AuthProviding = AWSAuthProvider(),
-                                 ec2: EC2Providing = EC2Service(),
-                                 instanceConnect: InstanceConnectProviding = InstanceConnectService(),
-                                 ssm: SSMProviding = SSMService()) async throws -> SSMSessionResponse {
+    package static func authorizeChannel(_ lease: RemoteSSHLease, auth: AuthProviding = ClientAuthProvider(openURL: { url in Task { @MainActor in NSWorkspace.shared.open(url) } }),
+                                 ec2: EC2Providing = ClientEC2Service(),
+                                 instanceConnect: InstanceConnectProviding = ClientInstanceConnectService(),
+                                 ssm: SSMProviding = ClientSSMService()) async throws -> SSMSessionResponse {
         try await proxy(auth: auth, ec2: ec2, instanceConnect: instanceConnect, ssm: ssm).authorizeChannel(lease)
     }
 
@@ -69,6 +69,6 @@ public enum RemoteSSHProxyRuntime {
     public static var failureMessage: String { EditorProxy.failureMessage }
 
     public static func failureMessage(for error: Error) -> String {
-        EditorProxy.failureMessage(for: error, isRejectedAuthorization: { AWSAuthProvider.isRejectedAuthorization($0) })
+        EditorProxy.failureMessage(for: error, isRejectedAuthorization: { ClientAuthProvider.isRejectedAuthorization($0) })
     }
 }

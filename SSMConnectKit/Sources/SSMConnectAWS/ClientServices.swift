@@ -83,8 +83,8 @@ package struct ClientSSMService: SSMProviding {
     package init(clients: AWSClientFactory = AWSClientFactory()) { self.clients = clients }
 
     package func startSSHSession(instanceId: String, region: String, credentials: AWSCredentials) async throws -> SSMSessionResponse {
-        try Self.response(try await clients.make(credentials, region: region).startSession(
-            target: instanceId, documentName: "AWS-StartSSHSession", parameters: ["portNumber": ["22"]]))
+        try Self.response(try await Self.start(clients.make(credentials, region: region), target: instanceId,
+                                               document: "AWS-StartSSHSession", parameters: ["portNumber": ["22"]]))
     }
 
     package func waitForSSMOnline(instanceId: String, region: String, credentials: AWSCredentials,
@@ -101,9 +101,17 @@ package struct ClientSSMService: SSMProviding {
 
     package func startSession(instanceId: String, region: String, credentials: AWSCredentials,
                               localPort: Int, remotePort: Int) async throws -> SSMSessionResponse {
-        try Self.response(try await clients.make(credentials, region: region).startSession(
-            target: instanceId, documentName: "AWS-StartPortForwardingSession",
-            parameters: ["portNumber": [String(remotePort)], "localPortNumber": [String(localPort)]]))
+        try Self.response(try await Self.start(clients.make(credentials, region: region), target: instanceId,
+                                               document: "AWS-StartPortForwardingSession",
+                                               parameters: ["portNumber": [String(remotePort)], "localPortNumber": [String(localPort)]]))
+    }
+
+    /// StartSession through the client: a reply missing a field is malformed, as the SDK service
+    /// reported it.
+    private static func start(_ client: AWSClient, target: String, document: String,
+                              parameters: [String: [String]]) async throws -> SessionStart {
+        do { return try await client.startSession(target: target, documentName: document, parameters: parameters) }
+        catch AWSClientError.malformedResponse(operation: "StartSession") { throw SSMError.malformedSessionResponse }
     }
 
     package static func response(_ start: SessionStart) throws -> SSMSessionResponse {

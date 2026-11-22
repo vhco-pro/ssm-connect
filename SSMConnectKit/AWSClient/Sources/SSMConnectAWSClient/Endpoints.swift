@@ -37,8 +37,15 @@ public enum AWSService: String, Sendable, CaseIterable {
 /// the standard and GovCloud partitions. Configured endpoint settings (environment
 /// variables and shared config) are never read.
 public enum AWSEndpoints {
-    public enum ResolveError: Error, Equatable {
+    public enum ResolveError: Error, Equatable, LocalizedError {
         case invalidRegion(String)
+
+        /// Read as the SDK's invalid-value error read: "Invalid region: <region>".
+        public var errorDescription: String? {
+            switch self {
+            case let .invalidRegion(region): "Invalid region: \(region)"
+            }
+        }
     }
 
     public static func dnsSuffix(region: String) -> String {

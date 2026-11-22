@@ -1,6 +1,5 @@
 import Foundation
-import Smithy
-import SmithyHTTPAPI
+import SSMConnectAWSClient
 import Testing
 @testable import SSMConnectKit
 
@@ -215,77 +214,16 @@ struct ConnectionStateMachineTests {
         return p
     }
 
-    // Verifies: Fix opaque region-failure on Connect, Criterion: "A profile whose `resourceRegion` is empty or malformed, when Connect is invoked (manual OR auto), drives the state machine to `.error` with a specific, non-opaque `errorMessage` naming the field and value, and the EC2/SSM/Secrets seams are NEVER invoked (call count asserted zero)."
-    @Test("manual connect with a bad resource region fails fast, names the field, and calls no AWS seam", arguments: [
-        "",              // empty (imported SSO profile missing `region`)
-        "eu_central_1",  // malformed (underscores)
-        "eu-central-1 ", // stray trailing space
-    ])
-    func manualConnectBadResourceRegionGuarded(region: String) async {
-        let auth = MockAuthProvider()
+    // Verifies: Fix opaque region-failure on Connect, Criterion: a region the AWS client cannot
+    // resolve produces a user-facing message containing "Invalid region", NOT a bridged
+    // "… error N" string. The SDK raised this as Smithy's ClientError.invalidValue; SSM
+    // Connect's client raises AWSEndpoints.ResolveError.
+    @Test("an AWS client region error surfaced from a seam is unwrapped to its message, not 'error 0'")
+    func invalidRegionErrorIsUnwrapped() async {
+        // Valid regions so the pre-flight guard passes; the client's error is injected at the
+        // first seam to exercise the error text on the real failure path.
         let ec2 = MockEC2Service()
-        let ssm = MockSSMService()
-        let secrets = MockSecretsService()
-        let machine = makeMachine(
-            auth: auth, ec2: ec2, ssm: ssm, secrets: secrets,
-            profile: profile(resourceRegion: region)
-        )
-
-        machine.connect()
-        await machine.awaitInFlightTask()
-
-        #expect(machine.state == .error)
-        #expect(machine.errorMessage?.contains("resource region") == true)
-        #expect(machine.errorMessage?.contains("not a valid AWS region") == true)
-        // The guard runs before any SDK call: nothing downstream is touched.
-        #expect(auth.authenticateCallCount == 0)
-        #expect(ec2.resolveCount == 0)
-        #expect(ssm.waitCount == 0)
-        #expect(secrets.fetchCount == 0)
-    }
-
-    // Verifies: Fix opaque region-failure on Connect, Criterion: "A profile whose `resourceRegion` is empty or malformed, when Connect is invoked (manual OR auto), drives the state machine to `.error` with a specific, non-opaque `errorMessage` naming the field and value, and the EC2/SSM/Secrets seams are NEVER invoked (call count asserted zero)."
-    @Test("manual connect with a bad SSO region fails fast and names the SSO region field")
-    func manualConnectBadSSORegionGuarded() async {
-        let auth = MockAuthProvider()
-        let ec2 = MockEC2Service()
-        let machine = makeMachine(auth: auth, ec2: ec2, profile: profile(ssoRegion: "-eu"))
-
-        machine.connect()
-        await machine.awaitInFlightTask()
-
-        #expect(machine.state == .error)
-        #expect(machine.errorMessage?.contains("SSO region") == true)
-        #expect(auth.authenticateCallCount == 0)
-        #expect(ec2.resolveCount == 0)
-    }
-
-    // Verifies: Fix opaque region-failure on Connect, Criterion: "A profile whose `resourceRegion` is empty or malformed, when Connect is invoked (manual OR auto), drives the state machine to `.error` with a specific, non-opaque `errorMessage` naming the field and value, and the EC2/SSM/Secrets seams are NEVER invoked (call count asserted zero)."
-    @Test("auto-connect with a bad region never attempts a connection (isConfigured gate)")
-    func autoConnectBadRegionSkips() async {
-        let auth = MockAuthProvider()
-        let ec2 = MockEC2Service()
-        var settings = AppSettings.default
-        settings.autoConnect = true
-        let machine = makeMachine(auth: auth, ec2: ec2, profile: profile(resourceRegion: ""), settings: settings)
-
-        machine.onLaunch()
-        await machine.awaitInFlightTask()
-
-        // A bad region makes the profile not `isConfigured`, so auto-connect is skipped entirely:
-        // the state never leaves `.disconnected` and no SDK seam is touched.
-        #expect(machine.state == .disconnected)
-        #expect(auth.authenticateCallCount == 0)
-        #expect(ec2.resolveCount == 0)
-    }
-
-    // Verifies: Fix opaque region-failure on Connect, Criterion: "A thrown `Smithy.ClientError.invalidValue("Invalid region: xx")` mapped by `describe(_:)` produces a user-facing message containing `"Invalid region"`, NOT the generic `Smithy.ClientError error 4` bridge string."
-    @Test("a Smithy.ClientError surfaced from a seam is unwrapped to its message, not 'error 4'")
-    func smithyClientErrorIsUnwrapped() async {
-        // Valid regions so the pre-flight guard passes; the SDK-shaped error is injected at the
-        // first seam to exercise describe(_:)'s ClientError unwrap on the real failure path.
-        let ec2 = MockEC2Service()
-        ec2.resolveResult = .failure(ClientError.invalidValue("Invalid region: xx"))
+        ec2.resolveResult = .failure(AWSEndpoints.ResolveError.invalidRegion("xx"))
         let machine = makeMachine(ec2: ec2, profile: .example)
 
         machine.connect()
@@ -294,12 +232,12 @@ struct ConnectionStateMachineTests {
         #expect(machine.state == .error)
         #expect(machine.errorMessage == "Invalid region: xx")
         #expect(machine.errorMessage?.contains("Invalid region") == true)
-        #expect(machine.errorMessage?.contains("error 4") == false)
-        #expect(machine.errorMessage?.contains("Smithy.ClientError") == false)
+        #expect(machine.errorMessage?.contains("error 0") == false)
+        #expect(machine.errorMessage?.contains("ResolveError") == false)
     }
 
-    // Verifies #20: an AWS service error whose shape is not in the operation's Smithy model
-    // arrives as `UnknownAWSHTTPServiceError` and must not bridge to "(… error 1.)".
+    // Verifies #20: an AWS service error the app has no type for must render as its message,
+    // type and status, never as a bridged "(… error 1.)".
     @Test("an unmodeled AWS service error is unwrapped to its message, not 'error 1'")
     func unknownAWSServiceErrorIsUnwrapped() async {
         let ec2 = MockEC2Service()

@@ -5,7 +5,7 @@ import SSMConnectWorkflow
 
 /// Reads (and silently updates) the AWS SSO token cache (F-05, B2).
 ///
-/// Behind a protocol so `AWSAuthProvider` can be unit-tested with fixture tokens
+/// Behind a protocol so `ClientAuthProvider` can be unit-tested with fixture tokens
 /// instead of touching the real `~/.aws/sso/cache/` directory.
 package protocol SSOCacheReading: Sendable {
     /// Returns the cached token matching `startUrl` + `region`, or `nil` if none exists.

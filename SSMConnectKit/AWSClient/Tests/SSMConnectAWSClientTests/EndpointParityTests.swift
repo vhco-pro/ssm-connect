@@ -43,6 +43,12 @@ struct EndpointParityTests {
         return (expected, try AWSEndpoints.url(for: service, region: parts[1]).absoluteString)
     }
 
+    @Test("An invalid region is refused with a readable message, as the SDK's invalid-value error read")
+    func invalidRegionMessage() {
+        #expect(throws: AWSEndpoints.ResolveError.invalidRegion("x x")) { try AWSEndpoints.url(for: .ec2, region: "x x") }
+        #expect(AWSEndpoints.ResolveError.invalidRegion("xx").localizedDescription == "Invalid region: xx")
+    }
+
     @Test("Every service and region the SDK resolves is covered")
     func coverage() {
         #expect(Self.fixture.endpoints.keys.sorted() == Self.services.map(\.0).sorted())

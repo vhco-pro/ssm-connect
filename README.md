@@ -271,7 +271,7 @@ Both modes share the front half (auth → discover → tunnel), then branch:
 
 ```mermaid
 graph TD
-    A["SSO login<br/>(aws-sdk-swift, ~/.aws/sso cache)"] --> B[Resolve instance by tag]
+    A["SSO login<br/>(SSM Connect's AWS client, ~/.aws/sso cache)"] --> B[Resolve instance by tag]
     B --> C{Instance stopped?}
     C -->|yes| D["StartInstances + wait running"]
     C -->|no| E
@@ -300,11 +300,12 @@ In multi-user mode the agent tunnel is **transient** - it's only needed for the 
 so the agent tunnel is torn down before the viewer launches. The `.dcv` file is short-lived (`0600`)
 and deleted right after the viewer opens.
 
-- **Auth, EC2, SSM, Secrets Manager, STS** use the native
-  [`aws-sdk-swift`](https://github.com/awslabs/aws-sdk-swift). SSO tokens use the standard
+- **Auth, EC2, SSM, Secrets Manager, STS and EC2 Instance Connect** go through SSM Connect's own
+  AWS client (`SSMConnectKit/AWSClient`): Signature Version 4 signing and the few operations the app
+  uses, on macOS, Windows and Linux alike, with no AWS SDK linked. SSO tokens use the standard
   `~/.aws/sso/cache` (shared with the AWS CLI), so logins are reused and silently refreshed.
 - **The tunnel** reuses the official AWS `session-manager-plugin` binary, bundled in the app behind a
-  `TunnelProvider` protocol (the SDK only exposes `StartSession`; the port-forward data-channel
+  `TunnelProvider` protocol (AWS exposes only `StartSession`; the port-forward data-channel
   protocol lives only in the plugin). The plugin is fetched + checksum-verified at build time.
 - **The identity token** (multi-user) is a presigned `sts:GetCallerIdentity` request used as an
   opaque bearer token - the same credential the SSM tunnel already required. The agent proves your

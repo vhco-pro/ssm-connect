@@ -134,6 +134,9 @@ package final class ClientAuthProvider: AuthProviding, @unchecked Sendable {
         do {
             role = try await clients.make(nil, region: profile.ssoRegion)
                 .getRoleCredentials(accessToken: accessToken, accountId: profile.accountId, roleName: profile.roleName)
+        } catch AWSClientError.malformedResponse(operation: "GetRoleCredentials") {
+            // A reply without role credentials, as the SDK provider reported it.
+            throw AuthError.missingRoleCredentials
         } catch {
             // Signed in but not assigned this permission set: re-authenticating cannot fix it.
             guard Self.isRoleAccessDenied(error) else { throw error }

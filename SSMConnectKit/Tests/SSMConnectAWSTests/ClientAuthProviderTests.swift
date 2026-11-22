@@ -25,12 +25,29 @@ struct ClientAuthProviderTests {
         private let lock = NSLock()
         private var tokenReplies: [HTTPResponse]
         private(set) var paths: [String] = []
+        /// The bearer token of each GetRoleCredentials request, in order.
+        private(set) var roleTokens: [String] = []
+        /// The grant_type of each CreateToken request, in order.
+        private(set) var grants: [String] = []
         var role = HTTPResponse(status: 200, body: Data(#"{"roleCredentials":{"accessKeyId":"AKID","secretAccessKey":"secret","sessionToken":"session","expiration":1800003600000}}"#.utf8))
+        /// Replies for GetRoleCredentials by bearer token; others get `role`.
+        var roleByToken: [String: HTTPResponse] = [:]
+        /// Thrown by the transport for CreateToken instead of a reply (a network failure).
+        var tokenFailure: Error?
+        /// Runs when CreateToken is called, before it answers.
+        var onToken: () -> Void = {}
 
         init(token: [HTTPResponse] = []) { tokenReplies = token }
 
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             let path = request.url.path
+            if path == "/token" {
+                onToken()
+                if let failure = lock.withLock({ tokenFailure }) {
+                    lock.withLock { paths.append(path) }
+                    throw failure
+                }
+            }
             return lock.withLock {
                 paths.append(path)
                 switch path {
@@ -39,9 +56,13 @@ struct ClientAuthProviderTests {
                 case "/device_authorization":
                     return HTTPResponse(status: 200, body: Data(#"{"deviceCode":"device","userCode":"ABCD-EFGH","verificationUriComplete":"https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD-EFGH","expiresIn":600,"interval":1}"#.utf8))
                 case "/token":
+                    let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                    grants.append(body?["grantType"] as? String ?? body?["grant_type"] as? String ?? "")
                     return tokenReplies.count > 1 ? tokenReplies.removeFirst() : tokenReplies[0]
                 case "/federation/credentials":
-                    return role
+                    let bearer = request.headers.first { $0.0.lowercased() == "x-amz-sso_bearer_token" }?.1 ?? ""
+                    roleTokens.append(bearer)
+                    return roleByToken[bearer] ?? role
                 default:
                     return HTTPResponse(status: 404)
                 }
@@ -141,9 +162,12 @@ struct ClientAuthProviderTests {
     func refreshNeedsSignIn() async throws {
         let cache = try Self.temporary()
         defer { try? FileManager.default.removeItem(at: cache) }
+        let service = SSOService()
+        let opened = Opened()
         await #expect(throws: AuthError.signInRequired) {
-            _ = try await Self.provider(SSOService(), cache: cache).refreshIfNeeded(profile: Self.profile)
+            _ = try await Self.provider(service, cache: cache, opened: opened).refreshIfNeeded(profile: Self.profile)
         }
+        #expect(opened.all.isEmpty && service.paths.isEmpty)
     }
 
     @Test("A role the user is not assigned is reported by account and role, not as a sign-in problem")
@@ -153,9 +177,149 @@ struct ClientAuthProviderTests {
         try Self.seed(cache, accessToken: "cached", expiresIn: 3600, refresh: false)
         let service = SSOService()
         service.role = Self.error("ForbiddenException", status: 403)
-        await #expect(throws: AuthError.roleAccessDenied(accountId: "111122223333", roleName: "Admin", detail: "ForbiddenException")) {
+        let thrown = await #expect(throws: AuthError.roleAccessDenied(accountId: "111122223333", roleName: "Admin", detail: "ForbiddenException")) {
             _ = try await Self.provider(service, cache: cache).authenticate(profile: Self.profile)
         }
+        // The message is actionable and does not read as a transient sign-in problem.
+        let description = try #require(thrown?.errorDescription)
+        #expect(description.contains("111122223333") && description.contains("Admin") && !description.contains("error 1"))
+    }
+
+    // MARK: Ported from the SDK provider's tests (T36)
+
+    @Test("A refreshable token one second inside the renewal lead time renews before its known expiry, without a browser")
+    func renewsInsideLeadTime() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "old", expiresIn: 299, refresh: true)
+        let service = SSOService(token: [Self.token("renewed")])
+        let opened = Opened()
+        _ = try await Self.provider(service, cache: cache, opened: opened).refreshIfNeeded(profile: Self.profile)
+        #expect(service.grants == ["refresh_token"] && opened.all.isEmpty)
+    }
+
+    @Test("A revoked cached token falls through to a fresh interactive sign-in")
+    func revokedCachedToken() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "cached", expiresIn: 3600, refresh: false)
+        let service = SSOService(token: [Self.token("fresh")])
+        service.roleByToken["cached"] = Self.error("UnauthorizedException", status: 401)
+        let opened = Opened()
+        _ = try await Self.provider(service, cache: cache, opened: opened).authenticate(profile: Self.profile)
+        #expect(service.roleTokens == ["cached", "fresh"] && opened.all.count == 1)
+    }
+
+    @Test("An offline silent refresh fails without starting browser sign-in")
+    func offlineRefresh() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "old", expiresIn: 60, refresh: true)
+        let service = SSOService()
+        service.tokenFailure = URLError(.notConnectedToInternet)
+        let opened = Opened()
+        await #expect(throws: (any Error).self) {
+            _ = try await Self.provider(service, cache: cache, opened: opened).authenticate(profile: Self.profile)
+        }
+        #expect(opened.all.isEmpty && !service.paths.contains("/device_authorization"))
+    }
+
+    @Test("A cancelled silent refresh stays cancelled and never opens a browser")
+    func cancelledRefresh() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "old", expiresIn: 60, refresh: true)
+        let service = SSOService()
+        service.tokenFailure = CancellationError()
+        let opened = Opened()
+        await #expect(throws: CancellationError.self) {
+            _ = try await Self.provider(service, cache: cache, opened: opened).authenticate(profile: Self.profile)
+        }
+        #expect(opened.all.isEmpty)
+    }
+
+    @Test("A refresh rejected as an invalid request needs a fresh sign-in, not an opaque connection error",
+          arguments: [false, true])
+    func invalidRefreshRequest(interactive: Bool) async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "old", expiresIn: 60, refresh: true)
+        let service = SSOService(token: [Self.error("InvalidRequestException"), Self.token("fresh")])
+        let opened = Opened()
+        let provider = Self.provider(service, cache: cache, opened: opened)
+        if interactive {
+            _ = try await provider.authenticate(profile: Self.profile)
+            #expect(service.paths.contains("/device_authorization") && opened.all.count == 1 && service.roleTokens == ["fresh"])
+        } else {
+            await #expect(throws: AuthError.signInRequired) { _ = try await provider.refreshIfNeeded(profile: Self.profile) }
+            #expect(!service.paths.contains("/client/register") && opened.all.isEmpty && service.roleTokens.isEmpty)
+        }
+    }
+
+    @Test("An invalid role request is not mistaken for a rejected refresh grant", arguments: [false, true])
+    func invalidRoleRequest(interactive: Bool) async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "cached", expiresIn: 3600, refresh: false)
+        let service = SSOService()
+        service.role = Self.error("InvalidRequestException")
+        let opened = Opened()
+        let provider = Self.provider(service, cache: cache, opened: opened)
+        let thrown = await #expect(throws: AWSServiceError.self) {
+            if interactive { _ = try await provider.authenticate(profile: Self.profile) }
+            else { _ = try await provider.refreshIfNeeded(profile: Self.profile) }
+        }
+        #expect(thrown?.typeName == "InvalidRequestException")
+        #expect(service.roleTokens.count == 1 && opened.all.isEmpty && !service.paths.contains("/client/register"))
+    }
+
+    @Test("A rejected device grant adopts a sign-in another process completed meanwhile")
+    func adoptsSharedSignIn() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let service = SSOService(token: [Self.error("InvalidGrantException")])
+        service.onToken = { try? Self.seed(cache, accessToken: "shared", expiresIn: 3600, refresh: false) }
+        let opened = Opened()
+        _ = try await Self.provider(service, cache: cache, opened: opened).authenticate(profile: Self.profile)
+        #expect(opened.all.count == 1 && service.roleTokens == ["shared"])
+    }
+
+    @Test("A rejected device grant with no sign-in to adopt asks for sign-in")
+    func rejectedDeviceGrant() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let service = SSOService(token: [Self.error("InvalidGrantException")])
+        let opened = Opened()
+        await #expect(throws: AuthError.signInRequired) {
+            _ = try await Self.provider(service, cache: cache, opened: opened).authenticate(profile: Self.profile)
+        }
+        #expect(opened.all.count == 1 && service.roleTokens.isEmpty)
+    }
+
+    @Test("A role-credentials reply without credentials is reported as missing role credentials")
+    func missingRoleCredentials() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "cached", expiresIn: 3600, refresh: false)
+        let service = SSOService()
+        service.role = HTTPResponse(status: 200, body: Data("{}".utf8))
+        await #expect(throws: AuthError.missingRoleCredentials) {
+            _ = try await Self.provider(service, cache: cache).authenticate(profile: Self.profile)
+        }
+    }
+
+    @Test("A 401 from GetRoleCredentials is left for the re-authentication path, not called a missing role")
+    func unauthorizedRoleRequest() async throws {
+        let cache = try Self.temporary()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        try Self.seed(cache, accessToken: "cached", expiresIn: 3600, refresh: false)
+        let service = SSOService(token: [Self.token("fresh")])
+        service.role = Self.error("UnauthorizedException", status: 401)
+        let thrown = await #expect(throws: AWSServiceError.self) {
+            _ = try await Self.provider(service, cache: cache).authenticate(profile: Self.profile)
+        }
+        #expect(thrown?.typeName == "UnauthorizedException")
+        #expect(!ClientAuthProvider.isRoleAccessDenied(try #require(thrown)))
     }
 
     @Test("Rejected-authorization and permission errors are recognised by type name")

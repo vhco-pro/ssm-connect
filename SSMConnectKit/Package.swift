@@ -7,11 +7,9 @@ import PackageDescription
 // (project.yml) is a thin @main shell that depends on this package and handles
 // only the macOS .app bundling/signing that SwiftPM can't.
 //
-// The shared layers and the helper build on macOS, Windows and Linux. The macOS adapters,
-// SwiftUI, the umbrella, the SSH proxy and aws-sdk-swift (until T36) exist only when the
-// manifest is evaluated on macOS, so `swift build` and `swift test` work on the other two.
-
-let sdkProducts = ["AWSSSOOIDC", "AWSSSO", "AWSEC2", "AWSEC2InstanceConnect", "AWSSSM", "AWSSecretsManager"]
+// The shared layers, the helper and the SSH proxy build on macOS, Windows and Linux. The macOS
+// adapters, SwiftUI and the umbrella exist only when the manifest is evaluated on macOS. Every
+// platform reaches AWS through SSM Connect's own client (AWSClient); no AWS SDK is linked.
 
 var products: [Product] = [
     .executable(name: "SSMConnectHelper", targets: ["SSMConnectHelper"]),
@@ -113,9 +111,6 @@ targets += [
 products += [
     .library(name: "SSMConnectKit", targets: ["SSMConnectKit"]),
 ]
-dependencies.append(.package(url: "https://github.com/awslabs/aws-sdk-swift.git", from: "1.7.13"))
-// On macOS the AWS boundary also holds the aws-sdk-swift services until T36 switches it over.
-awsDependencies += sdkProducts.map { .product(name: $0, package: "aws-sdk-swift") }
 targets += [
     // The macOS platform adapters: AppKit, persistence, DCV, the plugin and SSH processes,
     // browsers and editors.
@@ -141,7 +136,7 @@ targets += [
             "SSMConnectUI",
             .product(name: "Yams", package: "Yams"),
             .product(name: "SSMConnectAWSClient", package: "AWSClient"),
-        ] + sdkProducts.map { .product(name: $0, package: "aws-sdk-swift") },
+        ],
         resources: [.copy("Resources/ThirdPartyNotices.txt")]
     ),
     .testTarget(
@@ -153,13 +148,9 @@ targets += [
             "SSMConnectAWS",
             "SSMConnectMacOS",
             "SSMConnectUI",
-            // The tests construct AWS SDK response types directly. AWSClientRuntime is
-            // explicit because the error-rendering tests build a real
-            // `UnknownAWSHTTPServiceError` rather than a look-alike stub (#20).
-            .product(name: "AWSClientRuntime", package: "aws-sdk-swift"),
-            // Resolver tests inject the shared AWS client's transport.
+            // Resolver and sign-in tests inject the shared AWS client's transport.
             .product(name: "SSMConnectAWSClient", package: "AWSClient"),
-        ] + sdkProducts.map { .product(name: $0, package: "aws-sdk-swift") },
+        ],
         // Read from the source tree through #filePath, not bundled.
         exclude: ["Fixtures"]
     ),

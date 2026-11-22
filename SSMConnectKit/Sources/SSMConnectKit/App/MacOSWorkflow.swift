@@ -1,17 +1,22 @@
 import AppKit
-import ClientRuntime
 import Darwin
 import Foundation
-import Smithy
-import SmithyHTTPAPI
+import SSMConnectAWSClient
 
-// The macOS composition of the shared workflows: the platform port, the SDK-backed services
-// as defaults, and the state machines' existing initializers, so callers in this package and
-// the app shell construct them exactly as before.
+// The macOS composition of the shared workflows: the platform port, the services on SSM
+// Connect's own AWS client as defaults, and the state machines' existing initializers, so
+// callers in this package and the app shell construct them exactly as before.
+
+extension ClientAuthProvider {
+    /// SSO sign-in for the macOS app: the device authorization page opens in the default browser.
+    package static func macOS() -> ClientAuthProvider {
+        ClientAuthProvider(openURL: { url in Task { @MainActor in NSWorkspace.shared.open(url) } })
+    }
+}
 
 extension WorkflowPlatform {
-    /// macOS: POSIX signals for quit, the AWS SDK's error shapes, and STS through the shared
-    /// AWS client.
+    /// macOS: POSIX signals for quit, and SSM Connect's AWS client for error text, the
+    /// authorization rules and STS.
     package static let macOS = WorkflowPlatform(
         terminateChildProcess: { pid in
             guard pid > 0 else { return }
@@ -19,9 +24,9 @@ extension WorkflowPlatform {
             usleep(300_000) // 0.3s grace
             kill(pid, SIGKILL)
         },
-        describeError: { SDKErrorText.message(for: $0) },
-        isRejectedAuthorization: { AWSAuthProvider.isRejectedAuthorization($0) },
-        isPermissionDenied: { AWSAuthProvider.isPermissionDenied($0) },
+        describeError: { AWSErrorText.message(for: $0) },
+        isRejectedAuthorization: { ClientAuthProvider.isRejectedAuthorization($0) },
+        isPermissionDenied: { ClientAuthProvider.isPermissionDenied($0) },
         isExpiredCredentials: { ConnectionStateMachine.defaultExpiredCredentialsCheck($0) },
         resolveUsername: { credentials, region in
             try await STSIdentityResolver(presigner: STSPresigner(region: region)).resolve(credentials: credentials).username
@@ -61,11 +66,11 @@ extension ConnectionStateMachine {
 
     /// The macOS services as defaults, for the app and the tests.
     package convenience init(
-        authProvider: AuthProviding = AWSAuthProvider(),
-        ec2: EC2Providing = EC2Service(),
-        ssm: SSMProviding = SSMService(),
+        authProvider: AuthProviding = ClientAuthProvider.macOS(),
+        ec2: EC2Providing = ClientEC2Service(),
+        ssm: SSMProviding = ClientSSMService(),
         tunnel: TunnelProvider = BundledPluginTunnel(),
-        secrets: SecretsProviding = SecretsService(),
+        secrets: SecretsProviding = ClientSecretsService(),
         dcv: DCVLaunching = DCVLauncher(),
         readiness: WorkstationReadinessProbing = HTTPSReadinessProbe(),
         tunnelListener: TunnelListenerProbing = TCPListenerProbe(),
@@ -89,17 +94,11 @@ extension ConnectionStateMachine {
                   reconnectBackoff: reconnectBackoff, reconnectSleep: reconnectSleep)
     }
 
-    /// Render an AWS service error as "<message> (<TypeName>, HTTP <status>)", degrading
-    /// gracefully as fields are missing. The type name and status are what make an otherwise
-    /// generic message ("No access") actionable in a bug report.
-    package nonisolated static func message(from error: ServiceError, httpStatus: HTTPStatusCode?) -> String {
-        AWSErrorText.message(typeName: error.typeName, message: error.message, httpStatus: httpStatus?.rawValue)
-    }
-
-    /// Default heuristic for detecting expired/unauthorized SSO credentials across SDK services.
+    /// Default check for expired or unauthorized SSO credentials across the AWS services: the
+    /// rejected-authorization rules, or an expired-token or unauthorized-access type name.
     package nonisolated static func defaultExpiredCredentialsCheck(_ error: Error) -> Bool {
-        if AWSAuthProvider.isRejectedAuthorization(error) { return true }
-        let description = String(reflecting: error)
+        if ClientAuthProvider.isRejectedAuthorization(error) { return true }
+        let description = (error as? AWSServiceError)?.typeName ?? String(reflecting: error)
         return description.contains("ExpiredToken")
             || description.contains("UnauthorizedAccess")
             || description.contains("ExpiredTokenException")
@@ -108,7 +107,7 @@ extension ConnectionStateMachine {
 
 extension AuthorizationSession {
     public convenience init(profile: ConnectionProfile) {
-        self.init(profile: profile, provider: AWSAuthProvider())
+        self.init(profile: profile, provider: ClientAuthProvider.macOS())
     }
 
     package convenience init(profile: ConnectionProfile, provider: AuthProviding,
@@ -122,12 +121,12 @@ extension AuthorizationSession {
 extension WebForwardsStateMachine {
     public convenience init(profile: ConnectionProfile, settings: AppSettings, log: ConnectionLog,
                             authorization: AuthorizationSession? = nil) {
-        self.init(profile: profile, settings: settings, log: log, auth: authorization ?? AWSAuthProvider())
+        self.init(profile: profile, settings: settings, log: log, auth: authorization ?? ClientAuthProvider.macOS())
     }
 
     package convenience init(profile: ConnectionProfile, settings: AppSettings = .default, log: ConnectionLog? = nil,
-         auth: AuthProviding = AWSAuthProvider(), ec2: EC2Providing = EC2Service(),
-         ssm: SSMProviding = SSMService(), instanceConnect: InstanceConnectProviding = InstanceConnectService(),
+         auth: AuthProviding = ClientAuthProvider.macOS(), ec2: EC2Providing = ClientEC2Service(),
+         ssm: SSMProviding = ClientSSMService(), instanceConnect: InstanceConnectProviding = ClientInstanceConnectService(),
          keyGenerator: SSHKeyGenerating = SSHKeyGenerator(), tunnel: SSHTunnelProviding = SSHTunnel(),
          resolveUser: @escaping @Sendable (AWSCredentials, String) async throws -> String = WorkflowPlatform.macOS.resolveUsername,
          writePAC: @escaping @Sendable (WebForwardsConfiguration, UUID) throws -> URL = {
@@ -149,11 +148,11 @@ extension RemoteDevelopmentStateMachine {
     public convenience init(profile: ConnectionProfile, authorization: AuthorizationSession? = nil) {
         self.init(profile: profile, root: BrowserPrivateFiles.root.deletingLastPathComponent()
             .appendingPathComponent("RemoteAccess"), configURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh/config"),
-            auth: authorization ?? AWSAuthProvider(), resumeStore: UserDefaults.standard)
+            auth: authorization ?? ClientAuthProvider.macOS(), resumeStore: UserDefaults.standard)
     }
 
-    package convenience init(profile: ConnectionProfile, root: URL, configURL: URL, auth: AuthProviding = AWSAuthProvider(),
-         ec2: EC2Providing = EC2Service(), ssm: SSMProviding = SSMService(), keyGenerator: SSHKeyGenerating = SSHKeyGenerator(),
+    package convenience init(profile: ConnectionProfile, root: URL, configURL: URL, auth: AuthProviding = ClientAuthProvider.macOS(),
+         ec2: EC2Providing = ClientEC2Service(), ssm: SSMProviding = ClientSSMService(), keyGenerator: SSHKeyGenerating = SSHKeyGenerator(),
          helperPath: @escaping () -> String = { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ssm-connect-proxy").path },
          pluginPath: @escaping () -> String? = BundledPluginTunnel.defaultPluginPath,
          editorPath: @escaping () -> String? = {
