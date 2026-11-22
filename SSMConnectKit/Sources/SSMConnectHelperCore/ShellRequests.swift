@@ -36,19 +36,23 @@ package final class ShellRequests: @unchecked Sendable {
 }
 
 /// DCV Viewer through the shell: the connection file is written owner-only to a temporary
-/// directory, and the shell opens it with the viewer it found.
+/// directory, the shell opens it with the viewer it found, and the file is deleted once the
+/// viewer has had time to read it, as on macOS. A crash within that window is covered by the sweep
+/// at the next connect.
 package struct ShellDCVLauncher: DCVLaunching {
     let requests: ShellRequests
     let directory: URL
     let viewerInstalled: @Sendable () -> Bool
     let writePrivate: @Sendable (Data, URL) throws -> Void
+    let cleanupDelay: Duration
 
     package init(requests: ShellRequests, directory: URL, viewerInstalled: @escaping @Sendable () -> Bool,
-                 writePrivate: @escaping @Sendable (Data, URL) throws -> Void) {
+                 writePrivate: @escaping @Sendable (Data, URL) throws -> Void, cleanupDelay: Duration = .seconds(5)) {
         self.requests = requests
         self.directory = directory
         self.viewerInstalled = viewerInstalled
         self.writePrivate = writePrivate
+        self.cleanupDelay = cleanupDelay
     }
 
     package func isViewerInstalled() -> Bool { viewerInstalled() }
@@ -59,6 +63,11 @@ package struct ShellDCVLauncher: DCVLaunching {
             .appendingPathExtension(DCVConnectionFile.fileExtension)
         try writePrivate(Data(connectionFile.iniContent().utf8), url)
         requests.launch("dcvViewer", fields: ["file": url.externalPath])
+        let delay = cleanupDelay
+        Task.detached {
+            try? await Task.sleep(for: delay)
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     package func sweepOrphanedFiles() {

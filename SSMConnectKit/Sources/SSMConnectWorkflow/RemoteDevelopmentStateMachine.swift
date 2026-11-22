@@ -218,9 +218,10 @@ import Observation
         stop(profileID: profile.id)
     }
 
-    package func terminateForQuit() { stopAll() }
+    /// Quitting removes the keys at once: the process ends before Stop's delayed removal would run.
+    package func terminateForQuit() { stopAll(removingKeysNow: true) }
 
-    private func stop(profileID: UUID) {
+    private func stop(profileID: UUID, removingKeyNow: Bool = false) {
         if profileID == profile.id {
             cancelContinuation()
             leaseMessage = nil
@@ -239,10 +240,10 @@ import Observation
             } catch { errorMessage = error.localizedDescription }
         }
         let key = keys.removeValue(forKey: profileID)
-        Task { try? await Task.sleep(for: .seconds(1)); key?.remove() }
+        if removingKeyNow { key?.remove() } else { Task { try? await Task.sleep(for: .seconds(1)); key?.remove() } }
     }
 
-    private func stopAll() {
+    private func stopAll(removingKeysNow: Bool = false) {
         task?.cancel()
         preparationGeneration += 1
         task = nil
@@ -253,7 +254,7 @@ import Observation
         recoveryMonitor = nil
         pendingReplacement = nil
         cancelContinuation()
-        for id in Array(leases.keys) { stop(profileID: id) }
+        for id in Array(leases.keys) { stop(profileID: id, removingKeyNow: removingKeysNow) }
     }
 
     private func prepareAndLaunch(recovering: Bool, approvedInstanceID: String? = nil) async throws {

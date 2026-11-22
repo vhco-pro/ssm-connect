@@ -105,7 +105,7 @@ struct HelperCommandTests {
     }
 
     static func fixture(auth: MockAuthProvider = MockAuthProvider(), browserSupported: Bool = true,
-                        files: ProfileFileSnapshot? = nil) async throws -> Fixture {
+                        files: ProfileFileSnapshot? = nil, dcvCleanupDelay: Duration = .seconds(5)) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("helper-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let ec2 = MockEC2Service()
@@ -129,7 +129,7 @@ struct HelperCommandTests {
             platform: platform, auth: auth, ec2: ec2, ssm: MockSSMService(), secrets: MockSecretsService(),
             instanceConnect: Connect(), tunnel: MockTunnelProvider(), sshTunnel: SSH(), keyGenerator: Keys(),
             dcv: ShellDCVLauncher(requests: requests, directory: root, viewerInstalled: { true },
-                                  writePrivate: { data, url in try data.write(to: url) }),
+                                  writePrivate: { data, url in try data.write(to: url) }, cleanupDelay: dcvCleanupDelay),
             readiness: Ready(), tunnelListener: Listening(), instanceIds: InstanceIds(), keyValues: InMemoryKeyValueStore(),
             profileFiles: Files(snapshot: files), pasteboard: Board(), notifier: SilentNotificationService(),
             writePAC: { _, _ in root.appendingPathComponent("proxy.pac") },
@@ -205,6 +205,32 @@ struct HelperCommandTests {
         await Self.run(f, "d", "disconnect")
         guard case let .completed(disconnected) = f.outbox.result("d") else { Issue.record("disconnect failed"); return }
         #expect(disconnected["state"] == ConnectionState.disconnected.rawValue)
+    }
+
+    @Test("The DCV connection file is deleted once the viewer has had time to read it")
+    func connectionFileRemoved() async throws {
+        let f = try await Self.fixture(dcvCleanupDelay: .milliseconds(200))
+        try await Self.save(f, Self.configured())
+        await Self.run(f, "c", "connect")
+        let file = try #require(f.outbox.launches("dcvViewer").first?["file"])
+        #expect(FileManager.default.fileExists(atPath: file))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while FileManager.default.fileExists(atPath: file), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(!FileManager.default.fileExists(atPath: file))
+        await Self.run(f, "d", "disconnect")
+    }
+
+    @Test("Ending the helper cancels its commands and runs the workflows' quit work")
+    func endRunsQuitWork() async throws {
+        let f = try await Self.fixture()
+        try await Self.save(f, Self.configured(webForwards: true))
+        await Self.run(f, "w", "startWebForwards")
+        let quit = AppQuitHandler()
+        var ran = 0
+        quit.register { ran += 1 }
+        await HelperExit.end(f.session, quit: quit)
+        #expect(ran == 1)
+        #expect(await f.session.isEnded)
     }
 
     @Test("Stopping the workstation is refused while not connected")

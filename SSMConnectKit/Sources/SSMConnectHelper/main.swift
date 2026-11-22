@@ -4,7 +4,7 @@ import SSMConnectHelperProtocol
 
 // The private helper a Windows or Linux shell starts as its child, connected by anonymous
 // stdin/stdout pipes. Frames go to stdout only; diagnostics go to stderr. The helper exits when
-// stdin closes, after cancelling what is running.
+// stdin closes, after cancelling what is running and running the workflows' quit work.
 
 /// Writes to stdout and stderr through FileHandle, never stdio, so a closed pipe cannot trap and
 /// exit() never waits on a stdio lock held by the reading thread.
@@ -52,7 +52,7 @@ readLoop: for await chunk in chunks {
     let lines: [Data]
     do { lines = try reader.append(chunk) } catch {
         pipes.diagnose("frame longer than \(FrameReader.maximumLength) bytes; stopping")
-        await session.shutdown()
+        await HelperExit.end(session)
         exit(2)
     }
     for line in lines where !line.isEmpty {
@@ -65,5 +65,5 @@ readLoop: for await chunk in chunks {
     }
 }
 let refused = await session.wasRefused
-await session.shutdown()
+await HelperExit.end(session)
 exit(refused ? 1 : 0)

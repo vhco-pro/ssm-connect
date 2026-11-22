@@ -345,3 +345,14 @@ package struct HelperServices {
         }
     }
 }
+
+/// How the helper ends, whether its shell closed stdin or the session ended: every running command
+/// is cancelled and answered, then the workflows' quit work runs, as the macOS app runs it when it
+/// quits. That ends a connected desktop's plugin, removes the web forwards key and the editor's
+/// leases and keys, so no transient access artifact outlives the helper.
+package enum HelperExit {
+    @MainActor package static func end(_ session: HelperSession, quit: AppQuitHandler = .shared) async {
+        await session.shutdown()
+        quit.runShutdown()
+    }
+}

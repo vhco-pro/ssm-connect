@@ -345,6 +345,8 @@ struct EditorLeaseContinuationTests {
         #expect(fixture.writes == 1 && fixture.launches == 1)
         if change == "stop" || change == "quit" { #expect(!FileManager.default.fileExists(atPath: fixture.leaseURL.path)) }
         else { #expect(try fixture.lease().expiresAt == original.expiresAt) }
+        // A quitting process cannot wait for the delayed key removal that Stop uses.
+        if change == "quit" { #expect(!FileManager.default.fileExists(atPath: original.keyPath)) }
     }
 
     @Test("LEASE-05 and LEASE-06: Disk replacement before renewal cannot become the owner's granted lease",
