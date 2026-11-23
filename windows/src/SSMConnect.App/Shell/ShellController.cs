@@ -43,6 +43,30 @@ public sealed class ShellController
         StateChanged?.Invoke();
     }
 
+    readonly Dictionary<string, string> details = [];
+
+    /// <summary>The macOS controls this shell offers, by inventory id.</summary>
+    public static IReadOnlyList<ShellControl> Controls => ParityControls.All;
+    public static ShellControl? Control(string id) => Controls.FirstOrDefault(c => c.Id == id);
+
+    /// <summary>The helper's latest details: what the macOS menu reads from the workflows.</summary>
+    public IReadOnlyDictionary<string, string> Details { get { lock (details) return new Dictionary<string, string>(details); } }
+
+    /// <summary>Raised when the helper's details change.</summary>
+    public event Action? DetailsChanged;
+
+    /// <summary>Whether macOS would show the control in this state; <paramref name="context"/> adds the shell's own state.</summary>
+    public bool IsOffered(string id, IReadOnlyDictionary<string, string>? context = null) => false;
+    public bool IsEnabled(string id, IReadOnlyDictionary<string, string>? context = null) => false;
+
+    /// <summary>Operates a control as macOS does. Returns the command's result, or null when nothing was sent.</summary>
+    public Task<HelperResult?> TriggerAsync(string id, IReadOnlyDictionary<string, string>? arguments = null,
+                                            IReadOnlyDictionary<string, string>? context = null) => Task.FromResult<HelperResult?>(null);
+
+    /// <summary>Sends a helper command directly and reports a failure.</summary>
+    public Task<HelperResult> RunCommandAsync(string command, IReadOnlyDictionary<string, string>? arguments = null) =>
+        RunAsync(new(command, command, arguments ?? Empty));
+
     /// <summary>Latest state per workflow (desktop, web, editor), from the helper's events.</summary>
     public IReadOnlyDictionary<string, string> States { get { lock (states) return new Dictionary<string, string>(states); } }
 
@@ -150,6 +174,16 @@ public sealed class ShellController
             }
             return;
         }
+        if (workflow == "details" && name == "details")
+        {
+            lock (details)
+            {
+                details.Clear();
+                foreach (var (key, value) in fields) details[key] = value?.ToString() ?? "";
+            }
+            DetailsChanged?.Invoke();
+            return;
+        }
         if (name == "state" && workflow is not null && Field("state") is { } state)
         {
             string? previous;
@@ -197,6 +231,16 @@ public interface IShellPlatform
     void ShowError(string action, string message);
     /// <summary>Asks the user a yes-or-no question; true for yes.</summary>
     bool Confirm(string title, string message);
+    /// <summary>One of <paramref name="options"/> the user picks, by index, or -1 when they cancel.</summary>
+    int Choose(string title, string message, IReadOnlyList<string> options) => -1;
+    /// <summary>A profile file the user picks, or null when they cancel.</summary>
+    string? ChooseProfileFile() => null;
+    /// <summary>A folder the user picks, or null when they cancel.</summary>
+    string? ChooseFolder(string title) => null;
+    /// <summary>A file to write the user picks, or null when they cancel.</summary>
+    string? ChooseSaveFile(string title) => null;
+    /// <summary>Shows a file in Explorer.</summary>
+    void Reveal(string path) { }
 }
 
 /// <summary>The real Windows platform for the shell.</summary>

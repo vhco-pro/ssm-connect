@@ -23,6 +23,9 @@ public sealed class SettingsWindow : Window
         ("instanceTagValue", "Instance tag value"), ("localPort", "Local port"), ("remotePort", "Remote port"),
     ];
 
+    public SettingsWindow(ShellController controller, IShellPlatform platform, StartupRegistration? startup = null)
+        : this(controller, platform.ChooseProfileFile, startup) { }
+
     public SettingsWindow(ShellController controller, Func<string?> chooseProfileFile, StartupRegistration? startup = null)
     {
         this.controller = controller;

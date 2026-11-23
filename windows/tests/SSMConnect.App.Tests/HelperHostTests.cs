@@ -49,9 +49,14 @@ public sealed class HelperHostTests
         public Stream Output => fromHelper;
         public Task Exited => exited.Task;
 
-        /// <summary>Sends an event frame to the shell, as the helper does.</summary>
+        int sequence;
+
+        /// <summary>Sends an event frame to the shell, as the helper does, with the next sequence number.</summary>
         public void Emit(string workflow, string name, Dictionary<string, string> fields) =>
-            Send(new { type = "event", sequence = 1, workflow, name, fields });
+            Send(new { type = "event", sequence = Interlocked.Increment(ref sequence), workflow, name, fields });
+
+        /// <summary>Sends a command's terminal result, for a command the helper did not answer at once.</summary>
+        public void Respond(string id, string outcome) => Send(new { type = "result", id, outcome, value = new { } });
 
         public void Exit()
         {
