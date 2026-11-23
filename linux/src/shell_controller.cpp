@@ -144,6 +144,7 @@ void ShellController::handle(const QJsonObject &frame) {
         if (name == "openURL" && fields.contains("url")) platform_.openUrl(fields.value("url").toString());
         else if (name == "launchApplication") launch(fields);
         else if (name == "setClipboard" && fields.contains("text")) platform_.setClipboard(fields.value("text").toString());
+        else if (name == "reveal" && fields.contains("path")) platform_.reveal(fields.value("path").toString());
         else if (name == "notify")
             platform_.notify(fields.value("title").toString("SSM Connect"), fields.value("body").toString());
         return;

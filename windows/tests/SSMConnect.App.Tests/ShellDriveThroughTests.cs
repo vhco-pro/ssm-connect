@@ -24,6 +24,7 @@ public sealed class ShellDriveThroughTests
         public void OpenUrl(string url) { lock (Calls) Calls.Add("open " + url); }
         public void Start(string path, IReadOnlyList<string> arguments) { lock (Calls) Calls.Add($"start {Path.GetFileName(path)} {string.Join(' ', arguments)}"); }
         public void SetClipboard(string text) { lock (Calls) Calls.Add("clipboard " + text); }
+        public void Reveal(string path) { lock (Calls) Calls.Add("reveal " + path); }
         public void Notify(string title, string body) { lock (Calls) Calls.Add("notify " + title); }
         public void ShowError(string action, string message) { lock (Calls) Calls.Add($"error {action}: {message}"); }
         public bool Confirm(string title, string message) { lock (Calls) Calls.Add("confirm " + title); return false; }
@@ -68,7 +69,7 @@ public sealed class ShellDriveThroughTests
     }
 
     [Fact]
-    public void EveryTrayAndSettingsActionReachesTheHelperAsItsCommand()
+    public void TrayAndSettingsControlsReachTheHelper()
     {
         HelperHostTests.FakeHelper? helper = null;
         var platform = new RecordingPlatform();
@@ -78,54 +79,61 @@ public sealed class ShellDriveThroughTests
             var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
             await host.StartAsync();
             var controller = new ShellController(host, platform);
+            helper!.Emit("details", "details", new() { ["profiles"] = "1", ["desktop.state"] = "disconnected" });
+            await Eventually(() => controller.Details.GetValueOrDefault("desktop.state") == "disconnected");
 
-            // The tray menu: click every action item.
-            // Each command is answered before the next item is clicked: Disconnect during a running
-            // Connect cancels it instead (ADisconnectDuringConnectCancelsTheConnect).
+            // The tray: its items are the macOS menu's controls, shown and enabled as macOS shows them.
+            var aboutShown = false;
+            controller.ShowAboutRequested += () => aboutShown = true;
             var menu = TrayMenu.Build(controller, () => { }, () => { }, () => { });
-            foreach (var item in menu.Items.OfType<MenuItem>().Where(i => i.Tag is string tag && ShellController.MenuActions.Any(a => a.Command == tag)))
-            {
-                item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                await Eventually(() => Commands(helper!).Contains((string)item.Tag));
-                await Task.Delay(50);
-            }
+            MenuItem Item(string id) => menu.Items.OfType<MenuItem>().First(i => (string?)i.Tag == id);
+            var connect = Item("menucontent-button-machine-actiontitle");
+            Assert.True(connect.Visibility == Visibility.Visible && connect.IsEnabled);
+            Assert.Equal("Connect", connect.Header);
+            Assert.Equal(Visibility.Collapsed, Item("menucontent-button-disconnect").Visibility);
+            connect.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await Eventually(() => Commands(helper!).Contains("connect"));
+            Item("menucontent-button-show-log").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await Eventually(() => Commands(helper!).Contains("getLog"));
+            Item("menucontent-button-about").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await Eventually(() => aboutShown);
 
-            // The settings window: load profiles, select one, edit and save, use it, import a file, set up VS Code.
-            var settings = new SettingsWindow(controller, () => @"C:\Profiles\workstation.ssmconnect");
-            await settings.ReloadAsync();
+            // The settings window: select the profile, duplicate it, edit it, and change a setting.
+            await controller.ReloadProfilesAsync();
+            var settings = new SettingsWindow(controller, platform);
             var list = FindAll<ListBox>(settings).Single();
             list.SelectedIndex = 0;
-            // Each button's command reaches the helper before the next is pressed; saving reloads the
-            // list and keeps the saved profile selected, so Use acts on it.
-            foreach (var (name, command) in new[] { ("save", "saveProfile"), ("use", "setActiveProfile"),
-                                                    ("import", "importProfile"), ("editorSetup", "installEditorSetup") })
-            {
-                var listed = Commands(helper!).Count(c => c == "listProfiles");
-                var button = FindAll<Button>(settings).Single(b => b.Name == name);
-                ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)!).Invoke();
-                await Eventually(() => Commands(helper!).Contains(command));
-                if (name is "save" or "import") await Eventually(() => Commands(helper!).Count(c => c == "listProfiles") > listed);
-                await Task.Delay(50);
-                if (name == "save") Assert.Equal("Workstation", (list.SelectedItem as SettingsWindow.ProfileRow)?.Name);
-            }
-            var menuCommands = ShellController.MenuActions.Select(a => a.Command).ToList();
-            await Eventually(() => menuCommands.All(Commands(helper!).Contains));
+            Button Button(string id) => FindAll<Button>(settings).Single(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b) == id);
+            Assert.False(Button("settings-button-delete-the-selected-profile").IsEnabled); // the last profile cannot be deleted, as on macOS
+            var duplicate = Button("settings-button-duplicate-the-selected-profile");
+            Assert.True(duplicate.IsEnabled);
+            Invoke(duplicate);
+            await Eventually(() => Commands(helper!).Contains("duplicateProfile"));
+            JsonObject? edited = null;
+            controller.EditProfileRequested += profile => edited = profile;
+            Invoke(Button("settings-button-edit"));
+            await Eventually(() => (string?)edited?["id"] == "55555555-5555-4555-8555-555555555555");
+            var reconnect = FindAll<CheckBox>(settings).Single(c => System.Windows.Automation.AutomationProperties.GetAutomationId(c)
+                                                                    == "settings-toggle-reconnect-automatically-if-the-tunnel-drops");
+            ((IToggleProvider)new CheckBoxAutomationPeer(reconnect).GetPattern(PatternInterface.Toggle)!).Toggle();
+            await Eventually(() => Commands(helper!).Contains("saveSettings"));
         });
 
-        var commands = Commands(helper!);
-        foreach (var expected in new[] { "signIn", "connect", "disconnect", "stopWorkstation", "openEditor", "startWebForwards",
-                                         "stopWebForwards", "openBrowser", "listProfiles", "saveProfile", "setActiveProfile",
-                                         "importProfile", "installEditorSetup" })
-            Assert.Contains(expected, commands);
+        List<JsonObject> frames;
+        lock (helper!.Received) frames = [.. helper.Received];
+        Assert.Equal("55555555-5555-4555-8555-555555555555",
+                     (string?)frames.Single(f => (string?)f["name"] == "duplicateProfile")["arguments"]?["id"]);
+        Assert.True(frames.Single(f => (string?)f["name"] == "saveSettings")["arguments"]!.AsObject().ContainsKey("autoReconnect"));
         Assert.DoesNotContain(platform.Calls, c => c.StartsWith("error", StringComparison.Ordinal));
     }
+
+    static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)!).Invoke();
 
     [Fact]
     public void ADisconnectDuringConnectCancelsTheConnect()
     {
         // The helper refuses a second desktop command while Connect runs, so Disconnect then cancels
-        // the Connect, as Disconnect while connecting does on macOS; the helper's cancel ends what
-        // the Connect started.
+        // the Connect; the helper's cancel ends what the Connect started.
         HelperHostTests.FakeHelper? helper = null;
         var platform = new RecordingPlatform();
         HelperResult? connected = null;
@@ -138,15 +146,14 @@ public sealed class ShellDriveThroughTests
             var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
             await host.StartAsync();
             var controller = new ShellController(host, platform);
-            ShellAction Action(string command) => ShellController.MenuActions.Single(a => a.Command == command);
-            var connecting = controller.RunAsync(Action("connect"));
+            var connecting = controller.RunCommandAsync("connect");
             await Eventually(() => Commands(helper!).Contains("connect"));
-            await controller.RunAsync(Action("disconnect"));
+            await controller.RunAsync(new ShellAction("Disconnect", "disconnect", new Dictionary<string, string>()));
             connected = await connecting;
             Assert.DoesNotContain("disconnect", Commands(helper!));
 
             // With no Connect running, Disconnect is the helper's disconnect command.
-            await controller.RunAsync(Action("disconnect"));
+            await controller.RunAsync(new ShellAction("Disconnect", "disconnect", new Dictionary<string, string>()));
             Assert.Contains("disconnect", Commands(helper!));
         });
 
@@ -175,8 +182,9 @@ public sealed class ShellDriveThroughTests
             helper.Emit("shell", "launchApplication", new() { ["kind"] = "browser", ["path"] = @"C:\Chrome\chrome.exe", ["arguments"] = "--user-data-dir=C:\\P\u001F--proxy-pac-url=data:x" });
             helper.Emit("shell", "setClipboard", new() { ["text"] = "hunter2" });
             helper.Emit("shell", "notify", new() { ["title"] = "Connected to workstation", ["body"] = "b" });
+            helper.Emit("shell", "reveal", new() { ["path"] = @"C:\Users\m\AppData\Local\SSM Connect\proxy.pac" });
             helper.Emit("desktop", "state", new() { ["state"] = "Connected" });
-            await Eventually(() => platform.Calls.Count >= 6 && controller.States.ContainsKey("desktop"));
+            await Eventually(() => platform.Calls.Count >= 7 && controller.States.ContainsKey("desktop"));
             Assert.Equal("Connected", controller.States["desktop"]);
         });
         Assert.Contains("open https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD", platform.Calls);
@@ -186,6 +194,7 @@ public sealed class ShellDriveThroughTests
         Assert.Contains(@"start chrome.exe --user-data-dir=C:\P --proxy-pac-url=data:x", platform.Calls);
         Assert.Contains("clipboard hunter2", platform.Calls);
         Assert.Contains("notify Connected to workstation", platform.Calls);
+        Assert.Contains(@"reveal C:\Users\m\AppData\Local\SSM Connect\proxy.pac", platform.Calls);
     }
 
     static List<string> Commands(HelperHostTests.FakeHelper helper)
@@ -195,13 +204,9 @@ public sealed class ShellDriveThroughTests
 
     static IEnumerable<T> FindAll<T>(DependencyObject root) where T : DependencyObject
     {
-        if (root is ContentControl { Content: DependencyObject content }) foreach (var found in FindAll<T>(content)) yield return found;
-        if (root is Panel panel)
-            foreach (var child in panel.Children.OfType<DependencyObject>())
-            {
-                if (child is T match) yield return match;
-                foreach (var found in FindAll<T>(child)) yield return found;
-            }
+        if (root is T match) yield return match;
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+            foreach (var found in FindAll<T>(child)) yield return found;
     }
 }
 

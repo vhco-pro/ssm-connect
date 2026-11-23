@@ -1,6 +1,5 @@
 using System.IO;
 using System.Windows;
-using Microsoft.Win32;
 using SSMConnect.App.Helper;
 using SSMConnect.App.Shell;
 
@@ -19,6 +18,9 @@ public partial class App : Application
     System.Windows.Controls.ContextMenu? menu;
     SessionEndWindow? sessionEnd;
     readonly SingleWindow<SettingsWindow> settings = new();
+    readonly SingleWindow<LogWindow> log = new();
+    readonly SingleWindow<AboutWindow> about = new();
+    WindowsShellPlatform? platform;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -29,19 +31,29 @@ public partial class App : Application
         host = new HelperHost(new JobHelperSpawner(helperPath), HelperBuild.Current, HelperHostLimits.Default, TimeProvider.System);
         tray = new TrayIcon();
         sessionEnd = new SessionEndWindow(() => { StopHelper(); Shutdown(); });
-        var platform = new WindowsShellPlatform(
+        platform = new WindowsShellPlatform(
             notify: (title, body) => tray.ShowNotification(title, body, TrayNotificationKind.Information),
             showError: (action, message) => tray.ShowNotification(action, message, TrayNotificationKind.Error),
-            clipboardClearSeconds: () => 30);
+            clipboardClearSeconds: () => int.TryParse((string?)controller?.AppSettings["clipboardAutoClearSeconds"], out var seconds) ? seconds : 30);
         controller = new ShellController(host, platform);
         menu = TrayMenu.Build(controller, ShowSettings, () => _ = host.RetryAsync(), Quit);
-        controller.StateChanged += () => Dispatcher.Invoke(UpdateTray);
+        var shell = controller;
+        shell.ShowAboutRequested += () => about.Show(() => new AboutWindow(shell));
+        shell.ShowLogRequested += entries => { log.Current?.Close(); log.Show(() => new LogWindow(shell, entries)); };
+        shell.EditProfileRequested += draft =>
+        {
+            var attached = draft is not null && shell.Files.OfType<System.Text.Json.Nodes.JsonObject>().Any(f => (string?)f["id"] == (string?)draft["id"]);
+            new ProfileEditorWindow(shell, draft ?? [], attached).Show();
+        };
+        shell.StateChanged += () => Dispatcher.Invoke(UpdateTray);
         host.StatusChanged += () => Dispatcher.Invoke(UpdateTray);
         tray.ContextMenuRequested += () => { menu.IsOpen = true; };
-        tray.PrimaryActionRequested += () => _ = controller.RunAsync(ShellController.MenuActions[1]);
+        // A click on the tray icon is Connect, as the first macOS action, when macOS would offer it.
+        tray.PrimaryActionRequested += () => _ = shell.TriggerAsync("menucontent-button-machine-actiontitle");
         instance.Activated += () => Dispatcher.Invoke(ShowSettings);
         UpdateTray();
         await host.StartAsync();
+        await shell.ReloadProfilesAsync();
     }
 
     void UpdateTray()
@@ -58,12 +70,10 @@ public partial class App : Application
     void ShowSettings()
     {
         if (controller is null) return;
+        if (platform is null) return;
         var shell = controller;
-        settings.Show(() => new SettingsWindow(shell, () =>
-        {
-            var dialog = new OpenFileDialog { Filter = "SSM Connect profiles|*.ssmconnect;*.yaml;*.yml;*.json" };
-            return dialog.ShowDialog() == true ? dialog.FileName : null;
-        }));
+        var windows = platform;
+        settings.Show(() => new SettingsWindow(shell, windows));
     }
 
     void Quit()

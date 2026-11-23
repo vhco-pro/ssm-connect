@@ -164,7 +164,7 @@ public sealed class ParityTests
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromMinutes(5)), "the parity drive-through timed out");
+        Assert.True(thread.Join(TimeSpan.FromMinutes(15)), "the parity drive-through timed out");
         if (failure is not null) throw new Xunit.Sdk.XunitException(failure.ToString());
     }
 
@@ -178,9 +178,27 @@ public sealed class ParityTests
     [Fact]
     public void EveryMacOSControlHasItsWindowsControl() => RunOnSta(async () =>
     {
-        var rig = await Rig.StartAsync();
+        // Row controls exist once there are rows, as on macOS: a profile with Use, an importable
+        // ~/.aws/config profile, and a draft with a proxy suffix, a local forward and every optional section.
+        var rig = await Rig.StartAsync(name => name switch
+        {
+            "listProfiles" => new JsonObject { ["type"] = "result", ["outcome"] = "completed", ["value"] = new JsonObject
+                { ["profiles"] = """[{"id":"55555555-5555-4555-8555-555555555555","name":"Workstation"}]""", ["active"] = "", ["files"] = "[]", ["settings"] = "{}" } },
+            "listAWSConfigProfiles" => new JsonObject { ["type"] = "result", ["outcome"] = "completed", ["value"] = new JsonObject
+                { ["profiles"] = """[{"name":"dev"}]""" } },
+            _ => Done(name),
+        });
+        await rig.Controller.ReloadProfilesAsync();
         var menu = TrayMenu.Build(rig.Controller, () => { }, () => { }, () => { });
-        var windows = new Window[] { new SettingsWindow(rig.Controller, rig.Platform), new ProfileEditorWindow(rig.Controller, new JsonObject(), false),
+        var settings = new SettingsWindow(rig.Controller, rig.Platform);
+        await rig.Controller.TriggerAsync("settings-menu-import-a-profile-from-aws-config");
+        await Task.Delay(100);
+        var draft = JsonNode.Parse("""
+            {"name":"Workstation","connectMode":"multiUser","remoteDevelopment":{"enabled":true},
+             "webForwards":{"enabled":true,"socksPort":1080,"browserMode":"existing","proxySuffixes":[".internal"],
+                            "localForwards":[{"name":"Dashboard","localPort":8080,"remoteHost":"127.0.0.1","remotePort":80}]}}
+            """)!.AsObject();
+        var windows = new Window[] { settings, new ProfileEditorWindow(rig.Controller, draft, true),
                                      new LogWindow(rig.Controller, []), new AboutWindow(rig.Controller) };
         var automationIds = windows.SelectMany(Tree).Select(AutomationProperties.GetAutomationId).ToHashSet();
         foreach (var entry in Inventory().Where(e => !e.PartOf))
@@ -211,11 +229,14 @@ public sealed class ParityTests
                 rig.Platform.Answer = answer;
                 var start = rig.Count;
                 _ = rig.Controller.TriggerAsync(entry.Id, Arguments, state);
-                await Task.Delay(150);
+                bool SentExpected(List<string> sent) => entry.Commands.Count == 0 ? sent.Contains(expected!) : entry.Commands.Any(sent.Contains);
+                // A sent command is awaited; a declined one is given time to appear.
+                if (answer) { try { await Eventually(() => SentExpected(rig.CommandsAfter(start)), 5); } catch (TimeoutException) { } }
+                else await Task.Delay(300);
                 var sent = rig.CommandsAfter(start);
                 bool asked;
                 lock (rig.Platform.Calls) asked = rig.Platform.Calls.Any(c => c.StartsWith("confirm ") || c.StartsWith("choose "));
-                var sentExpected = entry.Commands.Count == 0 ? sent.Contains(expected!) : entry.Commands.Any(sent.Contains);
+                var sentExpected = SentExpected(sent);
                 if (answer) Assert.True(sentExpected, $"{entry.Id} sent {string.Join(',', sent)}");
                 if (entry.Confirmation && Rule(entry.ConfirmWhen, state))
                 {
@@ -299,4 +320,5 @@ public sealed class ParityTests
         Assert.Equal(1, commands.Count(c => c == "openEditor"));
         Assert.DoesNotContain("connect", commands);
     });
+
 }

@@ -56,16 +56,301 @@ public sealed class ShellController
     public event Action? DetailsChanged;
 
     /// <summary>Whether macOS would show the control in this state; <paramref name="context"/> adds the shell's own state.</summary>
-    public bool IsOffered(string id, IReadOnlyDictionary<string, string>? context = null) => false;
-    public bool IsEnabled(string id, IReadOnlyDictionary<string, string>? context = null) => false;
+    public bool IsOffered(string id, IReadOnlyDictionary<string, string>? context = null) =>
+        Control(id) is { } control && Evaluate(control.OfferedWhen, Merged(context));
 
-    /// <summary>Operates a control as macOS does. Returns the command's result, or null when nothing was sent.</summary>
-    public Task<HelperResult?> TriggerAsync(string id, IReadOnlyDictionary<string, string>? arguments = null,
-                                            IReadOnlyDictionary<string, string>? context = null) => Task.FromResult<HelperResult?>(null);
+    /// <summary>Whether macOS would let the user operate the control in this state.</summary>
+    public bool IsEnabled(string id, IReadOnlyDictionary<string, string>? context = null) =>
+        Control(id) is { } control && IsOffered(id, context) && Evaluate(control.EnabledWhen, Merged(context));
 
-    /// <summary>Sends a helper command directly and reports a failure.</summary>
+    /// <summary>
+    /// Evaluates an inventory rule: alternatives separated by " or ", clauses by " &amp; ". A clause is
+    /// <c>key</c>, <c>!key</c>, <c>key=a|b</c>, <c>key!=a|b</c> or <c>key&gt;N</c>; an empty rule holds.
+    /// </summary>
+    public static bool Evaluate(string rule, IReadOnlyDictionary<string, string> values) =>
+        string.IsNullOrWhiteSpace(rule) || rule.Split(" or ").Any(alternative => alternative.Split(" & ").All(part => Clause(part, values)));
+
+    static bool Truthy(string? value) => !string.IsNullOrEmpty(value) && value != "false" && value != "0";
+
+    static bool Clause(string text, IReadOnlyDictionary<string, string> values)
+    {
+        var c = text.Trim();
+        string Value(string key) => values.TryGetValue(key, out var v) ? v : "";
+        if (c.StartsWith('!') && !c.Contains('=')) return !Truthy(Value(c[1..]));
+        if (c.Contains("!=")) { var p = c.Split("!=", 2); return !p[1].Split('|').Contains(Value(p[0])); }
+        if (c.Contains('>')) { var p = c.Split('>', 2); return int.TryParse(Value(p[0]), out var n) && int.TryParse(p[1], out var limit) && n > limit; }
+        if (c.Contains('=')) { var p = c.Split('=', 2); return p[1].Split('|').Contains(Value(p[0])); }
+        return Truthy(Value(c));
+    }
+
+    Dictionary<string, string> Merged(IReadOnlyDictionary<string, string>? context)
+    {
+        Dictionary<string, string> values;
+        lock (details) values = new Dictionary<string, string>(details);
+        if (context is not null) foreach (var (key, value) in context) values[key] = value;
+        return values;
+    }
+
+    string Detail(string key) { lock (details) return details.GetValueOrDefault(key, ""); }
+
+    /// <summary>The control's label in the current state, as the macOS menu words it.</summary>
+    public string LabelFor(string id)
+    {
+        if (Control(id) is not { } c) return "";
+        var desktop = Detail("desktop.state");
+        if (c.Command == "connect")
+            return desktop switch { "connected" => "Connected", "error" => "Retry Connect", "" or "disconnected" => "Connect", _ => "Connecting…" };
+        if (c.Commands.Count > 0) return Detail("web.state") is "On" or "Starting" ? "Turn Off Web Forwards" : "Turn On Web Forwards";
+        var editor = Detail("editor.state");
+        if (c.Command == "openEditor" && editor == "opening") return "Opening VS Code";
+        if (c.Command == "reconnectWorkspace" && editor == "recovering") return "Recovering Existing Workspace";
+        if (c.Command == "renewEditorAccess" && editor == "renewing") return "Renewing Editor Access";
+        if (c.Command == "openBrowser" && Detail("web.openingBrowser") == "true") return "Opening Browser";
+        return c.Label;
+    }
+
+    // Which workflow a command belongs to, for the cancel controls (the helper runs one per workflow).
+    static readonly Dictionary<string, string> Workflows = new()
+    {
+        ["connect"] = "desktop", ["reconnect"] = "desktop", ["disconnect"] = "desktop", ["stopWorkstation"] = "desktop",
+        ["openEditor"] = "editor", ["reconnectWorkspace"] = "editor", ["renewEditorAccess"] = "editor", ["approveReplacement"] = "editor",
+        ["cancelEditorRecovery"] = "editor", ["stopRemoteAccess"] = "editor", ["restoreEditorSetup"] = "editor", ["installEditorSetup"] = "editor",
+        ["startWebForwards"] = "web", ["stopWebForwards"] = "web", ["approveForwardingReplacement"] = "web", ["applyWebChanges"] = "web",
+        ["cancelForwardingRecovery"] = "web",
+    };
+
+    // A cancel control whose no-command form is itself the cancellation; Stop Remote Access and
+    // Restore Editor Setup instead run as their own command once the cancelled one has ended.
+    static bool CancelsOnly(string otherwise) => otherwise is "cancelEditorRecovery" or "cancelForwardingRecovery" or "disconnect";
+
+    readonly Dictionary<string, (Task<HelperResult> Task, CancellationTokenSource Cancel)> running = [];
+
+    /// <summary>Sends a helper command directly and reports a failure; a workflow's command can be cancelled by its cancel controls.</summary>
     public Task<HelperResult> RunCommandAsync(string command, IReadOnlyDictionary<string, string>? arguments = null) =>
-        RunAsync(new(command, command, arguments ?? Empty));
+        RunCommandAsync(command, command, arguments);
+
+    Task<HelperResult> RunCommandAsync(string label, string command, IReadOnlyDictionary<string, string>? arguments)
+    {
+        if (!Workflows.TryGetValue(command, out var workflow)) return RunAsync(new(label, command, arguments ?? Empty));
+        var cancel = new CancellationTokenSource();
+        var task = RunAsync(new(label, command, arguments ?? Empty), cancel.Token);
+        lock (running) running[workflow] = (task, cancel);
+        return task;
+    }
+
+    JsonArray profiles = [];
+    JsonArray files = [];
+    JsonObject appSettings = [];
+    string activeProfileId = "";
+
+    /// <summary>The profiles, the active one, the app settings and the attached files, from the helper's listProfiles.</summary>
+    public JsonArray Profiles => profiles;
+    public string ActiveProfileId => activeProfileId;
+    public JsonObject AppSettings => appSettings;
+    public JsonArray Files => files;
+
+    /// <summary>Raised when the profiles were reloaded, with the profile to select or null.</summary>
+    public event Action<string?>? ProfilesChanged;
+    public event Action? ShowSettingsRequested;
+    public event Action? ShowAboutRequested;
+    public event Action? QuitRequested;
+    /// <summary>Open the log window with its entries.</summary>
+    public event Action<IReadOnlyList<JsonObject>>? ShowLogRequested;
+    /// <summary>Open the profile editor with a draft, null for a blank profile.</summary>
+    public event Action<JsonObject?>? EditProfileRequested;
+    /// <summary>The ~/.aws/config profiles that can be imported.</summary>
+    public event Action<IReadOnlyList<JsonObject>>? ImportableProfilesChanged;
+
+    /// <summary>Reloads the profiles from the helper.</summary>
+    public async Task ReloadProfilesAsync(string? select = null)
+    {
+        var result = await RunAsync(new("Profiles", "listProfiles", Empty));
+        if (result.Outcome != HelperOutcome.Completed) return;
+        profiles = Parse(result.Value.GetValueOrDefault("profiles")) as JsonArray ?? [];
+        files = Parse(result.Value.GetValueOrDefault("files")) as JsonArray ?? [];
+        appSettings = Parse(result.Value.GetValueOrDefault("settings")) as JsonObject ?? [];
+        activeProfileId = result.Value.GetValueOrDefault("active") ?? "";
+        ProfilesChanged?.Invoke(select);
+    }
+
+    static JsonNode? Parse(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        try { return JsonNode.Parse(json); } catch (System.Text.Json.JsonException) { return null; }
+    }
+
+    /// <summary>A folder the user picks, for the profile editor's browser profile.</summary>
+    public string? ChooseFolder(string title) => platform.ChooseFolder(title);
+
+    JsonObject ActiveProfile() =>
+        (profiles.OfType<JsonObject>().FirstOrDefault(p => (string?)p["id"] == activeProfileId) ?? profiles.OfType<JsonObject>().FirstOrDefault())
+            ?.DeepClone().AsObject() ?? [];
+
+    /// <summary>Fills <c>{key}</c> placeholders with values; <c>{editor.replacement.user}</c> reads a field of the JSON a value holds.</summary>
+    static string Format(string text, IReadOnlyDictionary<string, string> values) =>
+        System.Text.RegularExpressions.Regex.Replace(text, @"\{([a-zA-Z.]+)\}", match =>
+        {
+            var key = match.Groups[1].Value;
+            var value = values.GetValueOrDefault(key, "");
+            var parts = key.Split('.');
+            if (value.Length == 0 && parts.Length >= 3 && Parse(values.GetValueOrDefault(parts[0] + "." + parts[1])) is JsonObject holder)
+                value = holder[string.Join('.', parts[2..])]?.ToString() ?? "";
+            return value;
+        });
+
+    /// <summary>
+    /// Operates a control as macOS does: nothing when macOS would not offer or enable it, macOS's
+    /// confirmation first, then its helper command. A cancel control cancels its workflow's running
+    /// command. Returns the command's result, or null when nothing was sent.
+    /// </summary>
+    public async Task<HelperResult?> TriggerAsync(string id, IReadOnlyDictionary<string, string>? arguments = null,
+                                                  IReadOnlyDictionary<string, string>? context = null)
+    {
+        if (Control(id) is not { } c || !IsEnabled(id, context)) return null;
+        var values = Merged(context);
+        var args = new Dictionary<string, string>(arguments ?? Empty);
+        var asks = c.ConfirmTitle.Length > 0 && Evaluate(c.ConfirmWhen, values);
+        bool Confirmed() => !asks || platform.Confirm(Format(c.ConfirmTitle, values), Format(c.ConfirmText, values));
+
+        if (c.CancelWorkflow.Length > 0)
+        {
+            if (!Confirmed()) return null;
+            (Task<HelperResult> Task, CancellationTokenSource Cancel) work;
+            bool found;
+            lock (running) found = running.TryGetValue(c.CancelWorkflow, out work);
+            if (found && !work.Task.IsCompleted) return await CancelRunningAsync(work, c, args);
+            return await RunCommandAsync(c.Label, c.Otherwise, args);
+        }
+        if (c.Command.Length == 0 && c.Commands.Count == 0)
+        {
+            PerformShell(c, args);
+            return null;
+        }
+        if (c.Field.Length > 0) return await EditFieldAsync(c, args);
+
+        var command = c.Commands.Count > 0 ? (values.GetValueOrDefault("web.state") is "On" or "Starting" ? c.Commands[1] : c.Commands[0]) : c.Command;
+        switch (command)
+        {
+            case "importProfile":
+                return await OpenProfileFileAsync(c);
+            case "saveProfile":
+                return await SaveProfileAsync(args.GetValueOrDefault("profile") ?? ActiveProfile().ToJsonString());
+            case "exportProfile":
+                if (platform.ChooseSaveFile("Export Profile") is not { } exportPath) return null;
+                args["path"] = exportPath;
+                break;
+            case "locateProfileFile":
+                if (platform.ChooseProfileFile() is not { } locatedPath) return null;
+                args["path"] = locatedPath;
+                break;
+            case "openBrowser" when asks:
+            {
+                // macOS asks for a browser mode when the profile has none, and saves it first.
+                var choice = platform.Choose(Format(c.ConfirmTitle, values), Format(c.ConfirmText, values), c.Choices);
+                if (choice is < 0 or >= 2) return null;
+                var profile = ActiveProfile();
+                var web = profile["webForwards"] as JsonObject ?? [];
+                web["browserMode"] = choice == 0 ? "separate" : "existing";
+                profile["webForwards"] = web.DeepClone();
+                await SaveProfileAsync(profile.ToJsonString());
+                return await RunCommandAsync(c.Label, command, args);
+            }
+            case "openEditor" when asks:
+            {
+                // First use: consent to the SSH Include, then open.
+                if (!Confirmed()) return null;
+                var setup = await RunCommandAsync("Set Up VS Code", "installEditorSetup", new Dictionary<string, string> { ["consent"] = "true" });
+                return setup.Outcome == HelperOutcome.Completed ? await RunCommandAsync(c.Label, command, args) : setup;
+            }
+        }
+        if (!Confirmed()) return null;
+        var result = await RunCommandAsync(c.Label, command, args);
+        if (c.Shell.Length > 0 && command == "getLog")
+            ShowLogRequested?.Invoke((Parse(result.Value.GetValueOrDefault("entries")) as JsonArray ?? []).OfType<JsonObject>().ToList());
+        if (command == "listAWSConfigProfiles")
+            ImportableProfilesChanged?.Invoke((Parse(result.Value.GetValueOrDefault("profiles")) as JsonArray ?? []).OfType<JsonObject>().ToList());
+        if (command.Contains("Profile", StringComparison.Ordinal) || command is "saveLocalCopy" or "applyFileChanges" or "saveSettings")
+            await ReloadProfilesAsync(args.GetValueOrDefault("id"));
+        return result;
+    }
+
+    /// <summary>
+    /// Cancels the running command of the control's workflow. When the helper had already finished it,
+    /// the result is not "cancelled": a pure cancel control then sends its no-command form once, which
+    /// ends what the finished command left (such as a replacement waiting for review). Stop Remote
+    /// Access and Restore Editor Setup run as their own command once the cancelled one has ended. The
+    /// cancelled command itself is never sent again.
+    /// </summary>
+    async Task<HelperResult> CancelRunningAsync((Task<HelperResult> Task, CancellationTokenSource Cancel) work, ShellControl c,
+                                                IReadOnlyDictionary<string, string> arguments)
+    {
+        work.Cancel.Cancel();
+        var result = await work.Task;
+        if (!CancelsOnly(c.Otherwise) || result.Outcome != HelperOutcome.Cancelled)
+            return await RunCommandAsync(c.Label, c.Otherwise, arguments);
+        return result;
+    }
+
+    void PerformShell(ShellControl c, IReadOnlyDictionary<string, string> arguments)
+    {
+        var what = c.Shell;
+        if (what.StartsWith("open the settings window", StringComparison.Ordinal)) ShowSettingsRequested?.Invoke();
+        else if (what.StartsWith("open the About window", StringComparison.Ordinal)) ShowAboutRequested?.Invoke();
+        else if (what.StartsWith("quit", StringComparison.Ordinal)) QuitRequested?.Invoke();
+        else if (what.StartsWith("open the documentation URL", StringComparison.Ordinal))
+            platform.OpenUrl("https://code.visualstudio.com/docs/remote/troubleshooting");
+        else if (what.StartsWith("open the license URL", StringComparison.Ordinal))
+            platform.OpenUrl("https://github.com/vhco-pro/ssm-connect/blob/main/LICENSE");
+        else if (what.StartsWith("open the project URL", StringComparison.Ordinal)) platform.OpenUrl("https://github.com/vhco-pro/ssm-connect");
+        else if (what.StartsWith("open the release notes URL", StringComparison.Ordinal))
+            platform.OpenUrl("https://github.com/vhco-pro/ssm-connect/releases");
+        else if (what.StartsWith("open the profile editor with a blank", StringComparison.Ordinal)) EditProfileRequested?.Invoke(null);
+        else if (what.StartsWith("open the profile editor", StringComparison.Ordinal))
+            EditProfileRequested?.Invoke(Parse(arguments.GetValueOrDefault("profile")) as JsonObject ?? ActiveProfile());
+    }
+
+    /// <summary>Edits one field of the profile the window passes (or the active one) and saves it, or one app setting.</summary>
+    async Task<HelperResult?> EditFieldAsync(ShellControl c, IReadOnlyDictionary<string, string> arguments)
+    {
+        if (c.Command == "saveSettings")
+        {
+            var result = await RunCommandAsync(c.Label, "saveSettings", new Dictionary<string, string> { [c.Field] = arguments.GetValueOrDefault("value", "") });
+            await ReloadProfilesAsync();
+            return result;
+        }
+        var profile = Parse(arguments.GetValueOrDefault("profile")) as JsonObject ?? ActiveProfile();
+        if (arguments.TryGetValue("value", out var value) && !c.Field.Contains("[]", StringComparison.Ordinal) && !c.Field.Contains(' '))
+        {
+            JsonNode node = int.TryParse(value, out var number) && c.Field.EndsWith("Port", StringComparison.Ordinal) ? JsonValue.Create(number)
+                : value is "true" or "false" ? JsonValue.Create(value == "true") : JsonValue.Create(value);
+            var path = c.Field.Split('.');
+            if (path.Length == 1) profile[path[0]] = node;
+            else
+            {
+                var section = profile[path[0]] as JsonObject ?? [];
+                section[path[1]] = node;
+                profile[path[0]] = section.DeepClone();
+            }
+        }
+        return await SaveProfileAsync(profile.ToJsonString());
+    }
+
+    /// <summary>Open Profile File: macOS previews the file before anything is stored, then attaches it or imports a local copy.</summary>
+    async Task<HelperResult?> OpenProfileFileAsync(ShellControl c)
+    {
+        if (platform.ChooseProfileFile() is not { } path) return null;
+        var preview = await RunCommandAsync("Open Profile File", "previewProfileFile", new Dictionary<string, string> { ["path"] = path });
+        if (preview.Outcome != HelperOutcome.Completed) return preview;
+        var values = Merged(null);
+        if (Parse(preview.Value.GetValueOrDefault("profile")) is JsonObject previewed)
+            foreach (var (key, node) in previewed) values["preview." + key] = node?.ToString() ?? "";
+        var choice = platform.Choose(Format(c.ConfirmTitle, values), Format(c.ConfirmText, values), c.Choices);
+        if (choice is < 0 or >= 2) return preview;
+        var imported = await RunCommandAsync(c.Label, "importProfile",
+                                             new Dictionary<string, string> { ["path"] = path, ["attach"] = choice == 0 ? "true" : "false" });
+        await ReloadProfilesAsync();
+        return imported;
+    }
 
     /// <summary>Latest state per workflow (desktop, web, editor), from the helper's events.</summary>
     public IReadOnlyDictionary<string, string> States { get { lock (states) return new Dictionary<string, string>(states); } }
@@ -77,19 +362,6 @@ public sealed class ShellController
 
     const string SignInRequiredBody =
         "Your SSO session has ended. Choose Sign In with SSO in the SSM Connect menu; what you started continues after you sign in.";
-
-    /// <summary>The actions the tray menu offers, in order.</summary>
-    public static IReadOnlyList<ShellAction> MenuActions { get; } =
-    [
-        new("Sign In with SSO", "signIn", Empty),
-        new("Connect", "connect", Empty),
-        new("Disconnect", "disconnect", Empty),
-        new("Stop Workstation", "stopWorkstation", Empty),
-        new("Open VS Code", "openEditor", Empty),
-        new("Start Web Forwards", "startWebForwards", Empty),
-        new("Stop Web Forwards", "stopWebForwards", Empty),
-        new("Open Browser", "openBrowser", Empty),
-    ];
 
     CancellationTokenSource? connecting;
 
@@ -126,6 +398,12 @@ public sealed class ShellController
     /// </summary>
     public async Task<HelperResult> SaveProfileAsync(string profileJson)
     {
+        // A new profile gets its id here, as the macOS editor gives one.
+        if (JsonNode.Parse(profileJson) is JsonObject draft && string.IsNullOrEmpty((string?)draft["id"]))
+        {
+            draft["id"] = Guid.NewGuid().ToString().ToUpperInvariant();
+            profileJson = draft.ToJsonString();
+        }
         var arguments = new Dictionary<string, string> { ["profile"] = profileJson };
         var result = await host.SendAsync("saveProfile", arguments, CancellationToken.None);
         if (result.Code == "formattingConsentRequired")
@@ -143,19 +421,10 @@ public sealed class ShellController
         }
         if (result.Outcome is HelperOutcome.Failed or HelperOutcome.Rejected or HelperOutcome.CoreStopped)
             platform.ShowError("Save Profile", result.Message ?? HelperHost.UnavailableMessage);
+        // Reloading keeps the saved profile selected, so Use acts on it.
+        await ReloadProfilesAsync(JsonNode.Parse(profileJson)?["id"]?.GetValue<string>());
         return result;
     }
-
-    public Task<HelperResult> SetActiveProfileAsync(string id) =>
-        RunAsync(new("Use Profile", "setActiveProfile", new Dictionary<string, string> { ["id"] = id }));
-
-    public Task<HelperResult> ImportProfileAsync(string path, bool attach) =>
-        RunAsync(new("Import Profile", "importProfile", new Dictionary<string, string> { ["path"] = path, ["attach"] = attach ? "true" : "false" }));
-
-    public Task<HelperResult> ListProfilesAsync() => RunAsync(new("Profiles", "listProfiles", Empty));
-
-    public Task<HelperResult> InstallEditorSetupAsync() =>
-        RunAsync(new("Set Up VS Code", "installEditorSetup", new Dictionary<string, string> { ["consent"] = "true" }));
 
     void Handle(JsonObject frame)
     {
@@ -170,6 +439,7 @@ public sealed class ShellController
                 case "openURL" when Field("url") is { } url: platform.OpenUrl(url); break;
                 case "launchApplication": Launch(Field("kind"), fields); break;
                 case "setClipboard" when Field("text") is { } text: platform.SetClipboard(text); break;
+                case "reveal" when Field("path") is { } path: platform.Reveal(path); break;
                 case "notify": platform.Notify(Field("title") ?? "SSM Connect", Field("body") ?? ""); break;
             }
             return;
@@ -285,4 +555,62 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
     public bool Confirm(string title, string message) =>
         System.Windows.MessageBox.Show(message, title, System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question)
             == System.Windows.MessageBoxResult.Yes;
+
+    /// <summary>A dialog with one button per option, as macOS's alerts offer them; closing it cancels.</summary>
+    public int Choose(string title, string message, IReadOnlyList<string> options)
+    {
+        var choice = -1;
+        var dialog = new System.Windows.Window
+        {
+            Title = title, SizeToContent = System.Windows.SizeToContent.WidthAndHeight, ResizeMode = System.Windows.ResizeMode.NoResize,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen, MaxWidth = 520,
+        };
+        var panel = new System.Windows.Controls.StackPanel { Margin = new System.Windows.Thickness(16) };
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text = message, TextWrapping = System.Windows.TextWrapping.Wrap, MaxWidth = 480 });
+        var buttons = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+            Margin = new System.Windows.Thickness(0, 16, 0, 0),
+        };
+        for (var i = 0; i < options.Count; i++)
+        {
+            var index = i;
+            var button = new System.Windows.Controls.Button
+            {
+                Content = options[i], Margin = new System.Windows.Thickness(8, 0, 0, 0), Padding = new System.Windows.Thickness(12, 4, 12, 4),
+                IsDefault = i == 0, IsCancel = options[i] == "Cancel",
+            };
+            button.Click += (_, _) => { choice = index; dialog.Close(); };
+            buttons.Children.Add(button);
+        }
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        dialog.ShowDialog();
+        return choice;
+    }
+
+    public string? ChooseProfileFile()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "SSM Connect profiles|*.ssmconnect;*.yaml;*.yml;*.json" };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    public string? ChooseFolder(string title)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = title };
+        return dialog.ShowDialog() == true ? dialog.FolderName : null;
+    }
+
+    public string? ChooseSaveFile(string title)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog { Title = title, Filter = "SSM Connect profile|*.ssmconnect", DefaultExt = ".ssmconnect" };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    /// <summary>Opens Explorer with the file selected.</summary>
+    public void Reveal(string path)
+    {
+        if (!File.Exists(path)) return;
+        Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { "/select," + path }, UseShellExecute = false })?.Dispose();
+    }
 }

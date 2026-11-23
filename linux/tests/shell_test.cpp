@@ -38,6 +38,7 @@ public:
         calls << QStringLiteral("start %1 %2").arg(QFileInfo(path).fileName(), arguments.join(' '));
     }
     void setClipboard(const QString &text) override { calls << "clipboard " + text; }
+    void reveal(const QString &path) override { calls << "reveal " + path; }
     QString lastBody;
     void notify(const QString &title, const QString &body) override {
         lastBody = body;
@@ -183,12 +184,13 @@ private slots:
                   {{"kind", "browser"}, {"path", "/opt/google/chrome/chrome"}, {"arguments", QStringLiteral("--user-data-dir=/s/p%1--proxy-pac-url=data:x").arg(QChar(0x1F))}});
         emitEvent(helper, "shell", "setClipboard", {{"text", "password"}});
         emitEvent(helper, "shell", "notify", {{"title", "Connected"}, {"body", "Workstation"}});
+        emitEvent(helper, "shell", "reveal", {{"path", "/home/m/.config/ssm-connect/proxy.pac"}});
         emitEvent(helper, "desktop", "state", {{"state", "Connected"}});
-        QTRY_COMPARE(platform.calls.size(), qsizetype(6));
+        QTRY_COMPARE(platform.calls.size(), qsizetype(7));
         QCOMPARE(platform.calls, QStringList({"open https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD",
                                               "start code --folder-uri vscode-remote://ssh-remote+ws/home",
                                               "start dcvviewer /run/user/1000/ws.dcv", "start chrome --user-data-dir=/s/p --proxy-pac-url=data:x",
-                                              "clipboard password", "notify Connected"}));
+                                              "clipboard password", "notify Connected", "reveal /home/m/.config/ssm-connect/proxy.pac"}));
         QTRY_COMPARE(controller.states().value("desktop").toString(), QStringLiteral("Connected"));
     }
 
