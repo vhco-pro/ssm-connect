@@ -1,0 +1,1674 @@
+{
+  "description": "Every control of the macOS menu, settings window, profile editor, log and About window, with the helper command the Windows and Linux shells send for it (or shell for presentation only, part_of for a confirmation button, cancel for a control that cancels a running command of its workflow and otherwise sends a command), when macOS offers and enables it, and the Windows and Linux control. Checked by scripts/check-macos-parity.mjs and by the helper and shell tests (AC-29 in docs/specs/cross-platform-client.spec.md).",
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "menucontent-button-sign-in-with-sso",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Sign In with SSO"
+      },
+      "helper": {
+        "command": "signIn"
+      },
+      "offered": "an authorization needs an explicit sign-in",
+      "enabled": "always",
+      "windows": "Tray menu: Sign In with SSO",
+      "linux": "Tray menu: Sign In with SSO"
+    },
+    {
+      "id": "menucontent-button-retry-authorization",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Retry Authorization"
+      },
+      "helper": {
+        "command": "retryAuthorization"
+      },
+      "offered": "authorization is unavailable",
+      "enabled": "always",
+      "windows": "Tray menu: Retry Authorization",
+      "linux": "Tray menu: Retry Authorization"
+    },
+    {
+      "id": "menu-set-up-workstation",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "SettingsLink",
+        "title": "Set Up a Workstation…"
+      },
+      "helper": {
+        "shell": "open the settings window"
+      },
+      "offered": "no profile exists",
+      "enabled": "always",
+      "windows": "Tray menu: Set Up a Workstation…",
+      "linux": "Tray menu: Set Up a Workstation…"
+    },
+    {
+      "id": "menucontent-button-machine-actiontitle",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "machine.actionTitle"
+      },
+      "helper": {
+        "command": "connect"
+      },
+      "offered": "a profile exists",
+      "enabled": "the primary action is enabled (Connect, Retry)",
+      "windows": "Tray menu: Connect",
+      "linux": "Tray menu: Connect"
+    },
+    {
+      "id": "menucontent-button-copy-password",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Copy Password"
+      },
+      "helper": {
+        "command": "copyPassword"
+      },
+      "offered": "connected and the DCV password is known",
+      "enabled": "always",
+      "windows": "Tray menu: Copy Password",
+      "linux": "Tray menu: Copy Password"
+    },
+    {
+      "id": "menucontent-button-reconnect",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Reconnect"
+      },
+      "helper": {
+        "command": "reconnect"
+      },
+      "offered": "connected",
+      "enabled": "always",
+      "windows": "Tray menu: Reconnect",
+      "linux": "Tray menu: Reconnect"
+    },
+    {
+      "id": "menu-stop-workstation",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Stop Workstation…"
+      },
+      "helper": {
+        "command": "stopWorkstation"
+      },
+      "offered": "connected",
+      "enabled": "always",
+      "confirmation": "Stop the workstation?",
+      "windows": "Tray menu: Stop Workstation…",
+      "linux": "Tray menu: Stop Workstation…"
+    },
+    {
+      "id": "menucontent-button-disconnect",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Disconnect"
+      },
+      "helper": {
+        "cancel": {
+          "workflow": "desktop",
+          "otherwise": "disconnect"
+        }
+      },
+      "offered": "connected or connecting",
+      "enabled": "always",
+      "windows": "Tray menu: Disconnect",
+      "linux": "Tray menu: Disconnect"
+    },
+    {
+      "id": "menucontent-button-remotedevelopment-isopening-opening-vs-code-open-vs",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "remoteDevelopment.isOpening ? \"Opening VS Code\" : \"Open VS Code\""
+      },
+      "helper": {
+        "command": "openEditor"
+      },
+      "offered": "remote development is on for the profile or editor access is active",
+      "enabled": "not while opening",
+      "confirmation": "Set up native VS Code access? (first use; then installEditorSetup with consent)",
+      "windows": "Tray menu: Open VS Code",
+      "linux": "Tray menu: Open VS Code"
+    },
+    {
+      "id": "menucontent-button-remotedevelopment-isrecovering-recovering-existing-",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "remoteDevelopment.isRecovering ? \"Recovering Existing Workspace\" : \"Reconnect Existing Workspace\""
+      },
+      "helper": {
+        "command": "reconnectWorkspace"
+      },
+      "offered": "remote development is on or editor access is active",
+      "enabled": "not while opening, and only once the editor setup is installed",
+      "windows": "Tray menu: Reconnect Existing Workspace",
+      "linux": "Tray menu: Reconnect Existing Workspace"
+    },
+    {
+      "id": "menucontent-button-cancel-recovery",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Cancel Recovery"
+      },
+      "helper": {
+        "cancel": {
+          "workflow": "editor",
+          "otherwise": "cancelEditorRecovery"
+        }
+      },
+      "offered": "editor recovery is running",
+      "enabled": "always",
+      "windows": "Tray menu: Cancel Recovery",
+      "linux": "Tray menu: Cancel Recovery"
+    },
+    {
+      "id": "menu-review-replacement",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Review Replacement Workstation…"
+      },
+      "helper": {
+        "command": "approveReplacement"
+      },
+      "offered": "a replacement workstation waits for review",
+      "enabled": "always",
+      "confirmation": "Reconnect the same workspace to a replacement?",
+      "windows": "Tray menu: Review Replacement Workstation…",
+      "linux": "Tray menu: Review Replacement Workstation…"
+    },
+    {
+      "id": "menucontent-button-cancel-replacement-recovery",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Cancel Replacement Recovery"
+      },
+      "helper": {
+        "cancel": {
+          "workflow": "editor",
+          "otherwise": "cancelEditorRecovery"
+        }
+      },
+      "offered": "a replacement workstation waits for review",
+      "enabled": "always",
+      "windows": "Tray menu: Cancel Replacement Recovery",
+      "linux": "Tray menu: Cancel Replacement Recovery"
+    },
+    {
+      "id": "menucontent-menu-vs-code-browser-routing",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Menu",
+        "title": "VS Code Browser Routing"
+      },
+      "helper": {
+        "shell": "submenu with the routing notes"
+      },
+      "offered": "remote development is on or editor access is active",
+      "enabled": "always",
+      "windows": "Tray menu: VS Code Browser Routing",
+      "linux": "Tray menu: VS Code Browser Routing"
+    },
+    {
+      "id": "menucontent-button-open-vs-code-remote-browser-documentation",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Open VS Code Remote Browser Documentation"
+      },
+      "helper": {
+        "shell": "open the documentation URL"
+      },
+      "offered": "inside VS Code Browser Routing",
+      "enabled": "always",
+      "windows": "Tray menu: Open VS Code Remote Browser Documentation",
+      "linux": "Tray menu: Open VS Code Remote Browser Documentation"
+    },
+    {
+      "id": "menucontent-button-remotedevelopment-isrenewinglease-renewing-editor-a",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "remoteDevelopment.isRenewingLease ? \"Renewing Editor Access\" : \"Renew Editor Access\""
+      },
+      "helper": {
+        "command": "renewEditorAccess"
+      },
+      "offered": "editor access is active",
+      "enabled": "not while renewing",
+      "windows": "Tray menu: Renew Editor Access",
+      "linux": "Tray menu: Renew Editor Access"
+    },
+    {
+      "id": "menucontent-button-stop-remote-access",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Stop Remote Access"
+      },
+      "helper": {
+        "cancel": {
+          "workflow": "editor",
+          "otherwise": "stopRemoteAccess"
+        }
+      },
+      "offered": "editor access is active",
+      "enabled": "always",
+      "confirmation": "Stop native editor access?",
+      "windows": "Tray menu: Stop Remote Access",
+      "linux": "Tray menu: Stop Remote Access"
+    },
+    {
+      "id": "menucontent-button-restore-editor-setup",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Restore Editor Setup"
+      },
+      "helper": {
+        "cancel": {
+          "workflow": "editor",
+          "otherwise": "restoreEditorSetup"
+        }
+      },
+      "offered": "the editor setup is installed",
+      "enabled": "always",
+      "confirmation": "Restore editor SSH setup?",
+      "windows": "Tray menu: Restore Editor Setup",
+      "linux": "Tray menu: Restore Editor Setup"
+    },
+    {
+      "id": "menu-review-forwarding-replacement",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Review Forwarding Replacement…"
+      },
+      "helper": {
+        "command": "approveForwardingReplacement"
+      },
+      "offered": "a forwarding replacement waits for review",
+      "enabled": "always",
+      "confirmation": "Reconnect web forwards to the replacement?",
+      "windows": "Tray menu: Review Forwarding Replacement…",
+      "linux": "Tray menu: Review Forwarding Replacement…"
+    },
+    {
+      "id": "menucontent-button-cancel-forwarding-recovery",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Cancel Forwarding Recovery"
+      },
+      "helper": {
+        "cancel": {
+          "workflow": "web",
+          "otherwise": "cancelForwardingRecovery"
+        }
+      },
+      "offered": "web forwards recovery is running or a forwarding replacement waits",
+      "enabled": "always",
+      "windows": "Tray menu: Cancel Forwarding Recovery",
+      "linux": "Tray menu: Cancel Forwarding Recovery"
+    },
+    {
+      "id": "menucontent-button-webforwards-state-on-webforwards-state-starting-tur",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "webForwards.state == .on || webForwards.state == .starting ? \"Turn Off Web Forwards\" : \"Turn On Web Forwards\""
+      },
+      "helper": {
+        "commands": [
+          "startWebForwards",
+          "stopWebForwards"
+        ]
+      },
+      "offered": "web forwards are on for the profile or running",
+      "enabled": "always",
+      "windows": "Tray menu: Turn On / Turn Off Web Forwards",
+      "linux": "Tray menu: Turn On / Turn Off Web Forwards"
+    },
+    {
+      "id": "menucontent-button-open-forward-name",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Open \\(forward.name)"
+      },
+      "helper": {
+        "command": "openForward"
+      },
+      "offered": "web forwards are on, one item per local forward",
+      "enabled": "always",
+      "windows": "Tray menu: Open <forward name>",
+      "linux": "Tray menu: Open <forward name>"
+    },
+    {
+      "id": "menucontent-button-webforwards-isopeningbrowser-opening-browser-open-b",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "webForwards.isOpeningBrowser ? \"Opening Browser\" : \"Open Browser\""
+      },
+      "helper": {
+        "command": "openBrowser"
+      },
+      "offered": "web forwards are on for the profile",
+      "enabled": "not while opening",
+      "confirmation": "Choose a browser mode (when none is set); Set up browser proxy settings? (Use My Browser setup)",
+      "windows": "Tray menu: Open Browser",
+      "linux": "Tray menu: Open Browser"
+    },
+    {
+      "id": "menucontent-menu-advanced",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Menu",
+        "title": "Advanced"
+      },
+      "helper": {
+        "shell": "submenu for manual browser setup"
+      },
+      "offered": "web forwards are on for the profile",
+      "enabled": "always",
+      "windows": "Tray menu: Advanced",
+      "linux": "Tray menu: Advanced"
+    },
+    {
+      "id": "menucontent-button-copy-pac-url",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Copy PAC URL"
+      },
+      "helper": {
+        "command": "copyPACURL"
+      },
+      "offered": "inside Advanced",
+      "enabled": "always",
+      "windows": "Tray menu: Copy PAC URL",
+      "linux": "Tray menu: Copy PAC URL"
+    },
+    {
+      "id": "menucontent-button-reveal-pac-file",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Reveal PAC File"
+      },
+      "helper": {
+        "command": "revealPACFile"
+      },
+      "offered": "inside Advanced",
+      "enabled": "always",
+      "windows": "Tray menu: Reveal PAC File",
+      "linux": "Tray menu: Reveal PAC File"
+    },
+    {
+      "id": "menucontent-button-apply-browser-setup",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Apply Browser Setup"
+      },
+      "helper": {
+        "command": "applyBrowserSetup"
+      },
+      "offered": "inside Advanced, Use My Browser mode",
+      "enabled": "always",
+      "confirmation": "Set up browser proxy settings?",
+      "windows": "Tray menu: Apply Browser Setup",
+      "linux": "Tray menu: Apply Browser Setup"
+    },
+    {
+      "id": "menucontent-button-restore-browser-settings",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Restore Browser Settings"
+      },
+      "helper": {
+        "command": "restoreBrowserSettings"
+      },
+      "offered": "inside Advanced, Use My Browser mode set up",
+      "enabled": "always",
+      "windows": "Tray menu: Restore Browser Settings",
+      "linux": "Tray menu: Restore Browser Settings"
+    },
+    {
+      "id": "menucontent-button-apply-changes",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Apply Changes"
+      },
+      "helper": {
+        "command": "applyWebChanges"
+      },
+      "offered": "saved web forward changes are pending",
+      "enabled": "always",
+      "confirmation": "Apply saved changes?",
+      "windows": "Tray menu: Apply Changes",
+      "linux": "Tray menu: Apply Changes"
+    },
+    {
+      "id": "menucontent-button-show-log",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Show Log"
+      },
+      "helper": {
+        "shell": "open the log window (getLog)"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Tray menu: Show Log",
+      "linux": "Tray menu: Show Log"
+    },
+    {
+      "id": "menu-settings",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "SettingsLink",
+        "title": "Settings"
+      },
+      "helper": {
+        "shell": "open the settings window"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Tray menu: Settings",
+      "linux": "Tray menu: Settings"
+    },
+    {
+      "id": "menucontent-button-about",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "About"
+      },
+      "helper": {
+        "shell": "open the About window"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Tray menu: About",
+      "linux": "Tray menu: About"
+    },
+    {
+      "id": "menucontent-button-quit",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "Button",
+        "title": "Quit"
+      },
+      "helper": {
+        "shell": "quit SSM Connect"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Tray menu: Quit",
+      "linux": "Tray menu: Quit"
+    },
+    {
+      "id": "menucontent-alertbutton-separate-browser",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Separate Browser"
+      },
+      "helper": {
+        "part_of": "menu-button-webforwards-isopeningbrowser-opening-browser-open-browser"
+      },
+      "offered": "browser mode choice before Open Browser",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Separate Browser",
+      "linux": "Confirmation dialog: Separate Browser"
+    },
+    {
+      "id": "menucontent-alertbutton-use-my-browser",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Use My Browser"
+      },
+      "helper": {
+        "part_of": "menu-button-webforwards-isopeningbrowser-opening-browser-open-browser"
+      },
+      "offered": "browser mode choice before Open Browser",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Use My Browser",
+      "linux": "Confirmation dialog: Use My Browser"
+    },
+    {
+      "id": "menucontent-alertbutton-cancel",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Cancel"
+      },
+      "helper": {
+        "part_of": "menu-button-webforwards-isopeningbrowser-opening-browser-open-browser"
+      },
+      "offered": "browser mode choice before Open Browser",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Cancel",
+      "linux": "Confirmation dialog: Cancel"
+    },
+    {
+      "id": "menucontent-alertbutton-continue",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Continue"
+      },
+      "helper": {
+        "part_of": "confirmations"
+      },
+      "offered": "every menu confirmation",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Continue",
+      "linux": "Confirmation dialog: Continue"
+    },
+    {
+      "id": "menucontent-alertbutton-cancel-2",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Cancel"
+      },
+      "helper": {
+        "part_of": "confirmations"
+      },
+      "offered": "every menu confirmation",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Cancel",
+      "linux": "Confirmation dialog: Cancel"
+    },
+    {
+      "id": "menucontent-alertbutton-ok",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "OK"
+      },
+      "helper": {
+        "shell": "dismiss a browser setup error"
+      },
+      "offered": "a browser setup error",
+      "enabled": "always",
+      "windows": "Confirmation dialog: OK",
+      "linux": "Confirmation dialog: OK"
+    },
+    {
+      "id": "menucontent-alertbutton-stop-workstation",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Stop Workstation"
+      },
+      "helper": {
+        "part_of": "menu-stop-workstation"
+      },
+      "offered": "the Stop Workstation confirmation",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Stop Workstation",
+      "linux": "Confirmation dialog: Stop Workstation"
+    },
+    {
+      "id": "menucontent-alertbutton-cancel-3",
+      "macos": {
+        "file": "MenuContentView.swift",
+        "control": "AlertButton",
+        "title": "Cancel"
+      },
+      "helper": {
+        "part_of": "menu-stop-workstation"
+      },
+      "offered": "the Stop Workstation confirmation",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Cancel",
+      "linux": "Confirmation dialog: Cancel"
+    },
+    {
+      "id": "settings-toggle-launch-at-login",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Toggle",
+        "title": "Launch at login"
+      },
+      "helper": {
+        "shell": "per-user startup registration"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Launch at login",
+      "linux": "Settings window: Launch at login"
+    },
+    {
+      "id": "settings-toggle-connect-automatically-on-launch",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Toggle",
+        "title": "Connect automatically on launch"
+      },
+      "helper": {
+        "command": "saveSettings",
+        "field": "connectOnLaunch"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Connect automatically on launch",
+      "linux": "Settings window: Connect automatically on launch"
+    },
+    {
+      "id": "settings-toggle-reconnect-automatically-if-the-tunnel-drops",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Toggle",
+        "title": "Reconnect automatically if the tunnel drops"
+      },
+      "helper": {
+        "command": "saveSettings",
+        "field": "autoReconnect"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Reconnect automatically if the tunnel drops",
+      "linux": "Settings window: Reconnect automatically if the tunnel drops"
+    },
+    {
+      "id": "settings-clipboard-auto-clear",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Stepper",
+        "title": "Clear copied password after \\(store.settings.clipboardAutoClearSeconds)s"
+      },
+      "helper": {
+        "command": "saveSettings",
+        "field": "clipboardAutoClearSeconds"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Clear copied password after N seconds",
+      "linux": "Settings window: Clear copied password after N seconds"
+    },
+    {
+      "id": "settings-button-use",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Use"
+      },
+      "helper": {
+        "command": "setActiveProfile"
+      },
+      "offered": "per profile row",
+      "enabled": "not for the active profile",
+      "windows": "Settings window: Use",
+      "linux": "Settings window: Use"
+    },
+    {
+      "id": "settings-button-add-a-blank-profile",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Add a blank profile"
+      },
+      "helper": {
+        "shell": "open the profile editor with a blank profile; Save sends saveProfile"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Add a blank profile",
+      "linux": "Settings window: Add a blank profile"
+    },
+    {
+      "id": "settings-menu-import-a-profile-from-aws-config",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Menu",
+        "title": "Import a profile from ~/.aws/config"
+      },
+      "helper": {
+        "command": "listAWSConfigProfiles"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Import a profile from ~/.aws/config",
+      "linux": "Settings window: Import a profile from ~/.aws/config"
+    },
+    {
+      "id": "settings-button-profile-name",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "profile.name"
+      },
+      "helper": {
+        "shell": "open the profile editor with the chosen ~/.aws/config profile; Save sends saveProfile"
+      },
+      "offered": "one item per importable profile",
+      "enabled": "always",
+      "windows": "Settings window: <importable profile name>",
+      "linux": "Settings window: <importable profile name>"
+    },
+    {
+      "id": "settings-button-duplicate-the-selected-profile",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Duplicate the selected profile"
+      },
+      "helper": {
+        "command": "duplicateProfile"
+      },
+      "offered": "always",
+      "enabled": "a profile is selected",
+      "windows": "Settings window: Duplicate the selected profile",
+      "linux": "Settings window: Duplicate the selected profile"
+    },
+    {
+      "id": "settings-button-delete-the-selected-profile",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Delete the selected profile"
+      },
+      "helper": {
+        "command": "deleteProfile"
+      },
+      "offered": "always",
+      "enabled": "a profile is selected and more than one profile exists",
+      "windows": "Settings window: Delete the selected profile",
+      "linux": "Settings window: Delete the selected profile"
+    },
+    {
+      "id": "settings-menu-files",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Menu",
+        "title": "Files"
+      },
+      "helper": {
+        "shell": "submenu of file actions"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Settings window: Files",
+      "linux": "Settings window: Files"
+    },
+    {
+      "id": "settings-button-open-profile-file",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Open Profile File…"
+      },
+      "helper": {
+        "command": "importProfile"
+      },
+      "offered": "inside Files",
+      "enabled": "always",
+      "confirmation": "Open <profile>? (previewProfileFile; Attach File or Import as Local Copy)",
+      "windows": "Settings window: Open Profile File…",
+      "linux": "Settings window: Open Profile File…"
+    },
+    {
+      "id": "settings-button-export-profile",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Export Profile…"
+      },
+      "helper": {
+        "command": "exportProfile"
+      },
+      "offered": "inside Files",
+      "enabled": "a profile is selected",
+      "windows": "Settings window: Export Profile…",
+      "linux": "Settings window: Export Profile…"
+    },
+    {
+      "id": "settings-button-save-a-local-copy",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Save a Local Copy"
+      },
+      "helper": {
+        "command": "saveLocalCopy"
+      },
+      "offered": "inside Files",
+      "enabled": "a profile is selected",
+      "windows": "Settings window: Save a Local Copy",
+      "linux": "Settings window: Save a Local Copy"
+    },
+    {
+      "id": "settings-button-reload-review-changes",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Reload / Review Changes"
+      },
+      "helper": {
+        "command": "reviewFileChanges"
+      },
+      "offered": "inside Files, the selected profile is attached to a file",
+      "enabled": "always",
+      "windows": "Settings window: Reload / Review Changes",
+      "linux": "Settings window: Reload / Review Changes"
+    },
+    {
+      "id": "settings-button-apply-external-changes",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Apply External Changes"
+      },
+      "helper": {
+        "command": "applyFileChanges"
+      },
+      "offered": "inside Files, the selected profile is attached to a file",
+      "enabled": "outside changes are pending",
+      "confirmation": "Apply external profile changes?",
+      "windows": "Settings window: Apply External Changes",
+      "linux": "Settings window: Apply External Changes"
+    },
+    {
+      "id": "settings-button-locate-file",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Locate File…"
+      },
+      "helper": {
+        "command": "locateProfileFile"
+      },
+      "offered": "inside Files, the selected profile is attached to a file",
+      "enabled": "always",
+      "windows": "Settings window: Locate File…",
+      "linux": "Settings window: Locate File…"
+    },
+    {
+      "id": "settings-button-detach-keep-local-profile",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Detach (Keep Local Profile)"
+      },
+      "helper": {
+        "command": "detachProfile"
+      },
+      "offered": "inside Files, the selected profile is attached to a file",
+      "enabled": "always",
+      "windows": "Settings window: Detach (Keep Local Profile)",
+      "linux": "Settings window: Detach (Keep Local Profile)"
+    },
+    {
+      "id": "settings-button-edit",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "Button",
+        "title": "Edit…"
+      },
+      "helper": {
+        "shell": "open the profile editor for the selected profile"
+      },
+      "offered": "always",
+      "enabled": "a profile is selected",
+      "windows": "Settings window: Edit…",
+      "linux": "Settings window: Edit…"
+    },
+    {
+      "id": "settings-alertbutton-attach-file",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "AlertButton",
+        "title": "Attach File"
+      },
+      "helper": {
+        "part_of": "settings-button-open-profile-file"
+      },
+      "offered": "the Open Profile File preview",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Attach File",
+      "linux": "Confirmation dialog: Attach File"
+    },
+    {
+      "id": "settings-alertbutton-import-as-local-copy",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "AlertButton",
+        "title": "Import as Local Copy"
+      },
+      "helper": {
+        "part_of": "settings-button-open-profile-file"
+      },
+      "offered": "the Open Profile File preview",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Import as Local Copy",
+      "linux": "Confirmation dialog: Import as Local Copy"
+    },
+    {
+      "id": "settings-alertbutton-cancel",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "AlertButton",
+        "title": "Cancel"
+      },
+      "helper": {
+        "part_of": "settings-button-open-profile-file"
+      },
+      "offered": "the Open Profile File preview",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Cancel",
+      "linux": "Confirmation dialog: Cancel"
+    },
+    {
+      "id": "settings-alertbutton-keep-pending",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "AlertButton",
+        "title": "Keep Pending"
+      },
+      "helper": {
+        "part_of": "settings-button-reload-review-changes"
+      },
+      "offered": "the outside changes review",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Keep Pending",
+      "linux": "Confirmation dialog: Keep Pending"
+    },
+    {
+      "id": "settings-alertbutton-continue",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "AlertButton",
+        "title": "Continue"
+      },
+      "helper": {
+        "part_of": "settings-confirmations"
+      },
+      "offered": "every settings confirmation",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Continue",
+      "linux": "Confirmation dialog: Continue"
+    },
+    {
+      "id": "settings-alertbutton-cancel-2",
+      "macos": {
+        "file": "SettingsView.swift",
+        "control": "AlertButton",
+        "title": "Cancel"
+      },
+      "helper": {
+        "part_of": "settings-confirmations"
+      },
+      "offered": "every settings confirmation",
+      "enabled": "always",
+      "windows": "Confirmation dialog: Cancel",
+      "linux": "Confirmation dialog: Cancel"
+    },
+    {
+      "id": "profileeditor-textfield-display-name",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Display name"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "name"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Display name",
+      "linux": "Profile editor: Display name"
+    },
+    {
+      "id": "profileeditor-textfield-sso-start-url",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "SSO start URL"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "ssoStartUrl"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: SSO start URL",
+      "linux": "Profile editor: SSO start URL"
+    },
+    {
+      "id": "profileeditor-textfield-sso-region",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "SSO region"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "ssoRegion"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: SSO region",
+      "linux": "Profile editor: SSO region"
+    },
+    {
+      "id": "profileeditor-textfield-account-id",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Account ID"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "accountId"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Account ID",
+      "linux": "Profile editor: Account ID"
+    },
+    {
+      "id": "profileeditor-textfield-role-name",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Role name"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "roleName"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Role name",
+      "linux": "Profile editor: Role name"
+    },
+    {
+      "id": "profileeditor-textfield-resource-region",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Resource region"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "resourceRegion"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Resource region",
+      "linux": "Profile editor: Resource region"
+    },
+    {
+      "id": "profileeditor-textfield-instance-tag-key",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Instance tag key"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "instanceTagKey"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Instance tag key",
+      "linux": "Profile editor: Instance tag key"
+    },
+    {
+      "id": "profileeditor-textfield-instance-tag-value",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Instance tag value"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "instanceTagValue"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Instance tag value",
+      "linux": "Profile editor: Instance tag value"
+    },
+    {
+      "id": "profileeditor-textfield-dcv-password-secret-id-optional",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "DCV password secret id (optional)"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "secretId"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: DCV password secret id (optional)",
+      "linux": "Profile editor: DCV password secret id (optional)"
+    },
+    {
+      "id": "profileeditor-textfield-agent-port",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Agent port"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "agentRemotePort"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Agent port",
+      "linux": "Profile editor: Agent port"
+    },
+    {
+      "id": "profileeditor-textfield-socks-port",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "SOCKS port"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.socksPort"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: SOCKS port",
+      "linux": "Profile editor: SOCKS port"
+    },
+    {
+      "id": "profileeditor-textfield-remote-folder-optional",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Remote folder (optional)"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "remoteDevelopment.remoteFolder"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Remote folder (optional)",
+      "linux": "Profile editor: Remote folder (optional)"
+    },
+    {
+      "id": "profileeditor-textfield-ssh-user-optional",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "SSH user (optional)"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.sshUser"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: SSH user (optional)",
+      "linux": "Profile editor: SSH user (optional)"
+    },
+    {
+      "id": "profileeditor-textfield-domain-suffix",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Domain suffix"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.proxySuffixes[]"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Domain suffix",
+      "linux": "Profile editor: Domain suffix"
+    },
+    {
+      "id": "profileeditor-textfield-name",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Name"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.localForwards[].name"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Name",
+      "linux": "Profile editor: Name"
+    },
+    {
+      "id": "profileeditor-textfield-remote-host",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Remote host"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.localForwards[].remoteHost"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Remote host",
+      "linux": "Profile editor: Remote host"
+    },
+    {
+      "id": "profileeditor-textfield-open-path-optional",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Open path (optional)"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.localForwards[].openPath"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Open path (optional)",
+      "linux": "Profile editor: Open path (optional)"
+    },
+    {
+      "id": "profileeditor-textfield-local-port",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Local port"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "localPort"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Local port",
+      "linux": "Profile editor: Local port"
+    },
+    {
+      "id": "profileeditor-textfield-local-port-2",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Local port"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.localForwards[].localPort"
+      },
+      "offered": "per local forward",
+      "enabled": "always",
+      "windows": "Profile editor: Local port",
+      "linux": "Profile editor: Local port"
+    },
+    {
+      "id": "profileeditor-textfield-remote-port",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Remote port"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "remotePort"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Remote port",
+      "linux": "Profile editor: Remote port"
+    },
+    {
+      "id": "profileeditor-textfield-remote-port-2",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "TextField",
+        "title": "Remote port"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.localForwards[].remotePort"
+      },
+      "offered": "per local forward",
+      "enabled": "always",
+      "windows": "Profile editor: Remote port",
+      "linux": "Profile editor: Remote port"
+    },
+    {
+      "id": "profileeditor-toggle-open-dcv-viewer-automatically",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Toggle",
+        "title": "Open DCV Viewer automatically"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "connectAction"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Open DCV Viewer automatically",
+      "linux": "Profile editor: Open DCV Viewer automatically"
+    },
+    {
+      "id": "profileeditor-toggle-enable-native-vs-code-access",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Toggle",
+        "title": "Enable native VS Code access"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "remoteDevelopment.enabled"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Enable native VS Code access",
+      "linux": "Profile editor: Enable native VS Code access"
+    },
+    {
+      "id": "profileeditor-toggle-enable-web-forwards",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Toggle",
+        "title": "Enable web forwards"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.enabled"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Enable web forwards",
+      "linux": "Profile editor: Enable web forwards"
+    },
+    {
+      "id": "profileeditor-toggle-socks-proxy",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Toggle",
+        "title": "SOCKS proxy"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.socksPort (set or cleared)"
+      },
+      "offered": "web forwards are on",
+      "enabled": "always",
+      "windows": "Profile editor: SOCKS proxy",
+      "linux": "Profile editor: SOCKS proxy"
+    },
+    {
+      "id": "profileeditor-picker-mode",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Picker",
+        "title": "Mode"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "connectMode"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Mode",
+      "linux": "Profile editor: Mode"
+    },
+    {
+      "id": "profileeditor-picker-browser",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Picker",
+        "title": "Browser"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.browser"
+      },
+      "offered": "web forwards are on",
+      "enabled": "always",
+      "windows": "Profile editor: Browser",
+      "linux": "Profile editor: Browser"
+    },
+    {
+      "id": "profileeditor-picker-browser-mode",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Picker",
+        "title": "Browser Mode"
+      },
+      "helper": {
+        "command": "saveProfile",
+        "field": "webForwards.browserMode"
+      },
+      "offered": "web forwards are on",
+      "enabled": "always",
+      "windows": "Profile editor: Browser Mode",
+      "linux": "Profile editor: Browser Mode"
+    },
+    {
+      "id": "profileeditor-button-choose-profile-folder",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Choose Profile Folder"
+      },
+      "helper": {
+        "shell": "folder picker for webForwards.browserProfilePath"
+      },
+      "offered": "Use My Browser mode",
+      "enabled": "always",
+      "windows": "Profile editor: Choose Profile Folder",
+      "linux": "Profile editor: Choose Profile Folder"
+    },
+    {
+      "id": "profileeditor-button-remove-domain",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Remove domain"
+      },
+      "helper": {
+        "shell": "remove a proxy suffix from the draft"
+      },
+      "offered": "per proxy suffix",
+      "enabled": "always",
+      "windows": "Profile editor: Remove domain",
+      "linux": "Profile editor: Remove domain"
+    },
+    {
+      "id": "profileeditor-button-add-a-proxy-domain-suffix",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Add a proxy domain suffix"
+      },
+      "helper": {
+        "shell": "add a proxy suffix to the draft"
+      },
+      "offered": "web forwards are on",
+      "enabled": "always",
+      "windows": "Profile editor: Add a proxy domain suffix",
+      "linux": "Profile editor: Add a proxy domain suffix"
+    },
+    {
+      "id": "profileeditor-button-remove-local-forward",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Remove local forward"
+      },
+      "helper": {
+        "shell": "remove a local forward from the draft"
+      },
+      "offered": "per local forward",
+      "enabled": "always",
+      "windows": "Profile editor: Remove local forward",
+      "linux": "Profile editor: Remove local forward"
+    },
+    {
+      "id": "profileeditor-button-add-local-forward",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Add Local Forward"
+      },
+      "helper": {
+        "shell": "add a local forward to the draft"
+      },
+      "offered": "web forwards are on",
+      "enabled": "always",
+      "windows": "Profile editor: Add Local Forward",
+      "linux": "Profile editor: Add Local Forward"
+    },
+    {
+      "id": "profileeditor-button-cancel",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Cancel"
+      },
+      "helper": {
+        "shell": "close the editor without saving"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Profile editor: Cancel",
+      "linux": "Profile editor: Cancel"
+    },
+    {
+      "id": "profileeditor-button-save-a-local-copy",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Save a Local Copy"
+      },
+      "helper": {
+        "command": "saveLocalCopy"
+      },
+      "offered": "the profile is attached to a file",
+      "enabled": "always",
+      "windows": "Profile editor: Save a Local Copy",
+      "linux": "Profile editor: Save a Local Copy"
+    },
+    {
+      "id": "profileeditor-button-save",
+      "macos": {
+        "file": "ProfileEditorView.swift",
+        "control": "Button",
+        "title": "Save"
+      },
+      "helper": {
+        "command": "saveProfile"
+      },
+      "offered": "always",
+      "enabled": "the draft validates",
+      "windows": "Profile editor: Save",
+      "linux": "Profile editor: Save"
+    },
+    {
+      "id": "log-button-clear",
+      "macos": {
+        "file": "LogView.swift",
+        "control": "Button",
+        "title": "Clear"
+      },
+      "helper": {
+        "command": "clearLog"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "Log window: Clear",
+      "linux": "Log window: Clear"
+    },
+    {
+      "id": "about-link-apache-license-2-0",
+      "macos": {
+        "file": "AboutView.swift",
+        "control": "Link",
+        "title": "Apache License 2.0"
+      },
+      "helper": {
+        "shell": "open the license URL"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "About window: Apache License 2.0",
+      "linux": "About window: Apache License 2.0"
+    },
+    {
+      "id": "about-link-project",
+      "macos": {
+        "file": "AboutView.swift",
+        "control": "Link",
+        "title": "Project"
+      },
+      "helper": {
+        "shell": "open the project URL"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "About window: Project",
+      "linux": "About window: Project"
+    },
+    {
+      "id": "about-link-release-notes",
+      "macos": {
+        "file": "AboutView.swift",
+        "control": "Link",
+        "title": "Release Notes"
+      },
+      "helper": {
+        "shell": "open the release notes URL"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "About window: Release Notes",
+      "linux": "About window: Release Notes"
+    },
+    {
+      "id": "about-disclosuregroup-connection-states",
+      "macos": {
+        "file": "AboutView.swift",
+        "control": "DisclosureGroup",
+        "title": "Connection States"
+      },
+      "helper": {
+        "shell": "expand the connection state legend"
+      },
+      "offered": "always",
+      "enabled": "always",
+      "windows": "About window: Connection States",
+      "linux": "About window: Connection States"
+    }
+  ]
+}
