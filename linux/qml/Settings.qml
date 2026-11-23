@@ -51,21 +51,21 @@ ApplicationWindow {
         spacing: 10
 
         Label { text: "Startup"; font.bold: true }
-        CheckBox {
+        CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
             objectName: "settings-toggle-launch-at-login"
             text: "Launch at login"
             visible: typeof startup !== "undefined"
             checked: typeof startup !== "undefined" && startup.enabled
             onToggled: startup.setEnabled(checked, executablePath)
         }
-        CheckBox {
+        CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
             objectName: "settings-toggle-connect-automatically-on-launch"
             text: "Connect automatically on launch"
             checked: shell.settings.connectOnLaunch === "true"
             onToggled: shell.trigger(objectName, { "value": checked ? "true" : "false" })
         }
         Label { text: "Connection"; font.bold: true }
-        CheckBox {
+        CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
             objectName: "settings-toggle-reconnect-automatically-if-the-tunnel-drops"
             text: "Reconnect automatically if the tunnel drops"
             checked: shell.settings.autoReconnect !== "false"

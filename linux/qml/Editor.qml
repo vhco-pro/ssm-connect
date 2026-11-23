@@ -86,8 +86,9 @@ ApplicationWindow {
                             validator: IntValidator { bottom: 1; top: 65535 }
                                         onEditingFinished: editor.set("remotePort", Number(text)) }
             }
-            CheckBox { objectName: "profileeditor-toggle-open-dcv-viewer-automatically"; text: "Open DCV Viewer automatically"
-                       checked: editor.draft.connectAction && editor.draft.connectAction.dcvViewer !== undefined
+            CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
+                       objectName: "profileeditor-toggle-open-dcv-viewer-automatically"; text: "Open DCV Viewer automatically"
+                       checked: !!editor.draft.connectAction && editor.draft.connectAction.dcvViewer !== undefined
                        onToggled: editor.set("connectAction", checked ? { "dcvViewer": {} } : { "tunnelOnly": {} }) }
 
             Label { text: "Connect mode"; font.bold: true }
@@ -107,7 +108,8 @@ ApplicationWindow {
             }
 
             Label { text: "Remote Development"; font.bold: true }
-            CheckBox { objectName: "profileeditor-toggle-enable-native-vs-code-access"; text: "Enable native VS Code access"
+            CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
+                       objectName: "profileeditor-toggle-enable-native-vs-code-access"; text: "Enable native VS Code access"
                        checked: editor.text("remoteDevelopment.enabled") === "true"
                        onToggled: editor.set("remoteDevelopment.enabled", checked) }
             TextField { objectName: "profileeditor-textfield-remote-folder-optional"; placeholderText: "Remote folder (optional), /home/user/code/project"
@@ -115,7 +117,8 @@ ApplicationWindow {
                         text: editor.text("remoteDevelopment.folder"); onEditingFinished: editor.set("remoteDevelopment.folder", text) }
 
             Label { text: "Web Forwards"; font.bold: true }
-            CheckBox { objectName: "profileeditor-toggle-enable-web-forwards"; text: "Enable web forwards"
+            CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
+                       objectName: "profileeditor-toggle-enable-web-forwards"; text: "Enable web forwards"
                        checked: editor.text("webForwards.enabled") === "true"; onToggled: editor.set("webForwards.enabled", checked) }
             ColumnLayout {
                 enabled: editor.text("webForwards.enabled") === "true"
@@ -123,7 +126,8 @@ ApplicationWindow {
                 TextField { objectName: "profileeditor-textfield-ssh-user-optional"; placeholderText: "SSH user (optional)"; Layout.fillWidth: true
                             text: editor.text("webForwards.sshUser"); onEditingFinished: editor.set("webForwards.sshUser", text) }
                 RowLayout {
-                    CheckBox { objectName: "profileeditor-toggle-socks-proxy"; text: "SOCKS proxy"
+                    CheckBox { Accessible.onToggleAction: { toggle(); toggled() }
+                               objectName: "profileeditor-toggle-socks-proxy"; text: "SOCKS proxy"
                                checked: editor.text("webForwards.socksPort") !== ""
                                onToggled: editor.set("webForwards.socksPort", checked ? 1080 : null) }
                     TextField { objectName: "profileeditor-textfield-socks-port"; Accessible.name: "SOCKS port"; visible: editor.text("webForwards.socksPort") !== ""

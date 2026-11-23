@@ -11,6 +11,7 @@
 #include "tray.h"
 
 #include <QAccessible>
+#include <algorithm>
 #include <functional>
 #include <QAction>
 #include <QApplication>
@@ -156,10 +157,20 @@ private slots:
         QVERIFY(reconnect);
         QVERIFY(QMetaObject::invokeMethod(reconnect, "toggled"));
         QTRY_VERIFY(spawner.started[0]->commands().contains("saveSettings"));
+        // A screen reader toggles a setting with the box's Toggle action, which saves it as a click does.
+        QAccessibleInterface *onLaunch = QAccessible::queryAccessibleInterface(findItem(window, "settings-toggle-connect-automatically-on-launch"));
+        QVERIFY(onLaunch && onLaunch->actionInterface());
+        onLaunch->actionInterface()->doAction(QAccessibleActionInterface::toggleAction());
+        QTRY_VERIFY(std::any_of(spawner.started[0]->receivedFrames.begin(), spawner.started[0]->receivedFrames.end(), [](const QJsonObject &frame) {
+            return frame.value("name") == "saveSettings" && frame.value("arguments").toObject().value("connectOnLaunch") == "true";
+        }));
+        QVERIFY(std::any_of(spawner.started[0]->receivedFrames.begin(), spawner.started[0]->receivedFrames.end(), [](const QJsonObject &frame) {
+            return frame.value("name") == "saveSettings" && frame.value("arguments").toObject().contains("autoReconnect");
+        }));
         for (const auto &frame : spawner.started[0]->receivedFrames) {
             if (frame.value("name") == "duplicateProfile")
                 QCOMPARE(frame.value("arguments").toObject().value("id").toString(), QStringLiteral("55555555-5555-4555-8555-555555555555"));
-            if (frame.value("name") == "saveSettings") QVERIFY(frame.value("arguments").toObject().contains("autoReconnect"));
+
         }
     }
 
