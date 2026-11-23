@@ -10,6 +10,13 @@ package protocol DCVLaunching: Sendable {
     func launch(connectionFile: DCVConnectionFile) async throws
     /// Remove any orphaned `.dcv` temp files left by a previous crash (ADR-8, §8).
     func sweepOrphanedFiles()
+    /// Remove connection files still waiting for the Viewer, when the app or helper quits.
+    func removeWaitingFiles()
+}
+
+extension DCVLaunching {
+    /// macOS keeps the file only for its short window, inside the launch itself.
+    package func removeWaitingFiles() {}
 }
 
 package enum DCVError: LocalizedError, Equatable {
@@ -19,8 +26,16 @@ package enum DCVError: LocalizedError, Equatable {
     package var errorDescription: String? {
         switch self {
         case .viewerNotInstalled:
+            #if os(Windows)
+            return "Amazon DCV Viewer is required but not installed. "
+                + "Install the Windows MSI from https://download.amazondcv.com."
+            #elseif os(Linux)
+            return "Amazon DCV Viewer is required but not installed. "
+                + "Install the .deb (Ubuntu) or .rpm (Fedora) package from https://download.amazondcv.com."
+            #else
             return "Amazon DCV Viewer is required but not found at /Applications/DCV Viewer.app. "
                 + "Install via `brew install --cask dcv-viewer` or download from https://download.amazondcv.com."
+            #endif
         case let .launchFailed(reason):
             return "Failed to launch DCV Viewer: \(reason)"
         }

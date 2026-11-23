@@ -40,8 +40,20 @@ package final class ShellRequests: @unchecked Sendable {
 /// viewer has had time to read it, as on macOS. A crash within that window is covered by the sweep
 /// at the next connect.
 package struct ShellDCVLauncher: DCVLaunching {
-    /// How long the connection file stays for the Viewer to read.
-    package static let viewerReadWindow: Duration = .seconds(5)
+    /// How long the connection file stays for the Viewer to read. A cold Viewer start on Ubuntu took
+    /// about 70 seconds; Connect does not wait for the window.
+    package static let viewerReadWindow: Duration = .seconds(120)
+
+    /// The files this helper is still keeping for a Viewer, so neither a sweep nor a clock change
+    /// removes one before its window ends.
+    final class Waiting: @unchecked Sendable {
+        private let lock = NSLock()
+        private var urls: Set<URL> = []
+        func add(_ url: URL) { lock.withLock { _ = urls.insert(url) } }
+        func remove(_ url: URL) { lock.withLock { _ = urls.remove(url) } }
+        func contains(_ url: URL) -> Bool { lock.withLock { urls.contains(url) } }
+        func takeAll() -> Set<URL> { lock.withLock { defer { urls = [] }; return urls } }
+    }
 
     let requests: ShellRequests
     let directory: URL
@@ -49,6 +61,7 @@ package struct ShellDCVLauncher: DCVLaunching {
     let writePrivate: @Sendable (Data, URL) throws -> Void
     let cleanupDelay: Duration
     let now: @Sendable () -> Date
+    let waiting = Waiting()
 
     package init(requests: ShellRequests, directory: URL, viewerInstalled: @escaping @Sendable () -> Bool,
                  writePrivate: @escaping @Sendable (Data, URL) throws -> Void,
@@ -68,23 +81,35 @@ package struct ShellDCVLauncher: DCVLaunching {
         let url = directory.appendingPathComponent(DCVConnectionFile.tempFilePrefix + UUID().uuidString)
             .appendingPathExtension(DCVConnectionFile.fileExtension)
         try writePrivate(Data(connectionFile.iniContent().utf8), url)
+        waiting.add(url)
         requests.launch("dcvViewer", fields: ["file": url.externalPath])
         let delay = cleanupDelay
+        let waiting = self.waiting
         Task.detached {
             try? await Task.sleep(for: delay)
             try? FileManager.default.removeItem(at: url)
+            waiting.remove(url)
         }
     }
 
+    /// Removes connection files a killed helper left: files this helper is not keeping whose
+    /// modification time is older than the window. A younger one waits for a later sweep.
     package func sweepOrphanedFiles() {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let window = TimeInterval(cleanupDelay.components.seconds)
+        let cutoff = now().addingTimeInterval(-max(window, TimeInterval(Self.viewerReadWindow.components.seconds)))
         for name in names where name.hasPrefix(DCVConnectionFile.tempFilePrefix) && name.hasSuffix("." + DCVConnectionFile.fileExtension) {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            let url = directory.appendingPathComponent(name)
+            guard !waiting.contains(url) else { continue }
+            let modified = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+            if let modified, modified < cutoff { try? FileManager.default.removeItem(at: url) }
         }
     }
 
     /// Removes the connection files still waiting for their window to end; the helper's quit work.
-    package func removeWaitingFiles() {}
+    package func removeWaitingFiles() {
+        for url in waiting.takeAll() { try? FileManager.default.removeItem(at: url) }
+    }
 }
 
 /// The managed browser through the shell, with the routing macOS uses: the core picks the installed,

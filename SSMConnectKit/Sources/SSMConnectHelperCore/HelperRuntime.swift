@@ -134,6 +134,9 @@ package struct HelperServices {
             leaseOwnerIsActive: { editorServices.owner.isActive($0.owner) }, sshAvailable: editorServices.sshAvailable)
         browser = ShellBrowserOpener(requests: services.requests, executable: services.browserExecutable,
                                      profiles: services.browserProfiles)
+        // Connection files still waiting for a Viewer go when the helper ends.
+        let dcv = services.dcv
+        quit.register { dcv.removeWaitingFiles() }
     }
 
     /// The command table for the helper session.
@@ -285,6 +288,8 @@ package struct HelperServices {
     }
 
     private func connect(_ events: EventSink) async throws -> [String: String] {
+        // A killed helper's connection files are removed here; the macOS app sweeps at launch.
+        services.dcv.sweepOrphanedFiles()
         connection.connect()
         _ = try await follow("desktop", events, cancel: {
             self.connection.disconnect()
