@@ -32,7 +32,10 @@ public sealed class SettingsWindow : Window
         var registration = startup ?? new StartupRegistration();
         var atLogin = Check("settings-toggle-launch-at-login", "Launch at login");
         atLogin.IsChecked = registration.IsEnabled;
-        atLogin.Click += (_, _) => registration.SetEnabled(atLogin.IsChecked == true, Environment.ProcessPath ?? "SSMConnect.exe");
+        // Checked and Unchecked, not Click: UI Automation's Toggle, which screen readers use, raises no Click.
+        void AtLoginChanged(object sender, RoutedEventArgs e) => registration.SetEnabled(atLogin.IsChecked == true, Environment.ProcessPath ?? "SSMConnect.exe");
+        atLogin.Checked += AtLoginChanged;
+        atLogin.Unchecked += AtLoginChanged;
         panel.Children.Add(atLogin);
         connectOnLaunch = Check("settings-toggle-connect-automatically-on-launch", "Connect automatically on launch");
         Toggled(connectOnLaunch);

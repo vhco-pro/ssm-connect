@@ -211,6 +211,8 @@ public sealed class ParityTests
             else
                 Assert.True(automationIds.Contains(entry.Id), $"no window control {entry.Id}");
         }
+        // About names the build the shell and helper share.
+        Assert.Contains(Tree(windows[3]).OfType<TextBlock>(), t => t.Text == "Version " + HelperBuild.Current);
         foreach (var window in windows) window.Close();
     });
 

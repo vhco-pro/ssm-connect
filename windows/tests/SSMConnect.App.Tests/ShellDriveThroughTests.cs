@@ -117,6 +117,20 @@ public sealed class ShellDriveThroughTests
                                                                     == "settings-toggle-reconnect-automatically-if-the-tunnel-drops");
             ((IToggleProvider)new CheckBoxAutomationPeer(reconnect).GetPattern(PatternInterface.Toggle)!).Toggle();
             await Eventually(() => Commands(helper!).Contains("saveSettings"));
+
+            // Launch at login follows UI Automation's Toggle, as a screen reader operates it.
+            var key = @"Software\SSMConnectTests\Run-" + Guid.NewGuid();
+            try
+            {
+                var startup = new StartupRegistration("SSM Connect", key);
+                var withStartup = new SettingsWindow(controller, platform, startup);
+                var atLogin = FindAll<CheckBox>(withStartup).Single(c => System.Windows.Automation.AutomationProperties.GetAutomationId(c) == "settings-toggle-launch-at-login");
+                ((IToggleProvider)new CheckBoxAutomationPeer(atLogin).GetPattern(PatternInterface.Toggle)!).Toggle();
+                Assert.True(startup.IsEnabled);
+                ((IToggleProvider)new CheckBoxAutomationPeer(atLogin).GetPattern(PatternInterface.Toggle)!).Toggle();
+                Assert.False(startup.IsEnabled);
+            }
+            finally { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(@"Software\SSMConnectTests", throwOnMissingSubKey: false); }
         });
 
         List<JsonObject> frames;

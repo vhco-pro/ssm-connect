@@ -308,8 +308,8 @@ public sealed class AboutWindow : Window
         SizeToContent = SizeToContent.Height;
         var panel = new StackPanel { Margin = new Thickness(16) };
         panel.Children.Add(new TextBlock { Text = "SSM Connect", FontWeight = FontWeights.Bold, FontSize = 18 });
-        var version = typeof(AboutWindow).Assembly.GetName().Version?.ToString(3) ?? "";
-        panel.Children.Add(new TextBlock { Text = "Version " + version, Margin = new Thickness(0, 4, 0, 8) });
+        // The build the shell and helper share, as the Linux About window shows it.
+        panel.Children.Add(new TextBlock { Text = "Version " + HelperBuild.Current, Margin = new Thickness(0, 4, 0, 8) });
         foreach (var (id, label) in new[] { ("about-link-apache-license-2-0", "Apache License 2.0"), ("about-link-project", "Project"),
                                             ("about-link-release-notes", "Release Notes") })
         {
