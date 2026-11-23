@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Reopened for the owner's 2026-11-22 decisions from native acceptance: the Windows and Linux shells gain profile deletion, Restore Editor Setup and Stop Remote Access, and the DCV connection file is kept longer before deletion. T1 to T49 progress stays recorded under Tasks."
+status: planned
+status_description: "Revision accepted 2026-11-23 (R-30): full macOS parity in the Windows and Linux shells (AC-29) and a 120-second DCV connection file window on Windows and Linux (AC-30). Next: tasks for the new criteria, then implementation on feat/shared-swift-core."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -1129,6 +1129,7 @@ None.
 | 2026-11-23 | R-28 | spec | `2cc723c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-23 | R-29 | spec | `3bf2897` | gpt-6.1-sol | procedural | No blocking findings; one should-fix (a first pass at this commit could not read the conventions and returned no usable records) |
 | 2026-11-23 | R-30 | spec | `3c84f9a` | gpt-6.1-sol | procedural | NO FINDINGS |
+| 2026-11-23 | R-30 | spec | `3c84f9a` | n/a | n/a | accepted by owner |
 
 ### R-1
 
