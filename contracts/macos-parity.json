@@ -475,7 +475,8 @@
         "title": "Show Log"
       },
       "helper": {
-        "shell": "open the log window (getLog)"
+        "command": "getLog",
+        "shell": "open the log window, filled from getLog"
       },
       "offered": "always",
       "enabled": "always",

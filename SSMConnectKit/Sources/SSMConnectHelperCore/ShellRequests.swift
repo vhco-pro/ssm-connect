@@ -27,6 +27,9 @@ package final class ShellRequests: @unchecked Sendable {
     /// Puts text on the user's clipboard. Only this request carries it, to the shell alone.
     package func setClipboard(_ text: String) { emit(name: "setClipboard", fields: ["text": text]) }
 
+    /// Asks the shell to show a file in the platform's file manager.
+    package func reveal(_ url: URL) { emit(name: "reveal", fields: ["path": url.externalPath]) }
+
     package func notify(title: String, body: String) { emit(name: "notify", fields: ["title": title, "body": body]) }
 
     private func emit(name: String, fields: [String: String]) {

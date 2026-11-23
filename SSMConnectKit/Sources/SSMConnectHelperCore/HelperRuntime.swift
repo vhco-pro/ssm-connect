@@ -100,6 +100,8 @@ package struct HelperServices {
     package let connection: ConnectionStateMachine
     package let web: WebForwardsStateMachine
     package let editor: RemoteDevelopmentStateMachine
+    /// The connection log the macOS Log window shows, shared by the workflows.
+    package let log: ConnectionLog
     private let services: HelperServices
     private let browser: ShellBrowserOpener
     private let pollInterval: Duration
@@ -112,6 +114,7 @@ package struct HelperServices {
         let profile = profiles.activeProfile
         authorization = AuthorizationSession(platform: services.platform, profile: profile, provider: services.auth)
         let log = ConnectionLog()
+        self.log = log
         connection = ConnectionStateMachine(platform: services.platform, authProvider: authorization, ec2: services.ec2,
             ssm: services.ssm, tunnel: services.tunnel, secrets: services.secrets, dcv: services.dcv,
             readiness: services.readiness, tunnelListener: services.tunnelListener, instanceIds: services.instanceIds,
@@ -208,6 +211,23 @@ package struct HelperServices {
                 try await self.startWebForwards(events)
             },
             "stopWebForwards": spec("web") { _, events in try await self.stopWebForwards(events) },
+            "approveForwardingReplacement": spec("web") { arguments, events in try await self.approveForwardingReplacement(arguments, events) },
+            "cancelForwardingRecovery": spec("web") { _, events in
+                self.web.stop()
+                events.emit(workflow: "web", name: "state", fields: ["state": self.web.state.rawValue])
+                return ["state": self.web.state.rawValue]
+            },
+            "applyWebChanges": spec("web") { _, events in try await self.applyWebChanges(events) },
+            "openForward": spec("browser") { arguments, _ in try self.openForward(arguments) },
+            "copyPACURL": spec("browser") { _, _ in try self.copyPACURL() },
+            "revealPACFile": spec("browser") { _, _ in try self.revealPACFile() },
+            "applyBrowserSetup": spec("browser") { _, _ in try self.applyBrowserSetup() },
+            "restoreBrowserSettings": spec("browser") { _, _ in try self.restoreBrowserSettings() },
+            "getLog": spec("log") { _, _ in try self.getLog() },
+            "clearLog": spec("log") { _, _ in
+                self.log.clear()
+                return ["entries": "[]"]
+            },
             "openBrowser": spec("browser", admit: { _ in try self.requireWebForwards() }) { _, events in
                 try await self.openBrowser(events)
             },
@@ -431,6 +451,98 @@ package struct HelperServices {
                 try? await Task.sleep(for: interval)
             }
         }
+    }
+
+    // MARK: Web forwards, browser and log actions the macOS menu offers (AC-29)
+
+    private func approveForwardingReplacement(_ arguments: [String: String], _ events: EventSink) async throws -> [String: String] {
+        guard let pending = web.pendingReplacement else {
+            throw HelperError(code: "noReplacement", message: "No forwarding replacement is waiting for review.")
+        }
+        if let id = arguments["id"], id != pending.id.uuidString {
+            throw HelperError(code: "replacementChanged", message: "The replacement waiting for review changed. Review it again.")
+        }
+        web.approveReplacement(pending.id)
+        return try await followWeb(events)
+    }
+
+    /// Apply Changes: reconnects web forwards with the saved settings, as macOS does.
+    private func applyWebChanges(_ events: EventSink) async throws -> [String: String] {
+        guard web.pendingProfile != nil else {
+            throw HelperError(code: "noPendingChanges", message: "No saved web forward changes are waiting.")
+        }
+        await web.applyPendingConfiguration()
+        return try await followWeb(events)
+    }
+
+    private func followWeb(_ events: EventSink) async throws -> [String: String] {
+        try await follow("web", events, cancel: {
+            self.web.stop()
+            await self.web.awaitStopped()
+        }) {
+            switch self.web.state {
+            case .on: return .done(["state": "on"])
+            case .error: return .failed(HelperError(code: "webForwardsFailed", message: self.web.errorMessage ?? "Web forwards failed."))
+            case .off: return .done(["state": "off"])
+            default: return .running(self.web.state.rawValue)
+            }
+        }
+    }
+
+    /// Open <forward>: the forward's page on its local port, while web forwards are on.
+    private func openForward(_ arguments: [String: String]) throws -> [String: String] {
+        guard web.state == .on else { throw HelperError(code: "webForwardsOff", message: "Turn on web forwards first.") }
+        guard let forward = web.profile.webForwards?.localForwards.first(where: { $0.name == arguments["name"] }),
+              let path = forward.openPath, !path.isEmpty,
+              let url = URL(string: "http://127.0.0.1:\(forward.localPort)\(path)") else {
+            throw HelperError(code: "unknownForward", message: "That local forward has no page to open.")
+        }
+        services.requests.openURL(url)
+        return ["url": url.absoluteString]
+    }
+
+    private func pacURL() throws -> URL {
+        guard let url = web.pacURL else { throw HelperError(code: "noPAC", message: "No PAC file has been written for this profile yet.") }
+        return url
+    }
+
+    private func copyPACURL() throws -> [String: String] {
+        let url = try pacURL()
+        services.requests.setClipboard(url.absoluteString)
+        return ["url": url.absoluteString]
+    }
+
+    private func revealPACFile() throws -> [String: String] {
+        let url = try pacURL()
+        services.requests.reveal(url)
+        return ["path": url.externalPath]
+    }
+
+    /// Apply Browser Setup changes an existing Zen profile's proxy settings (Use My Browser). The shells
+    /// offer it only where Zen is supported, and no Windows or Linux Zen is pinned yet, so it is refused
+    /// by the missing capability, before any change.
+    private func applyBrowserSetup() throws -> [String: String] {
+        let profile = web.profile
+        guard profile.webForwards?.browserMode == .existing else {
+            throw HelperError(code: "notUseMyBrowser", message: "Apply Browser Setup is for Use My Browser.")
+        }
+        do { try browser.preflight(profile: profile) }
+        catch { throw HelperError(code: "browserUnavailable", message: error.localizedDescription) }
+        throw HelperError(code: "browserUnavailable",
+                          message: "Use My Browser needs Zen at a supported version, which is not available on this platform yet.")
+    }
+
+    private func restoreBrowserSettings() throws -> [String: String] {
+        do { try browser.restore(profile: web.profile) }
+        catch { throw HelperError(code: "restoreFailed", message: error.localizedDescription) }
+        return [:]
+    }
+
+    /// The connection log, oldest first, as the Log window shows it.
+    private func getLog() throws -> [String: String] {
+        let formatter = ISO8601DateFormatter()
+        let entries = log.entries.map { ["time": formatter.string(from: $0.timestamp), "category": $0.category.rawValue, "message": $0.message] }
+        return ["entries": String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)]
     }
 
     // MARK: Profile and settings actions the macOS settings window offers (AC-29)
