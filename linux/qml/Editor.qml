@@ -78,11 +78,11 @@ ApplicationWindow {
             Label { text: "Tunnel"; font.bold: true }
             RowLayout {
                 Label { text: "Local port" }
-                TextField { objectName: "profileeditor-textfield-local-port"; text: editor.text("localPort")
+                TextField { objectName: "profileeditor-textfield-local-port"; Accessible.name: "Local port"; text: editor.text("localPort")
                             validator: IntValidator { bottom: 1; top: 65535 }
                                         onEditingFinished: editor.set("localPort", Number(text)) }
                 Label { text: "Remote port" }
-                TextField { objectName: "profileeditor-textfield-remote-port"; text: editor.text("remotePort")
+                TextField { objectName: "profileeditor-textfield-remote-port"; Accessible.name: "Remote port"; text: editor.text("remotePort")
                             validator: IntValidator { bottom: 1; top: 65535 }
                                         onEditingFinished: editor.set("remotePort", Number(text)) }
             }
@@ -101,7 +101,7 @@ ApplicationWindow {
             RowLayout {
                 visible: editor.text("connectMode") === "multiUser"
                 Label { text: "Agent port" }
-                TextField { objectName: "profileeditor-textfield-agent-port"; text: editor.text("agentRemotePort")
+                TextField { objectName: "profileeditor-textfield-agent-port"; Accessible.name: "Agent port"; text: editor.text("agentRemotePort")
                             validator: IntValidator { bottom: 1; top: 65535 }
                                         onEditingFinished: editor.set("agentRemotePort", Number(text)) }
             }
@@ -126,7 +126,7 @@ ApplicationWindow {
                     CheckBox { objectName: "profileeditor-toggle-socks-proxy"; text: "SOCKS proxy"
                                checked: editor.text("webForwards.socksPort") !== ""
                                onToggled: editor.set("webForwards.socksPort", checked ? 1080 : null) }
-                    TextField { objectName: "profileeditor-textfield-socks-port"; visible: editor.text("webForwards.socksPort") !== ""
+                    TextField { objectName: "profileeditor-textfield-socks-port"; Accessible.name: "SOCKS port"; visible: editor.text("webForwards.socksPort") !== ""
                                 text: editor.text("webForwards.socksPort"); validator: IntValidator { bottom: 1; top: 65535 }
                                 onEditingFinished: editor.set("webForwards.socksPort", Number(text)) }
                 }
@@ -178,10 +178,10 @@ ApplicationWindow {
                         }
                         RowLayout {
                             Label { text: "Local port" }
-                            TextField { objectName: "profileeditor-textfield-local-port-2"; text: String(modelData.localPort || "")
+                            TextField { objectName: "profileeditor-textfield-local-port-2"; Accessible.name: "Forward local port"; text: String(modelData.localPort || "")
                                         onEditingFinished: update("localPort", Number(text)) }
                             Label { text: "Remote port" }
-                            TextField { objectName: "profileeditor-textfield-remote-port-2"; text: String(modelData.remotePort || "")
+                            TextField { objectName: "profileeditor-textfield-remote-port-2"; Accessible.name: "Forward remote port"; text: String(modelData.remotePort || "")
                                         onEditingFinished: update("remotePort", Number(text)) }
                         }
                         TextField { objectName: "profileeditor-textfield-remote-host"; placeholderText: "Remote host"; text: modelData.remoteHost || ""

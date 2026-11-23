@@ -11,6 +11,7 @@
 #include "tray.h"
 
 #include <QAccessible>
+#include <functional>
 #include <QAction>
 #include <QApplication>
 #include <QDir>
@@ -183,6 +184,30 @@ private slots:
             QVERIFY2(!engine.rootObjects().isEmpty(), qPrintable(name + ": " + warnings.join("; ")));
             QTest::qWait(20);
             QVERIFY2(warnings.isEmpty(), qPrintable(name + ": " + warnings.join("; ")));
+            if (name != QStringLiteral("Editor")) continue;
+            // Every field a screen reader reaches says what it is, with every optional section shown.
+            QObject *editor = engine.rootObjects().first();
+            editor->setProperty("draft", QVariantMap{
+                {"name", "Workstation"}, {"connectMode", "multiUser"}, {"remoteDevelopment", QVariantMap{{"enabled", true}}},
+                {"webForwards", QVariantMap{{"enabled", true}, {"socksPort", 1080}, {"browserMode", "existing"},
+                                            {"proxySuffixes", QVariantList{".internal"}},
+                                            {"localForwards", QVariantList{QVariantMap{{"name", "Dashboard"}, {"localPort", 8080},
+                                                                                       {"remoteHost", "127.0.0.1"}, {"remotePort", 80}}}}}}});
+            QTest::qWait(50);
+            QAccessible::setActive(true);
+            QStringList unnamed;
+            std::function<void(QQuickItem *)> visit = [&](QQuickItem *item) {
+                const QString type = QString::fromLatin1(item->metaObject()->className());
+                if (item->isVisible() && item->objectName().startsWith(QStringLiteral("profileeditor-"))
+                    && (type.contains("TextField") || type.contains("ComboBox") || type.contains("SpinBox"))) {
+                    QAccessibleInterface *a11y = QAccessible::queryAccessibleInterface(item);
+                    if (!a11y || (a11y->text(QAccessible::Name).isEmpty() && a11y->text(QAccessible::Description).isEmpty()))
+                        unnamed << item->objectName();
+                }
+                for (QQuickItem *child : item->childItems()) visit(child);
+            };
+            visit(qobject_cast<QQuickWindow *>(editor)->contentItem());
+            QVERIFY2(unnamed.isEmpty(), qPrintable("fields without an accessible name: " + unnamed.join(", ")));
         }
     }
 
