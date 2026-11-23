@@ -93,7 +93,7 @@ ApplicationWindow {
 
             Label { text: "Connect mode"; font.bold: true }
             ComboBox {
-                objectName: "profileeditor-picker-mode"
+                objectName: "profileeditor-picker-mode"; Accessible.name: "Mode"
                 model: [ "singleUser", "multiUser" ]
                 displayText: currentValue === "multiUser" ? "Multi-user" : "Single-user"
                 currentIndex: editor.text("connectMode") === "multiUser" ? 1 : 0
@@ -136,11 +136,11 @@ ApplicationWindow {
                 }
                 RowLayout {
                     Label { text: "Browser" }
-                    ComboBox { objectName: "profileeditor-picker-browser"; model: [ "automatic", "chrome", "zen" ]
+                    ComboBox { objectName: "profileeditor-picker-browser"; Accessible.name: "Browser"; model: [ "automatic", "chrome", "zen" ]
                                currentIndex: Math.max(0, model.indexOf(editor.text("webForwards.browser")))
                                onActivated: editor.set("webForwards.browser", currentValue) }
                     Label { text: "Browser Mode" }
-                    ComboBox { objectName: "profileeditor-picker-browser-mode"; model: [ "separate", "existing" ]
+                    ComboBox { objectName: "profileeditor-picker-browser-mode"; Accessible.name: "Browser Mode"; model: [ "separate", "existing" ]
                                displayText: currentValue === "existing" ? "Use My Browser" : "Separate Browser"
                                currentIndex: editor.text("webForwards.browserMode") === "existing" ? 1 : 0
                                onActivated: editor.set("webForwards.browserMode", currentValue) }
