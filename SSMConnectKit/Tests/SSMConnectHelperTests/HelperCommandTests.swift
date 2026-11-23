@@ -497,11 +497,14 @@ struct HelperCommandTests {
         #expect(unsupported.outbox.launches("browser").isEmpty)
     }
 
-    @Test("Every shell action has a command")
+    @Test("Every shell action has a command, and the table holds nothing the shells do not use")
     func table() async throws {
         let f = try await Self.fixture()
-        #expect(Set(f.runtime.commands().keys) == ["listProfiles", "saveProfile", "setActiveProfile", "importProfile", "applyFileChanges", "signIn",
-                                                    "connect", "disconnect", "stopWorkstation", "installEditorSetup", "openEditor",
-                                                    "startWebForwards", "stopWebForwards", "openBrowser"])
+        let base: Set<String> = ["listProfiles", "saveProfile", "setActiveProfile", "importProfile", "applyFileChanges", "signIn",
+                                 "connect", "disconnect", "stopWorkstation", "installEditorSetup", "openEditor",
+                                 "startWebForwards", "stopWebForwards", "openBrowser"]
+        // The parity inventory's commands, and the preview Open Profile File shows before attaching.
+        let parity = try ParityCommandTests.inventoryCommands().union(["previewProfileFile"])
+        #expect(Set(f.runtime.commands().keys) == base.union(parity))
     }
 }

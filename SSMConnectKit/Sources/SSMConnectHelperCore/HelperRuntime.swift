@@ -153,6 +153,16 @@ package struct HelperServices {
             "setActiveProfile": spec("profiles") { arguments, _ in try self.setActiveProfile(arguments) },
             "importProfile": spec("profiles") { arguments, _ in try self.importProfile(arguments) },
             "applyFileChanges": spec("profiles") { arguments, _ in try self.applyFileChanges(arguments) },
+            "deleteProfile": spec("profiles") { arguments, _ in try self.deleteProfile(arguments) },
+            "duplicateProfile": spec("profiles") { arguments, _ in try self.duplicateProfile(arguments) },
+            "listAWSConfigProfiles": spec("profiles") { _, _ in try self.listAWSConfigProfiles() },
+            "previewProfileFile": spec("profiles") { arguments, _ in try self.previewProfileFile(arguments) },
+            "exportProfile": spec("profiles") { arguments, _ in try self.exportProfile(arguments) },
+            "saveLocalCopy": spec("profiles") { arguments, _ in try self.saveLocalCopy(arguments) },
+            "reviewFileChanges": spec("profiles") { arguments, _ in try self.reviewFileChanges(arguments) },
+            "locateProfileFile": spec("profiles") { arguments, _ in try self.locateProfileFile(arguments) },
+            "detachProfile": spec("profiles") { arguments, _ in try self.detachProfile(arguments) },
+            "saveSettings": spec("profiles") { arguments, _ in try self.saveSettings(arguments) },
             "signIn": spec("authorization", admit: { _ in try self.requireConfigured() }) { _, _ in try await self.signIn() },
             "connect": spec("desktop", admit: { _ in try self.requireConfigured() }) { _, events in try await self.connect(events) },
             "disconnect": spec("desktop") { _, events in try await self.disconnect(events) },
@@ -211,7 +221,8 @@ package struct HelperServices {
              "error": profiles.fileErrors[id] ?? ""]
         }
         return ["profiles": String(decoding: data, as: UTF8.self), "active": profiles.activeProfileID?.uuidString ?? "",
-                "files": String(decoding: try JSONEncoder().encode(files), as: UTF8.self)]
+                "files": String(decoding: try JSONEncoder().encode(files), as: UTF8.self),
+                "settings": String(decoding: try JSONEncoder().encode(Self.settingsFields(profiles.settings)), as: UTF8.self)]
     }
 
     private func saveProfile(_ arguments: [String: String]) throws -> [String: String] {
@@ -269,6 +280,125 @@ package struct HelperServices {
         let profile = try profiles.importFile(snapshot, attach: arguments["attach"] == "true")
         apply()
         return ["id": profile.id.uuidString]
+    }
+
+    // MARK: Profile and settings actions the macOS settings window offers (AC-29)
+
+    private func profileID(_ arguments: [String: String]) throws -> UUID {
+        guard let id = arguments["id"].flatMap(UUID.init(uuidString:)), profiles.profiles.contains(where: { $0.id == id }) else {
+            throw HelperError(code: "unknownProfile", message: "That profile does not exist.")
+        }
+        return id
+    }
+
+    /// As on macOS, the last profile cannot be deleted, and the first remaining one becomes active
+    /// when the active one goes. An attached file is never touched.
+    private func deleteProfile(_ arguments: [String: String]) throws -> [String: String] {
+        let id = try profileID(arguments)
+        guard profiles.profiles.count > 1 else {
+            throw HelperError(code: "lastProfile", message: "The last profile cannot be deleted.")
+        }
+        profiles.deleteProfile(id)
+        apply()
+        return ["id": id.uuidString, "active": profiles.activeProfileID?.uuidString ?? ""]
+    }
+
+    private func duplicateProfile(_ arguments: [String: String]) throws -> [String: String] {
+        let id = try profileID(arguments)
+        guard let copy = profiles.duplicateProfile(id) else {
+            throw HelperError(code: "duplicateFailed", message: profiles.operationError ?? "The profile could not be duplicated.")
+        }
+        return ["id": copy.id.uuidString]
+    }
+
+    /// The SSO profiles in `~/.aws/config` the user can start a new profile from.
+    private func listAWSConfigProfiles() throws -> [String: String] {
+        ["profiles": String(decoding: try JSONEncoder().encode(profiles.importableProfiles()), as: UTF8.self)]
+    }
+
+    /// What Open Profile File shows before the user attaches or imports: nothing is stored yet.
+    private func previewProfileFile(_ arguments: [String: String]) throws -> [String: String] {
+        guard let path = arguments["path"] else { throw HelperError(code: "invalidPath", message: "No profile file was given.") }
+        let snapshot = try services.profileFiles.read(URL(fileURLWithPath: path))
+        let profile = try snapshot.document.profile(localID: UUID())
+        let document = try ProfileDocumentCodec.write(snapshot.document, format: .json)
+        return ["profile": String(decoding: try JSONEncoder().encode(profile), as: UTF8.self),
+                "document": String(decoding: document, as: UTF8.self), "writable": String(snapshot.isWritable)]
+    }
+
+    private func exportProfile(_ arguments: [String: String]) throws -> [String: String] {
+        let id = try profileID(arguments)
+        guard let path = arguments["path"] else { throw HelperError(code: "invalidPath", message: "No export file was given.") }
+        let url = URL(fileURLWithPath: path)
+        do {
+            _ = try services.profileFiles.save(try profiles.exportDocument(id), to: url,
+                                               expected: try services.profileFiles.existingRevision(url), beforeCommit: {})
+        } catch { throw HelperError(code: "exportFailed", message: error.localizedDescription) }
+        return ["path": path]
+    }
+
+    /// Save a Local Copy from the settings window (the stored profile) or the profile editor (its edits).
+    private func saveLocalCopy(_ arguments: [String: String]) throws -> [String: String] {
+        let profile: ConnectionProfile
+        if let json = arguments["profile"] {
+            guard let edited = try? JSONDecoder().decode(ConnectionProfile.self, from: Data(json.utf8)) else {
+                throw HelperError(code: "invalidProfile", message: "The profile could not be read.")
+            }
+            profile = edited
+        } else {
+            let id = try profileID(arguments)
+            guard let stored = profiles.profiles.first(where: { $0.id == id }) else {
+                throw HelperError(code: "unknownProfile", message: "That profile does not exist.")
+            }
+            profile = stored
+        }
+        do { return ["id": try profiles.saveLocalCopy(profile, preservingFrom: profile.id).id.uuidString] }
+        catch { throw HelperError(code: "saveFailed", message: error.localizedDescription) }
+    }
+
+    /// Reload / Review Changes: the outside changes waiting for Apply, if any.
+    private func reviewFileChanges(_ arguments: [String: String]) throws -> [String: String] {
+        let id = try profileID(arguments)
+        profiles.refreshAttachedFiles()
+        guard let pending = profiles.pendingFiles[id] else { return ["pending": "false", "document": ""] }
+        let document = try ProfileDocumentCodec.write(pending.document, format: .json)
+        return ["pending": "true", "document": String(decoding: document, as: UTF8.self)]
+    }
+
+    private func locateProfileFile(_ arguments: [String: String]) throws -> [String: String] {
+        let id = try profileID(arguments)
+        guard let path = arguments["path"] else { throw HelperError(code: "invalidPath", message: "No profile file was given.") }
+        do { try profiles.locateFile(id, at: URL(fileURLWithPath: path)) }
+        catch { throw HelperError(code: "locateFailed", message: error.localizedDescription) }
+        return ["id": id.uuidString]
+    }
+
+    private func detachProfile(_ arguments: [String: String]) throws -> [String: String] {
+        let id = try profileID(arguments)
+        profiles.detachFile(id)
+        return ["id": id.uuidString]
+    }
+
+    /// The settings fields the shells read and write, under the names the parity inventory uses.
+    static func settingsFields(_ settings: AppSettings) -> [String: String] {
+        ["connectOnLaunch": String(settings.autoConnect), "autoReconnect": String(settings.autoReconnect),
+         "clipboardAutoClearSeconds": String(settings.clipboardAutoClearSeconds)]
+    }
+
+    /// Saves the fields given and keeps the others.
+    private func saveSettings(_ arguments: [String: String]) throws -> [String: String] {
+        var settings = profiles.settings
+        if let value = arguments["connectOnLaunch"] { settings.autoConnect = value == "true" }
+        if let value = arguments["autoReconnect"] { settings.autoReconnect = value == "true" }
+        if let value = arguments["clipboardAutoClearSeconds"] {
+            guard let seconds = Int(value), seconds >= 0 else {
+                throw HelperError(code: "invalidSettings", message: "The clipboard time must be zero or more seconds.")
+            }
+            settings.clipboardAutoClearSeconds = seconds
+        }
+        profiles.settings = settings
+        apply()
+        return Self.settingsFields(settings)
     }
 
     /// Hands the active profile to the workflows; a connected workflow stages it as today.
