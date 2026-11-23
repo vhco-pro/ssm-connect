@@ -28,10 +28,17 @@ public sealed class ShellDriveThroughTests
         public void Notify(string title, string body) { lock (Calls) Calls.Add("notify " + title); }
         public void ShowError(string action, string message) { lock (Calls) Calls.Add($"error {action}: {message}"); }
         public bool Confirm(string title, string message) { lock (Calls) Calls.Add("confirm " + title); return false; }
+        public int Choose(string title, string message, IReadOnlyList<string> options)
+        {
+            lock (Calls) Calls.Add($"choose {title}: {message} [{string.Join(",", options)}]");
+            return 0;
+        }
     }
 
     static JsonObject Completed(string name) => name switch
     {
+        "reviewFileChanges" => new JsonObject { ["type"] = "result", ["outcome"] = "completed",
+            ["value"] = new JsonObject { ["pending"] = "true", ["document"] = """{"accountId":"111122223333","roleName":"Admin","resourceRegion":"eu-central-1","instanceTagKey":"Name","instanceTagValue":"ws"}""" } },
         "listProfiles" => new JsonObject { ["type"] = "result", ["outcome"] = "completed",
             ["value"] = new JsonObject { ["profiles"] = """[{"id":"55555555-5555-4555-8555-555555555555","name":"Workstation"}]""", ["active"] = "" } },
         _ => new JsonObject { ["type"] = "result", ["outcome"] = "completed", ["value"] = new JsonObject() },
@@ -216,6 +223,34 @@ public sealed class ShellDriveThroughTests
         });
     }
 
+    /// <summary>
+    /// Reload / Review Changes, as on macOS: outside changes to an attached file are shown with a
+    /// preview and Keep Pending, and the profiles reload so Apply External Changes reads them as pending.
+    /// </summary>
+    [Fact]
+    public void ReviewingOutsideChangesShowsThemAndReloadsTheProfiles()
+    {
+        HelperHostTests.FakeHelper? helper = null;
+        var platform = new RecordingPlatform();
+        RunOnSta(async () =>
+        {
+            var spawner = new HelperHostTests.FakeSpawner(() => helper = new HelperHostTests.FakeHelper { OnCommand = Completed });
+            var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
+            await host.StartAsync();
+            var controller = new ShellController(host, platform);
+            helper!.Emit("details", "details", new() { ["profiles"] = "1", ["desktop.state"] = "disconnected" });
+            await Eventually(() => controller.Details.Count > 0);
+            var listed = Commands(helper).Count(c => c == "listProfiles");
+            await controller.TriggerAsync("settings-button-reload-review-changes",
+                new Dictionary<string, string> { ["id"] = "55555555-5555-4555-8555-555555555555" }, new Dictionary<string, string> { ["selected.attached"] = "true" });
+            Assert.True(Commands(helper).Count(c => c == "listProfiles") > listed);
+        });
+        var shown = Assert.Single(platform.Calls, c => c.StartsWith("choose Review external profile changes", StringComparison.Ordinal));
+        Assert.Contains("Account: 111122223333, role: Admin", shown);
+        Assert.Contains("target: Name=ws", shown);
+        Assert.EndsWith("[Keep Pending]", shown);
+    }
+
     [Fact]
     public void HelperRequestsReachWindowsThroughTheShell()
     {
@@ -357,6 +392,21 @@ public sealed class OpenUrlTests
     [InlineData("file:///C:/Windows/win.ini", false)]
     [InlineData("javascript:alert(1)", false)]
     public void TheShellOpensHttpsAndLocalForwardPagesOnly(string url, bool opens) => Assert.Equal(opens, WindowsShellPlatform.Opens(url));
+}
+
+/// <summary>The profile file dialogs offer exactly the files the helper reads and writes, as macOS does.</summary>
+public sealed class ProfileFileDialogTests
+{
+    static IEnumerable<string> Extensions(string filter) =>
+        filter.Split('|').Where((_, i) => i % 2 == 1).SelectMany(p => p.Split(';')).Select(p => p.TrimStart('*'));
+
+    [Fact]
+    public void TheDialogsOfferJsonAndYamlProfiles()
+    {
+        Assert.Equal([".json", ".yaml", ".yml"], Extensions(WindowsShellPlatform.OpenProfileFilter).Order());
+        Assert.Equal([".json", ".yaml", ".yml"], Extensions(WindowsShellPlatform.SaveProfileFilter).Order());
+        Assert.Equal(".yaml", WindowsShellPlatform.SaveProfileExtension);
+    }
 }
 
 /// <summary>A second launch brings the open settings window forward instead of opening another.</summary>

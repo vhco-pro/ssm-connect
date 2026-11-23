@@ -54,9 +54,17 @@ public:
         return confirmAnswer;
     }
     QString chooseProfileFile() override { return QStringLiteral("/home/u/workstation.ssmconnect"); }
+    int choose(const QString &title, const QString &message, const QStringList &options) override {
+        calls << QStringLiteral("choose %1: %2 [%3]").arg(title, message, options.join(','));
+        return 0;
+    }
 };
 
 QJsonObject respond(const QString &name) {
+    if (name == "reviewFileChanges") {
+        return completed({{"pending", "true"},
+                          {"document", R"({"accountId":"111122223333","roleName":"Admin","resourceRegion":"eu-central-1","instanceTagKey":"Name","instanceTagValue":"ws"})"}});
+    }
     if (name == "listProfiles") {
         return completed({{"profiles", R"([{"id":"55555555-5555-4555-8555-555555555555","name":"Workstation","ssoRegion":"eu-west-1"}])"},
                           {"active", ""}});
@@ -242,6 +250,30 @@ private slots:
         QTRY_VERIFY(spawner.started.size() == 2 && host.status() == HelperHostStatus::Ready);
         QVERIFY(!controller.isOffered("menucontent-button-machine-actiontitle"));
         QTRY_VERIFY(spawner.started[1]->commands().contains("listProfiles"));
+    }
+
+    // Reload / Review Changes, as on macOS: outside changes to an attached file are shown with a
+    // preview and Keep Pending, and the profiles reload so Apply External Changes reads them as pending.
+    void reviewingOutsideChangesShowsThemAndReloadsTheProfiles() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) { helper.onCommand = [](const QString &name) { return respond(name); }; };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        emitEvent(*spawner.started[0], "details", "details", {{"profiles", "1"}, {"desktop.state", "disconnected"}});
+        QTRY_VERIFY(!controller.details().isEmpty());
+        QTRY_VERIFY(spawner.started[0]->commands().contains("listProfiles"));
+        const qsizetype listed = spawner.started[0]->commands().count("listProfiles");
+        controller.trigger("settings-button-reload-review-changes", {{"id", "55555555-5555-4555-8555-555555555555"}}, {{"selected.attached", "true"}});
+        QTRY_VERIFY(spawner.started[0]->commands().count("listProfiles") > listed);
+        const QStringList shown = platform.calls.filter(QStringLiteral("choose Review external profile changes"));
+        QCOMPARE(shown.size(), qsizetype(1));
+        QVERIFY(shown[0].contains(QStringLiteral("Account: 111122223333, role: Admin")));
+        QVERIFY(shown[0].contains(QStringLiteral("target: Name=ws")));
+        QVERIFY(shown[0].endsWith(QStringLiteral("[Keep Pending]")));
     }
 
     void aStoppedHelperClearsTheWorkflowStatesTheShellShows() {

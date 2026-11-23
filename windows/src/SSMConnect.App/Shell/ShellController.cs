@@ -289,9 +289,22 @@ public sealed class ShellController
             ShowLogRequested?.Invoke((Parse(result.Value.GetValueOrDefault("entries")) as JsonArray ?? []).OfType<JsonObject>().ToList());
         if (command == "listAWSConfigProfiles")
             ImportableProfilesChanged?.Invoke((Parse(result.Value.GetValueOrDefault("profiles")) as JsonArray ?? []).OfType<JsonObject>().ToList());
-        if (command.Contains("Profile", StringComparison.Ordinal) || command is "saveLocalCopy" or "applyFileChanges" or "saveSettings")
+        if (command.Contains("Profile", StringComparison.Ordinal) || command is "saveLocalCopy" or "applyFileChanges" or "saveSettings" or "reviewFileChanges")
             await ReloadProfilesAsync(args.GetValueOrDefault("id"));
+        // Outside changes to an attached file are shown, as macOS shows them, and stay pending until applied.
+        if (command == "reviewFileChanges" && result.Value.GetValueOrDefault("pending") == "true")
+            platform.Choose("Review external profile changes", ReviewMessage(result.Value.GetValueOrDefault("document")), ["Keep Pending"]);
         return result;
+    }
+
+    const string ReviewText =
+        "The stored configuration and existing connections have not changed. Apply replaces the stored configuration only; existing transport-specific pending-Apply and ownership checks still apply.";
+
+    static string ReviewMessage(string? document)
+    {
+        var d = Parse(document) as JsonObject ?? [];
+        string F(string key) => d[key]?.ToString() ?? "";
+        return $"{ReviewText}\nAccount: {F("accountId")}, role: {F("roleName")}\nRegion: {F("resourceRegion")}, target: {F("instanceTagKey")}={F("instanceTagValue")}";
     }
 
     /// <summary>
@@ -617,9 +630,14 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
         return choice;
     }
 
+    /// <summary>The profile file dialogs' filters; the helper reads and writes .json, .yaml and .yml, as macOS offers.</summary>
+    internal const string OpenProfileFilter = "SSM Connect profiles|*.yaml;*.yml;*.json";
+    internal const string SaveProfileFilter = "Profile (YAML)|*.yaml;*.yml|Profile (JSON)|*.json";
+    internal const string SaveProfileExtension = ".yaml";
+
     public string? ChooseProfileFile()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "SSM Connect profiles|*.ssmconnect;*.yaml;*.yml;*.json" };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = OpenProfileFilter };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
@@ -631,7 +649,7 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
 
     public string? ChooseSaveFile(string title)
     {
-        var dialog = new Microsoft.Win32.SaveFileDialog { Title = title, Filter = "SSM Connect profile|*.ssmconnect", DefaultExt = ".ssmconnect" };
+        var dialog = new Microsoft.Win32.SaveFileDialog { Title = title, Filter = SaveProfileFilter, DefaultExt = SaveProfileExtension, FileName = "workstation" + SaveProfileExtension };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 

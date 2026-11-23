@@ -390,10 +390,27 @@ HelperCommand *ShellController::trigger(const QString &id, const QVariantMap &ar
         if (sent->isFinished()) loaded();
         else connect(sent, &HelperCommand::finished, this, loaded);
     }
-    if (command.contains("Profile") || command == "saveLocalCopy" || command == "applyFileChanges" || command == "saveSettings") {
+    if (command.contains("Profile") || command == "saveLocalCopy" || command == "applyFileChanges" || command == "saveSettings"
+        || command == "reviewFileChanges") {
         auto reload = [this] { reloadProfiles(); };
         if (sent->isFinished()) reload();
         else connect(sent, &HelperCommand::finished, this, reload);
+    }
+    if (command == "reviewFileChanges") {
+        // Outside changes to an attached file are shown, as macOS shows them, and stay pending until applied.
+        auto review = [this, sent] {
+            if (sent->result().value.value("pending").toString() != "true") return;
+            const QJsonObject d = QJsonDocument::fromJson(sent->result().value.value("document").toString().toUtf8()).object();
+            auto f = [&d](const char *key) { return d.value(QLatin1String(key)).toVariant().toString(); };
+            platform_.choose(QStringLiteral("Review external profile changes"),
+                             QStringLiteral("The stored configuration and existing connections have not changed. Apply replaces the stored "
+                                            "configuration only; existing transport-specific pending-Apply and ownership checks still apply.\n"
+                                            "Account: %1, role: %2\nRegion: %3, target: %4=%5")
+                                 .arg(f("accountId"), f("roleName"), f("resourceRegion"), f("instanceTagKey"), f("instanceTagValue")),
+                             {QStringLiteral("Keep Pending")});
+        };
+        if (sent->isFinished()) review();
+        else connect(sent, &HelperCommand::finished, this, review);
     }
     return sent;
 }

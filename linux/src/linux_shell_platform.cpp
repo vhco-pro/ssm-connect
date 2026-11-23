@@ -67,7 +67,7 @@ bool LinuxShellPlatform::confirm(const QString &title, const QString &message) {
 
 QString LinuxShellPlatform::chooseProfileFile() {
     return QFileDialog::getOpenFileName(nullptr, QStringLiteral("Import a profile"), QDir::homePath(),
-                                        QStringLiteral("SSM Connect profiles (*.ssmconnect *.yaml *.yml *.json)"));
+                                        QStringLiteral("SSM Connect profiles (*.yaml *.yml *.json)"));
 }
 
 int LinuxShellPlatform::choose(const QString &title, const QString &message, const QStringList &options) {
