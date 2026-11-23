@@ -6,9 +6,13 @@
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QFileInfo>
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
@@ -53,6 +57,35 @@ bool LinuxShellPlatform::confirm(const QString &title, const QString &message) {
 QString LinuxShellPlatform::chooseProfileFile() {
     return QFileDialog::getOpenFileName(nullptr, QStringLiteral("Import a profile"), QDir::homePath(),
                                         QStringLiteral("SSM Connect profiles (*.ssmconnect *.yaml *.yml *.json)"));
+}
+
+int LinuxShellPlatform::choose(const QString &title, const QString &message, const QStringList &options) {
+    QMessageBox box(QMessageBox::Question, title, message);
+    QList<QAbstractButton *> buttons;
+    for (const QString &option : options)
+        buttons.append(static_cast<QAbstractButton *>(
+            box.addButton(option, option == QStringLiteral("Cancel") ? QMessageBox::RejectRole : QMessageBox::AcceptRole)));
+    box.exec();
+    const qsizetype index = buttons.indexOf(box.clickedButton());
+    return index < 0 || options.value(index) == QStringLiteral("Cancel") ? -1 : int(index);
+}
+
+QString LinuxShellPlatform::chooseFolder(const QString &title) {
+    return QFileDialog::getExistingDirectory(nullptr, title, QDir::homePath());
+}
+
+QString LinuxShellPlatform::chooseSaveFile(const QString &title) {
+    return QFileDialog::getSaveFileName(nullptr, title, QDir::home().filePath(QStringLiteral("workstation.yaml")),
+                                        QStringLiteral("Profile (*.yaml *.yml *.json)"));
+}
+
+// The desktop's file manager selects the file (org.freedesktop.FileManager1), or opens its folder.
+void LinuxShellPlatform::reveal(const QString &path) {
+    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.FileManager1"), QStringLiteral("/org/freedesktop/FileManager1"),
+                                                       QStringLiteral("org.freedesktop.FileManager1"), QStringLiteral("ShowItems"));
+    call << QStringList{QUrl::fromLocalFile(path).toString()} << QString();
+    if (QDBusConnection::sessionBus().call(call).type() == QDBusMessage::ErrorMessage)
+        UserApplications::launch(QStringLiteral("xdg-open"), {QFileInfo(path).absolutePath()});
 }
 
 } // namespace ssmconnect

@@ -29,7 +29,7 @@ add_library(ssmconnect_shell STATIC
     src/linux_shell_platform.cpp
     src/tray.cpp
     src/startup_registration.cpp)
-qt_add_resources(ssmconnect_shell "qml" PREFIX "/" FILES qml/Settings.qml)
+qt_add_resources(ssmconnect_shell "qml" PREFIX "/" FILES qml/Settings.qml qml/Editor.qml qml/Log.qml qml/About.qml)
 target_include_directories(ssmconnect_shell PUBLIC src)
 target_link_libraries(ssmconnect_shell PUBLIC ssmconnect_host Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Quick)
 

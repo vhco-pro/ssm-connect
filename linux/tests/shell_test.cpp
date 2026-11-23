@@ -17,6 +17,7 @@
 #include <QMenu>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlError>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
@@ -81,7 +82,7 @@ class ShellTest : public QObject {
     Q_OBJECT
 
 private slots:
-    void everyTrayAndSettingsActionReachesTheHelperAsItsCommand() {
+    void trayAndSettingsControlsReachTheHelper() {
         ManualClock clock;
         FakeSpawner spawner;
         spawner.configure = [](FakeHelper &helper) { helper.onCommand = [](const QString &name) { return respond(name); }; };
@@ -90,22 +91,26 @@ private slots:
         QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
         RecordingPlatform platform;
         ShellController controller(host, platform);
+        spawner.started[0]->deliver({{"type", "event"}, {"sequence", 1}, {"workflow", "details"}, {"name", "details"},
+                                     {"fields", QJsonObject{{"profiles", "1"}, {"desktop.state", "disconnected"}}}});
+        QTRY_COMPARE(controller.details().value("desktop.state").toString(), QStringLiteral("disconnected"));
 
-        // The tray menu: trigger every action item.
+        // The tray: its items are the macOS menu's controls, shown and enabled as macOS shows them.
         Tray tray(controller, [] {}, [] {}, [] {});
-        // Each command finishes before the next item is triggered: Disconnect during a running
-        // Connect cancels it instead (aDisconnectDuringConnectCancelsTheConnect).
-        for (QAction *action : tray.menu()->actions())
-            if (action->data().isValid()) {
-                action->trigger();
-                QTest::qWait(20);
-            }
-        const QStringList menuCommands{"signIn", "connect", "disconnect", "stopWorkstation", "openEditor",
-                                       "startWebForwards", "stopWebForwards", "openBrowser"};
-        for (const QString &command : menuCommands) QTRY_VERIFY2(spawner.started[0]->commands().contains(command), qPrintable(command));
+        bool aboutShown = false;
+        connect(&controller, &ShellController::showAboutRequested, this, [&] { aboutShown = true; });
+        auto *connectItem = tray.menu()->findChild<QAction *>("menucontent-button-machine-actiontitle");
+        QVERIFY(connectItem && connectItem->isVisible() && connectItem->isEnabled());
+        QCOMPARE(connectItem->text(), QStringLiteral("Connect"));
+        QVERIFY(!tray.menu()->findChild<QAction *>("menucontent-button-disconnect")->isVisible());
+        connectItem->trigger();
+        QTRY_VERIFY(spawner.started[0]->commands().contains("connect"));
+        tray.menu()->findChild<QAction *>("menucontent-button-show-log")->trigger();
+        QTRY_VERIFY(spawner.started[0]->commands().contains("getLog"));
+        tray.menu()->findChild<QAction *>("menucontent-button-about")->trigger();
+        QVERIFY(aboutShown);
 
-        // The settings window: load profiles, select one, edit and save, use it, import a file,
-        // set up VS Code. Each button's command arrives before the next is pressed.
+        // The settings window: select the profile, duplicate it, edit it, and change a setting.
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("shell", &controller);
         engine.load(QUrl(QStringLiteral("qrc:/qml/Settings.qml")));
@@ -115,36 +120,50 @@ private slots:
         auto *list = findItem(window, "profiles");
         QVERIFY(list);
         list->setProperty("currentIndex", 0);
-        QTRY_VERIFY(findItem(window, "name"));
-        QTRY_COMPARE(findItem(window, "name")->property("text").toString(), QStringLiteral("Workstation"));
-        findItem(window, "roleName")->setProperty("text", "Admin");
-        const std::vector<std::pair<QString, QString>> buttons{
-            {"save", "saveProfile"}, {"use", "setActiveProfile"}, {"import", "importProfile"}, {"editorSetup", "installEditorSetup"}};
-        for (const auto &[button, command] : buttons) {
-            auto *item = findItem(window, button);
-            QVERIFY2(item, qPrintable(button));
-            QVERIFY(QMetaObject::invokeMethod(item, "clicked"));
-            QTRY_VERIFY2(spawner.started[0]->commands().contains(command), qPrintable(command));
-            if (button == "save") {
-                QTRY_COMPARE(spawner.started[0]->commands().count("listProfiles"), 2);
-                QCOMPARE(list->property("currentIndex").toInt(), 0);
-            }
-        }
-        const QJsonObject saved = [&] {
-            for (const auto &frame : spawner.started[0]->receivedFrames)
-                if (frame.value("name") == "saveProfile") return frame;
-            return QJsonObject{};
-        }();
-        const QJsonObject profile = QJsonDocument::fromJson(saved.value("arguments").toObject().value("profile").toString().toUtf8()).object();
-        QCOMPARE(profile.value("id").toString(), QStringLiteral("55555555-5555-4555-8555-555555555555"));
-        QCOMPARE(profile.value("roleName").toString(), QStringLiteral("Admin"));
+        auto *remove = findItem(window, "settings-button-delete-the-selected-profile");
+        QVERIFY(remove);
+        QTRY_VERIFY(!remove->property("enabled").toBool()); // the last profile cannot be deleted, as on macOS
+        auto *duplicate = findItem(window, "settings-button-duplicate-the-selected-profile");
+        QTRY_VERIFY(duplicate && duplicate->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(duplicate, "clicked"));
+        QTRY_VERIFY(spawner.started[0]->commands().contains("duplicateProfile"));
+        QVariantMap edited;
+        connect(&controller, &ShellController::editProfileRequested, this, [&](const QVariantMap &profile) { edited = profile; });
+        QVERIFY(QMetaObject::invokeMethod(findItem(window, "settings-button-edit"), "clicked"));
+        QTRY_COMPARE(edited.value("id").toString(), QStringLiteral("55555555-5555-4555-8555-555555555555"));
+        auto *reconnect = findItem(window, "settings-toggle-reconnect-automatically-if-the-tunnel-drops");
+        QVERIFY(reconnect);
+        QVERIFY(QMetaObject::invokeMethod(reconnect, "toggled"));
+        QTRY_VERIFY(spawner.started[0]->commands().contains("saveSettings"));
         for (const auto &frame : spawner.started[0]->receivedFrames) {
-            if (frame.value("name") == "setActiveProfile")
+            if (frame.value("name") == "duplicateProfile")
                 QCOMPARE(frame.value("arguments").toObject().value("id").toString(), QStringLiteral("55555555-5555-4555-8555-555555555555"));
-            if (frame.value("name") == "importProfile")
-                QCOMPARE(frame.value("arguments").toObject().value("path").toString(), QStringLiteral("/home/u/workstation.ssmconnect"));
+            if (frame.value("name") == "saveSettings") QVERIFY(frame.value("arguments").toObject().contains("autoReconnect"));
         }
-        for (const QString &call : platform.calls) QVERIFY2(!call.startsWith("error"), qPrintable(call));
+    }
+
+    void everyWindowLoadsWithoutQmlErrors() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) { helper.onCommand = [](const QString &name) { return respond(name); }; };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        const QStringList windows{QStringLiteral("Settings"), QStringLiteral("Editor"), QStringLiteral("Log"), QStringLiteral("About")};
+        for (const QString &name : windows) {
+            QQmlApplicationEngine engine;
+            QStringList warnings;
+            connect(&engine, &QQmlApplicationEngine::warnings, this, [&](const QList<QQmlError> &errors) {
+                for (const QQmlError &error : errors) warnings << error.toString();
+            });
+            engine.rootContext()->setContextProperty("shell", &controller);
+            engine.load(QUrl(QStringLiteral("qrc:/qml/%1.qml").arg(name)));
+            QVERIFY2(!engine.rootObjects().isEmpty(), qPrintable(name + ": " + warnings.join("; ")));
+            QTest::qWait(20);
+            QVERIFY2(warnings.isEmpty(), qPrintable(name + ": " + warnings.join("; ")));
+        }
     }
 
     void helperRequestsReachLinuxThroughTheShell() {

@@ -2,6 +2,9 @@
 #include "shell_controller.h"
 
 #include <QJsonArray>
+#include <QRegularExpression>
+
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QUuid>
 
@@ -62,7 +65,11 @@ void ShellController::reloadProfiles(const QString &select) {
     HelperCommand *command = run({QStringLiteral("Profiles"), QStringLiteral("listProfiles"), {}});
     auto loaded = [this, command, select] {
         if (command->result().outcome != HelperOutcome::Completed) return;
-        profiles_ = QJsonDocument::fromJson(command->result().value.value("profiles").toString().toUtf8()).array().toVariantList();
+        const QVariantMap value = command->result().value;
+        profiles_ = QJsonDocument::fromJson(value.value("profiles").toString().toUtf8()).array().toVariantList();
+        activeID_ = value.value("active").toString();
+        settings_ = QJsonDocument::fromJson(value.value("settings").toString().toUtf8()).object().toVariantMap();
+        files_ = QJsonDocument::fromJson(value.value("files").toString().toUtf8()).array().toVariantList();
         emit profilesChanged();
         if (!select.isEmpty()) emit profileSelected(select);
     };
@@ -172,7 +179,9 @@ void ShellController::launch(const QJsonObject &fields) {
 }
 
 const QList<ShellControl> &ShellController::controls() {
-    static const QList<ShellControl> list;
+    static const QList<ShellControl> list{
+#include "parity_controls.inc"
+    };
     return list;
 }
 
@@ -182,14 +191,275 @@ const ShellControl *ShellController::control(const QString &id) {
     return nullptr;
 }
 
-bool ShellController::isOffered(const QString &, const QVariantMap &) const { return false; }
+namespace {
 
-bool ShellController::isEnabled(const QString &, const QVariantMap &) const { return false; }
+bool truthy(const QString &value) { return !value.isEmpty() && value != "false" && value != "0"; }
 
-HelperCommand *ShellController::trigger(const QString &, const QVariantMap &, const QVariantMap &) { return nullptr; }
+bool clause(const QString &text, const QVariantMap &values) {
+    const QString c = text.trimmed();
+    if (c.startsWith('!') && !c.contains('=')) return !truthy(values.value(c.mid(1)).toString());
+    if (c.contains("!=")) return !c.section("!=", 1).split('|').contains(values.value(c.section("!=", 0, 0)).toString());
+    if (c.contains('>')) return values.value(c.section('>', 0, 0)).toString().toInt() > c.section('>', 1).toInt();
+    if (c.contains('=')) return c.section('=', 1).split('|').contains(values.value(c.section('=', 0, 0)).toString());
+    return truthy(values.value(c).toString());
+}
+
+// Which workflow a command belongs to, for the cancel controls (the helper runs one per workflow).
+QString workflowOf(const QString &command) {
+    static const QMap<QString, QString> map{
+        {"connect", "desktop"}, {"reconnect", "desktop"}, {"disconnect", "desktop"}, {"stopWorkstation", "desktop"},
+        {"openEditor", "editor"}, {"reconnectWorkspace", "editor"}, {"renewEditorAccess", "editor"}, {"approveReplacement", "editor"},
+        {"cancelEditorRecovery", "editor"}, {"stopRemoteAccess", "editor"}, {"restoreEditorSetup", "editor"}, {"installEditorSetup", "editor"},
+        {"startWebForwards", "web"}, {"stopWebForwards", "web"}, {"approveForwardingReplacement", "web"}, {"applyWebChanges", "web"},
+        {"cancelForwardingRecovery", "web"}};
+    return map.value(command);
+}
+
+// A cancel control whose no-command form is itself the cancellation; Stop Remote Access and
+// Restore Editor Setup instead run as their own command once the cancelled one has ended.
+bool cancelsOnly(const QString &otherwise) {
+    return otherwise == "cancelEditorRecovery" || otherwise == "cancelForwardingRecovery" || otherwise == "disconnect";
+}
+
+} // namespace
+
+bool ShellController::evaluate(const QString &rule, const QVariantMap &values) {
+    if (rule.trimmed().isEmpty()) return true;
+    for (const QString &alternative : rule.split(" or ")) {
+        bool all = true;
+        for (const QString &part : alternative.split(" & ")) all = all && clause(part, values);
+        if (all) return true;
+    }
+    return false;
+}
+
+QVariantMap ShellController::merged(const QVariantMap &context) const {
+    QVariantMap values = details_;
+    for (auto it = context.begin(); it != context.end(); ++it) values.insert(it.key(), it.value());
+    return values;
+}
+
+bool ShellController::isOffered(const QString &id, const QVariantMap &context) const {
+    const ShellControl *c = control(id);
+    return c && evaluate(c->offeredWhen, merged(context));
+}
+
+bool ShellController::isEnabled(const QString &id, const QVariantMap &context) const {
+    const ShellControl *c = control(id);
+    return c && isOffered(id, context) && evaluate(c->enabledWhen, merged(context));
+}
+
+QString ShellController::labelFor(const QString &id) const {
+    const ShellControl *c = control(id);
+    if (!c) return {};
+    const QString desktop = details_.value("desktop.state").toString();
+    if (c->command == "connect") {
+        if (desktop == "connected") return QStringLiteral("Connected");
+        if (desktop == "error") return QStringLiteral("Retry Connect");
+        if (desktop.isEmpty() || desktop == "disconnected") return QStringLiteral("Connect");
+        return QStringLiteral("Connecting…");
+    }
+    if (!c->commands.isEmpty()) {
+        const QString web = details_.value("web.state").toString();
+        return web == "On" || web == "Starting" ? QStringLiteral("Turn Off Web Forwards") : QStringLiteral("Turn On Web Forwards");
+    }
+    const QString editor = details_.value("editor.state").toString();
+    if (c->command == "openEditor" && editor == "opening") return QStringLiteral("Opening VS Code");
+    if (c->command == "reconnectWorkspace" && editor == "recovering") return QStringLiteral("Recovering Existing Workspace");
+    if (c->command == "renewEditorAccess" && editor == "renewing") return QStringLiteral("Renewing Editor Access");
+    if (c->command == "openBrowser" && details_.value("web.openingBrowser").toString() == "true") return QStringLiteral("Opening Browser");
+    return c->label;
+}
+
+QVariantMap ShellController::activeProfile() const {
+    for (const QVariant &p : profiles_) {
+        const QVariantMap profile = p.toMap();
+        if (profile.value("id").toString() == activeID_) return profile;
+    }
+    return profiles_.isEmpty() ? QVariantMap{} : profiles_.first().toMap();
+}
+
+// Fills `{key}` placeholders with details values; `{editor.replacement.user}` reads a field of the
+// JSON a details value holds.
+QString ShellController::format(const QString &text, const QVariantMap &values) const {
+    QString out = text;
+    static const QRegularExpression placeholder(QStringLiteral("\\{([a-zA-Z.]+)\\}"));
+    auto it = placeholder.globalMatch(text);
+    while (it.hasNext()) {
+        const QString key = it.next().captured(1);
+        QString value = values.value(key).toString();
+        if (value.isEmpty() && key.count('.') >= 2) {
+            const QString holder = key.section('.', 0, 1);
+            value = QJsonDocument::fromJson(values.value(holder).toString().toUtf8()).object().value(key.section('.', 2)).toVariant().toString();
+        }
+        out.replace('{' + key + '}', value);
+    }
+    return out;
+}
+
+HelperCommand *ShellController::trigger(const QString &id, const QVariantMap &arguments, const QVariantMap &context) {
+    const ShellControl *c = control(id);
+    if (!c || !isEnabled(id, context)) return nullptr;
+    const QVariantMap values = merged(context);
+    const bool asks = !c->confirmTitle.isEmpty() && evaluate(c->confirmWhen, values);
+
+    if (!c->cancelWorkflow.isEmpty()) {
+        if (asks && !platform_.confirm(format(c->confirmTitle, values), format(c->confirmText, values))) return nullptr;
+        HelperCommand *running = running_.value(c->cancelWorkflow);
+        if (running && !running->isFinished()) {
+            cancelRunning(running, *c, arguments);
+            return running;
+        }
+        return runCommand(c->otherwise, arguments);
+    }
+    if (c->command.isEmpty() && c->commands.isEmpty()) {
+        performShell(*c, arguments);
+        return nullptr;
+    }
+    if (!c->field.isEmpty()) return editField(*c, arguments);
+
+    QString command = c->command;
+    if (!c->commands.isEmpty()) {
+        const QString web = values.value("web.state").toString();
+        command = web == "On" || web == "Starting" ? c->commands.value(1) : c->commands.value(0);
+    }
+    QVariantMap args = arguments;
+    if (command == "importProfile") return openProfileFile();
+    if (command == "exportProfile") {
+        const QString path = platform_.chooseSaveFile(QStringLiteral("Export Profile"));
+        if (path.isEmpty()) return nullptr;
+        args.insert("path", path);
+    }
+    if (command == "locateProfileFile") {
+        const QString path = platform_.chooseProfileFile();
+        if (path.isEmpty()) return nullptr;
+        args.insert("path", path);
+    }
+    if (command == "openBrowser" && asks) {
+        // macOS asks for a browser mode when the profile has none, and saves it first.
+        const int choice = platform_.choose(format(c->confirmTitle, values), format(c->confirmText, values), c->choices);
+        if (choice < 0 || choice >= 2) return nullptr;
+        QVariantMap profile = activeProfile();
+        QVariantMap web = profile.value("webForwards").toMap();
+        web.insert("browserMode", choice == 0 ? "separate" : "existing");
+        profile.insert("webForwards", web);
+        sendSave(profile.value("id").toString(), QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(profile)).toJson(QJsonDocument::Compact)), false);
+        return runCommand(command, args);
+    }
+    if (command == "openEditor" && asks) {
+        // First use: consent to the SSH Include, then open.
+        if (!platform_.confirm(format(c->confirmTitle, values), format(c->confirmText, values))) return nullptr;
+        HelperCommand *setup = runCommand("installEditorSetup", {{"consent", "true"}});
+        auto open = [this, setup, args] {
+            if (setup->result().outcome == HelperOutcome::Completed) runCommand("openEditor", args);
+        };
+        if (setup->isFinished()) open();
+        else connect(setup, &HelperCommand::finished, this, open);
+        return setup;
+    }
+    if (asks && !platform_.confirm(format(c->confirmTitle, values), format(c->confirmText, values))) return nullptr;
+    HelperCommand *sent = runCommand(command, args);
+    if (!c->shell.isEmpty()) {
+        // Show Log: open the window once the log is read.
+        auto show = [this, sent] { emit showLogRequested(sent->result().value.value("entries").toString()); };
+        if (sent->isFinished()) show();
+        else connect(sent, &HelperCommand::finished, this, show);
+    }
+    if (command == "listAWSConfigProfiles") {
+        auto loaded = [this, sent] {
+            emit importableProfilesChanged(QJsonDocument::fromJson(sent->result().value.value("profiles").toString().toUtf8()).array().toVariantList());
+        };
+        if (sent->isFinished()) loaded();
+        else connect(sent, &HelperCommand::finished, this, loaded);
+    }
+    if (command.contains("Profile") || command == "saveLocalCopy" || command == "applyFileChanges" || command == "saveSettings") {
+        auto reload = [this] { reloadProfiles(); };
+        if (sent->isFinished()) reload();
+        else connect(sent, &HelperCommand::finished, this, reload);
+    }
+    return sent;
+}
+
+// Cancels the running command of the control's workflow. When the helper had already finished it,
+// the result is not "cancelled": a pure cancel control then sends its no-command form once, which
+// ends what the finished command left (such as a replacement waiting for review). Stop Remote
+// Access and Restore Editor Setup run as their own command once the cancelled one has ended. The
+// cancelled command itself is never sent again.
+void ShellController::cancelRunning(HelperCommand *running, const ShellControl &control, const QVariantMap &arguments) {
+    const QString otherwise = control.otherwise;
+    const bool only = cancelsOnly(otherwise);
+    QPointer<HelperCommand> guarded(running);
+    auto after = [this, guarded, otherwise, only, arguments] {
+        if (!guarded) return;
+        if (!only || guarded->result().outcome != HelperOutcome::Cancelled) runCommand(otherwise, arguments);
+    };
+    connect(running, &HelperCommand::finished, this, after, Qt::SingleShotConnection);
+    running->cancel();
+}
+
+void ShellController::performShell(const ShellControl &control, const QVariantMap &arguments) {
+    const QString what = control.shell;
+    if (what.startsWith("open the settings window")) emit showSettingsRequested();
+    else if (what.startsWith("open the About window")) emit showAboutRequested();
+    else if (what.startsWith("quit")) emit quitRequested();
+    else if (what.startsWith("open the documentation URL"))
+        platform_.openUrl(QStringLiteral("https://code.visualstudio.com/docs/remote/troubleshooting"));
+    else if (what.startsWith("open the license URL"))
+        platform_.openUrl(QStringLiteral("https://github.com/vhco-pro/ssm-connect/blob/main/LICENSE"));
+    else if (what.startsWith("open the project URL")) platform_.openUrl(QStringLiteral("https://github.com/vhco-pro/ssm-connect"));
+    else if (what.startsWith("open the release notes URL"))
+        platform_.openUrl(QStringLiteral("https://github.com/vhco-pro/ssm-connect/releases"));
+    else if (what.startsWith("open the profile editor with a blank")) emit editProfileRequested({});
+    else if (what.startsWith("open the profile editor")) emit editProfileRequested(arguments.value("profile").toMap());
+}
+
+// Edits one field of the active profile (or of the draft the window passes) and saves it, or one
+// app setting.
+HelperCommand *ShellController::editField(const ShellControl &control, const QVariantMap &arguments) {
+    if (control.command == "saveSettings") return runCommand("saveSettings", {{control.field, arguments.value("value", "")}});
+    QVariantMap profile = arguments.contains("profile") ? arguments.value("profile").toMap() : activeProfile();
+    if (arguments.contains("value") && !control.field.contains("[]") && !control.field.contains(' ')) {
+        const QStringList path = control.field.split('.');
+        if (path.size() == 1) profile.insert(path[0], arguments.value("value"));
+        else {
+            QVariantMap section = profile.value(path[0]).toMap();
+            section.insert(path[1], arguments.value("value"));
+            profile.insert(path[0], section);
+        }
+    }
+    const QString json = QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(profile)).toJson(QJsonDocument::Compact));
+    HelperCommand *command = runCommand("saveProfile", {{"profile", json}});
+    connect(command, &HelperCommand::finished, this, [this] { reloadProfiles(); });
+    return command;
+}
+
+// Open Profile File: macOS previews the file before anything is stored, then attaches it or imports
+// a local copy.
+HelperCommand *ShellController::openProfileFile() {
+    const ShellControl *c = control("settings-button-open-profile-file");
+    const QString path = platform_.chooseProfileFile();
+    if (path.isEmpty() || !c) return nullptr;
+    HelperCommand *preview = runCommand("previewProfileFile", {{"path", path}});
+    auto ask = [this, preview, path, c] {
+        if (preview->result().outcome != HelperOutcome::Completed) return;
+        QVariantMap values = details_;
+        const QJsonObject profile = QJsonDocument::fromJson(preview->result().value.value("profile").toString().toUtf8()).object();
+        for (auto it = profile.begin(); it != profile.end(); ++it) values.insert("preview." + it.key(), it.value().toVariant());
+        const int choice = platform_.choose(format(c->confirmTitle, values), format(c->confirmText, values), c->choices);
+        if (choice < 0 || choice >= 2) return;
+        HelperCommand *imported = runCommand("importProfile", {{"path", path}, {"attach", choice == 0 ? "true" : "false"}});
+        connect(imported, &HelperCommand::finished, this, [this] { reloadProfiles(); });
+    };
+    if (preview->isFinished()) ask();
+    else connect(preview, &HelperCommand::finished, this, ask);
+    return preview;
+}
 
 HelperCommand *ShellController::runCommand(const QString &command, const QVariantMap &arguments) {
-    return run({command, command, arguments});
+    HelperCommand *sent = run({command, command, arguments});
+    const QString workflow = workflowOf(command);
+    if (!workflow.isEmpty()) running_.insert(workflow, sent);
+    return sent;
 }
 
 } // namespace ssmconnect

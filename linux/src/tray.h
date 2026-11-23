@@ -13,8 +13,9 @@
 namespace ssmconnect {
 
 /// The tray icon and its menu. On Linux desktops `QSystemTrayIcon` registers a StatusNotifierItem
-/// over D-Bus (KDE Plasma natively, GNOME with the AppIndicator extension). Each action item sends
-/// its helper command; Settings, Retry Core and Quit are the shell's own.
+/// over D-Bus (KDE Plasma natively, GNOME with the AppIndicator extension). Its items are the macOS
+/// menu's controls (contracts/macos-parity.json), shown and enabled as macOS shows them; Retry Core
+/// is the shell's own.
 class Tray : public QObject {
     Q_OBJECT
 public:
@@ -26,7 +27,12 @@ public:
     void showMessage(const QString &title, const QString &body, bool error);
 
 private:
+    void refresh();
+    ShellController &controller_;
     std::unique_ptr<QMenu> menu_;
+    QList<QAction *> items_;
+    QAction *forwardAnchor_ = nullptr;
+    QList<QAction *> forwardItems_;
     QSystemTrayIcon icon_;
 };
 

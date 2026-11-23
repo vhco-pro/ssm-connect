@@ -51,6 +51,7 @@ struct Entry {
     QString id, surface, command, cancelWorkflow, otherwise, offeredWhen, enabledWhen;
     QStringList commands;
     bool confirmation = false;
+    QString confirmWhen;
     bool partOf = false;
 };
 
@@ -70,6 +71,7 @@ QList<Entry> inventory() {
         entry.otherwise = helper.value("cancel").toObject().value("otherwise").toString();
         entry.partOf = helper.contains("part_of");
         entry.confirmation = object.contains("confirmation");
+        entry.confirmWhen = object.value("confirmation").toObject().value("when").toString();
         entry.offeredWhen = object.value("offered_when").toString();
         entry.enabledWhen = object.value("enabled_when").toString();
         entries << entry;
@@ -185,7 +187,9 @@ private slots:
         for (const Entry &entry : inventory()) {
             if (entry.partOf) continue;
             QVERIFY2(rig.controller->control(entry.id), qPrintable("no Linux control " + entry.id));
-            if (entry.surface == "Tray menu") {
+            if (entry.surface == "Confirmation dialog") {
+                continue; // served by the platform's own dialogs (confirm, choose, showError)
+            } else if (entry.surface == "Tray menu") {
                 QVERIFY2(tray.menu()->findChild<QAction *>(entry.id), qPrintable("no tray item " + entry.id));
             } else {
                 QVERIFY2(qml.contains('"' + entry.id + '"'), qPrintable("no QML control " + entry.id));
@@ -214,7 +218,7 @@ private slots:
                                                                    : std::any_of(entry.commands.begin(), entry.commands.end(),
                                                                                  [&](const QString &c) { return sent.contains(c); });
                 if (answer) QVERIFY2(sentExpected, qPrintable(entry.id + " sent " + sent.join(',')));
-                if (entry.confirmation) {
+                if (entry.confirmation && rule(entry.confirmWhen, state)) {
                     QVERIFY2(asked || !answer, qPrintable(entry.id + " sent without macOS's confirmation"));
                     if (!answer && asked) QVERIFY2(!sentExpected, qPrintable(entry.id + " sent after its confirmation was declined"));
                 }

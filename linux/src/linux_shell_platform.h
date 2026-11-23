@@ -23,6 +23,10 @@ public:
     void showError(const QString &action, const QString &message) override;
     QString chooseProfileFile() override;
     bool confirm(const QString &title, const QString &message) override;
+    int choose(const QString &title, const QString &message, const QStringList &options) override;
+    QString chooseFolder(const QString &title) override;
+    QString chooseSaveFile(const QString &title) override;
+    void reveal(const QString &path) override;
 
 private:
     std::function<void(const QString &, const QString &)> notify_;

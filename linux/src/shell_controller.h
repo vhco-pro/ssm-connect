@@ -5,6 +5,7 @@
 
 #include <QList>
 #include <QObject>
+#include <QMap>
 #include <QPointer>
 #include <QVariantList>
 #include <QVariantMap>
@@ -28,9 +29,14 @@ struct ShellControl {
     QString label;
     QString command;
     QStringList commands; // a toggle: the first when off, the second when on
-    QString cancelWorkflow;
+    QString cancelWorkflow; // a cancel control: the workflow whose running command it cancels
+    QString otherwise;      // ... and the command it sends when none runs
+    QString shell;          // what the shell itself does, for a presentation-only control
+    QString field;          // the profile or settings field an edit control writes
     QString confirmTitle;
     QString confirmText;
+    QString confirmWhen;
+    QStringList choices;
     QString offeredWhen;
     QString enabledWhen;
 };
@@ -71,6 +77,10 @@ public:
 class ShellController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY profilesChanged)
+    Q_PROPERTY(QString activeProfileId READ activeProfileId NOTIFY profilesChanged)
+    Q_PROPERTY(QVariantMap settings READ settings NOTIFY profilesChanged)
+    Q_PROPERTY(QVariantList files READ files NOTIFY profilesChanged)
+    Q_PROPERTY(QVariantMap details READ details NOTIFY detailsChanged)
 public:
     ShellController(HelperHost &host, ShellPlatform &platform, QObject *parent = nullptr);
 
@@ -82,6 +92,10 @@ public:
     HelperCommand *run(const ShellAction &action);
 
     QVariantList profiles() const { return profiles_; }
+    QString activeProfileId() const { return activeID_; }
+    QVariantMap settings() const { return settings_; }
+    /// The attached files: id, path, whether outside changes are pending, and any error.
+    QVariantList files() const { return files_; }
 
     /// The macOS controls this shell offers, by inventory id.
     static const QList<ShellControl> &controls();
@@ -97,6 +111,12 @@ public:
     Q_INVOKABLE HelperCommand *trigger(const QString &id, const QVariantMap &arguments = {}, const QVariantMap &context = {});
     /// Sends a helper command directly and reports a failure.
     HelperCommand *runCommand(const QString &command, const QVariantMap &arguments = {});
+    /// A folder the user picks, for the profile editor's Zen profile folder.
+    Q_INVOKABLE QString chooseFolder(const QString &title) { return platform_.chooseFolder(title); }
+    /// The label macOS shows for the control in this state.
+    Q_INVOKABLE QString labelFor(const QString &id) const;
+    /// Evaluates a contracts/macos-parity.json availability rule.
+    static bool evaluate(const QString &rule, const QVariantMap &values);
     /// Latest state per workflow (desktop, web, editor), from the helper's events.
     QVariantMap states() const { return states_; }
 
@@ -108,6 +128,14 @@ public:
 
 signals:
     void detailsChanged();
+    // Shell-only controls the application serves.
+    void showSettingsRequested();
+    void showLogRequested(const QString &entries);
+    void showAboutRequested();
+    void quitRequested();
+    /// Opens the profile editor: `profile` is the draft (a blank one when empty).
+    void editProfileRequested(const QVariantMap &profile);
+    void importableProfilesChanged(const QVariantList &profiles);
     void profilesChanged();
     /// After a reload: the profile the settings window should keep selected.
     void profileSelected(const QString &id);
@@ -124,6 +152,17 @@ private:
     QVariantMap states_;
     QPointer<HelperCommand> connecting_;
     QVariantMap details_;
+    QString activeID_;
+    QVariantMap settings_;
+    QVariantList files_;
+    QMap<QString, QPointer<HelperCommand>> running_;
+    QVariantMap merged(const QVariantMap &context) const;
+    QVariantMap activeProfile() const;
+    QString format(const QString &text, const QVariantMap &values) const;
+    void cancelRunning(HelperCommand *running, const ShellControl &control, const QVariantMap &arguments);
+    void performShell(const ShellControl &control, const QVariantMap &arguments);
+    HelperCommand *openProfileFile();
+    HelperCommand *editField(const ShellControl &control, const QVariantMap &arguments);
 };
 
 } // namespace ssmconnect

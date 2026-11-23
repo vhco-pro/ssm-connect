@@ -13,6 +13,8 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -45,17 +47,37 @@ int main(int argc, char **argv) {
     engine.rootContext()->setContextProperty("startup", &startup);
     engine.rootContext()->setContextProperty("executablePath", QCoreApplication::applicationFilePath());
 
-    auto showSettings = [&] {
-        for (QObject *root : engine.rootObjects()) {
-            if (auto *window = qobject_cast<QQuickWindow *>(root)) {
-                window->show();
-                window->raise();
-                window->requestActivate();
-                return;
+    engine.rootContext()->setContextProperty("buildVersion", QStringLiteral(SSM_CONNECT_BUILD));
+    // Brings a window back to the front, or loads it with its initial properties.
+    auto openWindow = [&](const QString &name, const QVariantMap &properties, bool reuse) {
+        if (reuse) {
+            for (QObject *root : engine.rootObjects()) {
+                auto *window = qobject_cast<QQuickWindow *>(root);
+                if (window && root->objectName() == name) {
+                    for (auto it = properties.begin(); it != properties.end(); ++it) root->setProperty(it.key().toUtf8(), it.value());
+                    window->show();
+                    window->raise();
+                    window->requestActivate();
+                    return;
+                }
             }
         }
-        engine.load(QUrl(QStringLiteral("qrc:/qml/Settings.qml")));
+        engine.setInitialProperties(properties);
+        engine.load(QUrl(QStringLiteral("qrc:/qml/%1.qml").arg(name.left(1).toUpper() + name.mid(1))));
+        engine.setInitialProperties({});
+        if (!engine.rootObjects().isEmpty()) engine.rootObjects().last()->setObjectName(name);
     };
+    auto showSettings = [&] { openWindow(QStringLiteral("settings"), {}, true); };
+    QObject::connect(&controller, &ShellController::showLogRequested, &app, [&](const QString &entries) {
+        openWindow(QStringLiteral("log"), {{"entries", QJsonDocument::fromJson(entries.toUtf8()).array().toVariantList()}}, true);
+    });
+    QObject::connect(&controller, &ShellController::showAboutRequested, &app, [&] { openWindow(QStringLiteral("about"), {}, true); });
+    QObject::connect(&controller, &ShellController::editProfileRequested, &app, [&](const QVariantMap &profile) {
+        bool attached = false;
+        for (const QVariant &file : controller.files())
+            attached = attached || file.toMap().value("id") == profile.value("id");
+        openWindow(QStringLiteral("editor"), {{"draft", profile}, {"attached", attached}}, false);
+    });
     auto quit = [&] { host.shutdown(std::chrono::seconds(5), [] { QCoreApplication::quit(); }); };
     Tray trayIcon(controller, showSettings, [&] { host.retry(); }, quit);
     tray = &trayIcon;
