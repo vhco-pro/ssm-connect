@@ -50,3 +50,10 @@ add_test(NAME helper_host_test COMMAND helper_host_test)
 add_executable(shell_test tests/shell_test.cpp)
 target_link_libraries(shell_test PRIVATE ssmconnect_shell Qt6::Test)
 add_test(NAME shell_test COMMAND shell_test)
+# The parity drive-through reads the inventory the macOS views are checked against; the scripts
+# mount contracts/ at this same path inside and outside their build containers.
+set(SSM_PARITY_INVENTORY "${CMAKE_SOURCE_DIR}/../contracts/macos-parity.json" CACHE FILEPATH "contracts/macos-parity.json")
+add_executable(parity_test tests/parity_test.cpp)
+target_link_libraries(parity_test PRIVATE ssmconnect_shell Qt6::Test)
+target_compile_definitions(parity_test PRIVATE SSM_PARITY_INVENTORY="${SSM_PARITY_INVENTORY}")
+add_test(NAME parity_test COMMAND parity_test)

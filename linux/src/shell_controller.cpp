@@ -141,6 +141,11 @@ void ShellController::handle(const QJsonObject &frame) {
             platform_.notify(fields.value("title").toString("SSM Connect"), fields.value("body").toString());
         return;
     }
+    if (workflow == "details" && name == "details") {
+        details_ = fields.toVariantMap();
+        emit detailsChanged();
+        return;
+    }
     if (name == "state" && !workflow.isEmpty() && fields.contains("state")) {
         const QString state = fields.value("state").toString();
         // An action waits for an explicit sign-in once the SSO session can no longer be renewed:
@@ -164,6 +169,27 @@ void ShellController::launch(const QJsonObject &fields) {
         // The core picks the browser and builds its command line, routing included.
         platform_.start(fields.value("path").toString(), fields.value("arguments").toString().split(QChar(0x1F), Qt::SkipEmptyParts));
     }
+}
+
+const QList<ShellControl> &ShellController::controls() {
+    static const QList<ShellControl> list;
+    return list;
+}
+
+const ShellControl *ShellController::control(const QString &id) {
+    for (const ShellControl &c : controls())
+        if (c.id == id) return &c;
+    return nullptr;
+}
+
+bool ShellController::isOffered(const QString &, const QVariantMap &) const { return false; }
+
+bool ShellController::isEnabled(const QString &, const QVariantMap &) const { return false; }
+
+HelperCommand *ShellController::trigger(const QString &, const QVariantMap &, const QVariantMap &) { return nullptr; }
+
+HelperCommand *ShellController::runCommand(const QString &command, const QVariantMap &arguments) {
+    return run({command, command, arguments});
 }
 
 } // namespace ssmconnect

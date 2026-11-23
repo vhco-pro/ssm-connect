@@ -18,6 +18,23 @@ struct ShellAction {
     QVariantMap arguments;
 };
 
+/// One control of the macOS interface the Linux shell offers (contracts/macos-parity.json, AC-29):
+/// its inventory id, where it appears, the helper command it sends (or a cancel of its workflow's
+/// running command, or none for a shell-only control), macOS's confirmation, and when macOS
+/// offers and enables it.
+struct ShellControl {
+    QString id;
+    QString surface; // menu, settings, editor, log, about
+    QString label;
+    QString command;
+    QStringList commands; // a toggle: the first when off, the second when on
+    QString cancelWorkflow;
+    QString confirmTitle;
+    QString confirmText;
+    QString offeredWhen;
+    QString enabledWhen;
+};
+
 /// What the controller needs from Linux; the Qt shell and tests each supply one.
 class ShellPlatform {
 public:
@@ -33,6 +50,17 @@ public:
     virtual bool confirm(const QString &title, const QString &message) = 0;
     /// A profile file the user picks, or empty when they cancel.
     virtual QString chooseProfileFile() = 0;
+    /// One of `options` the user picks, by index, or -1 when they cancel.
+    virtual int choose(const QString &title, const QString &message, const QStringList &options) {
+        Q_UNUSED(title); Q_UNUSED(message); Q_UNUSED(options);
+        return -1;
+    }
+    /// A folder the user picks, or empty when they cancel.
+    virtual QString chooseFolder(const QString &title) { Q_UNUSED(title); return {}; }
+    /// A file to write the user picks, or empty when they cancel.
+    virtual QString chooseSaveFile(const QString &title) { Q_UNUSED(title); return {}; }
+    /// Shows a file in the platform's file manager.
+    virtual void reveal(const QString &path) { Q_UNUSED(path); }
 };
 
 /// The Linux shell's behaviour without connection rules, as on Windows: every user action becomes
@@ -54,6 +82,21 @@ public:
     HelperCommand *run(const ShellAction &action);
 
     QVariantList profiles() const { return profiles_; }
+
+    /// The macOS controls this shell offers, by inventory id.
+    static const QList<ShellControl> &controls();
+    static const ShellControl *control(const QString &id);
+    /// The helper's latest details: what the macOS menu reads from the workflows.
+    QVariantMap details() const { return details_; }
+    /// Whether macOS would show the control, and let it be used, in this state; `context` adds the
+    /// shell's own state (the selected profile, a per-item control's item).
+    Q_INVOKABLE bool isOffered(const QString &id, const QVariantMap &context = {}) const;
+    Q_INVOKABLE bool isEnabled(const QString &id, const QVariantMap &context = {}) const;
+    /// Operates a control as macOS does: nothing when it is unavailable, macOS's confirmation first,
+    /// a cancel of its workflow's running command for a cancel control. Returns the command sent.
+    Q_INVOKABLE HelperCommand *trigger(const QString &id, const QVariantMap &arguments = {}, const QVariantMap &context = {});
+    /// Sends a helper command directly and reports a failure.
+    HelperCommand *runCommand(const QString &command, const QVariantMap &arguments = {});
     /// Latest state per workflow (desktop, web, editor), from the helper's events.
     QVariantMap states() const { return states_; }
 
@@ -64,6 +107,7 @@ public:
     Q_INVOKABLE void setUpEditor();
 
 signals:
+    void detailsChanged();
     void profilesChanged();
     /// After a reload: the profile the settings window should keep selected.
     void profileSelected(const QString &id);
@@ -79,6 +123,7 @@ private:
     QVariantList profiles_;
     QVariantMap states_;
     QPointer<HelperCommand> connecting_;
+    QVariantMap details_;
 };
 
 } // namespace ssmconnect

@@ -15,7 +15,9 @@
       "offered": "an authorization needs an explicit sign-in",
       "enabled": "always",
       "windows": "Tray menu: Sign In with SSO",
-      "linux": "Tray menu: Sign In with SSO"
+      "linux": "Tray menu: Sign In with SSO",
+      "offered_when": "authorization.status=signInRequired",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-retry-authorization",
@@ -30,7 +32,9 @@
       "offered": "authorization is unavailable",
       "enabled": "always",
       "windows": "Tray menu: Retry Authorization",
-      "linux": "Tray menu: Retry Authorization"
+      "linux": "Tray menu: Retry Authorization",
+      "offered_when": "authorization.status=unavailable",
+      "enabled_when": ""
     },
     {
       "id": "menu-set-up-workstation",
@@ -45,7 +49,9 @@
       "offered": "no profile exists",
       "enabled": "always",
       "windows": "Tray menu: Set Up a Workstation…",
-      "linux": "Tray menu: Set Up a Workstation…"
+      "linux": "Tray menu: Set Up a Workstation…",
+      "offered_when": "profiles=0",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-machine-actiontitle",
@@ -60,7 +66,9 @@
       "offered": "a profile exists",
       "enabled": "the primary action is enabled (Connect, Retry)",
       "windows": "Tray menu: Connect",
-      "linux": "Tray menu: Connect"
+      "linux": "Tray menu: Connect",
+      "offered_when": "profiles>0",
+      "enabled_when": "desktop.state=disconnected|error"
     },
     {
       "id": "menucontent-button-copy-password",
@@ -75,7 +83,9 @@
       "offered": "connected and the DCV password is known",
       "enabled": "always",
       "windows": "Tray menu: Copy Password",
-      "linux": "Tray menu: Copy Password"
+      "linux": "Tray menu: Copy Password",
+      "offered_when": "desktop.state=connected & desktop.maskedPassword",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-reconnect",
@@ -90,7 +100,9 @@
       "offered": "connected",
       "enabled": "always",
       "windows": "Tray menu: Reconnect",
-      "linux": "Tray menu: Reconnect"
+      "linux": "Tray menu: Reconnect",
+      "offered_when": "desktop.state=connected",
+      "enabled_when": ""
     },
     {
       "id": "menu-stop-workstation",
@@ -106,7 +118,9 @@
       "enabled": "always",
       "confirmation": "Stop the workstation?",
       "windows": "Tray menu: Stop Workstation…",
-      "linux": "Tray menu: Stop Workstation…"
+      "linux": "Tray menu: Stop Workstation…",
+      "offered_when": "desktop.state=connected",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-disconnect",
@@ -124,7 +138,9 @@
       "offered": "connected or connecting",
       "enabled": "always",
       "windows": "Tray menu: Disconnect",
-      "linux": "Tray menu: Disconnect"
+      "linux": "Tray menu: Disconnect",
+      "offered_when": "desktop.state=connected",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-remotedevelopment-isopening-opening-vs-code-open-vs",
@@ -140,7 +156,9 @@
       "enabled": "not while opening",
       "confirmation": "Set up native VS Code access? (first use; then installEditorSetup with consent)",
       "windows": "Tray menu: Open VS Code",
-      "linux": "Tray menu: Open VS Code"
+      "linux": "Tray menu: Open VS Code",
+      "offered_when": "editor.enabled or editor.active",
+      "enabled_when": "editor.state!=opening"
     },
     {
       "id": "menucontent-button-remotedevelopment-isrecovering-recovering-existing-",
@@ -155,7 +173,9 @@
       "offered": "remote development is on or editor access is active",
       "enabled": "not while opening, and only once the editor setup is installed",
       "windows": "Tray menu: Reconnect Existing Workspace",
-      "linux": "Tray menu: Reconnect Existing Workspace"
+      "linux": "Tray menu: Reconnect Existing Workspace",
+      "offered_when": "editor.enabled or editor.active",
+      "enabled_when": "editor.state!=opening & editor.setupInstalled"
     },
     {
       "id": "menucontent-button-cancel-recovery",
@@ -173,7 +193,9 @@
       "offered": "editor recovery is running",
       "enabled": "always",
       "windows": "Tray menu: Cancel Recovery",
-      "linux": "Tray menu: Cancel Recovery"
+      "linux": "Tray menu: Cancel Recovery",
+      "offered_when": "editor.state=recovering",
+      "enabled_when": ""
     },
     {
       "id": "menu-review-replacement",
@@ -189,7 +211,9 @@
       "enabled": "always",
       "confirmation": "Reconnect the same workspace to a replacement?",
       "windows": "Tray menu: Review Replacement Workstation…",
-      "linux": "Tray menu: Review Replacement Workstation…"
+      "linux": "Tray menu: Review Replacement Workstation…",
+      "offered_when": "editor.replacement",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-cancel-replacement-recovery",
@@ -207,7 +231,9 @@
       "offered": "a replacement workstation waits for review",
       "enabled": "always",
       "windows": "Tray menu: Cancel Replacement Recovery",
-      "linux": "Tray menu: Cancel Replacement Recovery"
+      "linux": "Tray menu: Cancel Replacement Recovery",
+      "offered_when": "editor.replacement",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-menu-vs-code-browser-routing",
@@ -222,7 +248,9 @@
       "offered": "remote development is on or editor access is active",
       "enabled": "always",
       "windows": "Tray menu: VS Code Browser Routing",
-      "linux": "Tray menu: VS Code Browser Routing"
+      "linux": "Tray menu: VS Code Browser Routing",
+      "offered_when": "editor.enabled or editor.active",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-open-vs-code-remote-browser-documentation",
@@ -237,7 +265,9 @@
       "offered": "inside VS Code Browser Routing",
       "enabled": "always",
       "windows": "Tray menu: Open VS Code Remote Browser Documentation",
-      "linux": "Tray menu: Open VS Code Remote Browser Documentation"
+      "linux": "Tray menu: Open VS Code Remote Browser Documentation",
+      "offered_when": "editor.enabled or editor.active",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-remotedevelopment-isrenewinglease-renewing-editor-a",
@@ -252,7 +282,9 @@
       "offered": "editor access is active",
       "enabled": "not while renewing",
       "windows": "Tray menu: Renew Editor Access",
-      "linux": "Tray menu: Renew Editor Access"
+      "linux": "Tray menu: Renew Editor Access",
+      "offered_when": "editor.active",
+      "enabled_when": "editor.state!=opening|renewing"
     },
     {
       "id": "menucontent-button-stop-remote-access",
@@ -271,7 +303,9 @@
       "enabled": "always",
       "confirmation": "Stop native editor access?",
       "windows": "Tray menu: Stop Remote Access",
-      "linux": "Tray menu: Stop Remote Access"
+      "linux": "Tray menu: Stop Remote Access",
+      "offered_when": "editor.active",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-restore-editor-setup",
@@ -290,7 +324,9 @@
       "enabled": "always",
       "confirmation": "Restore editor SSH setup?",
       "windows": "Tray menu: Restore Editor Setup",
-      "linux": "Tray menu: Restore Editor Setup"
+      "linux": "Tray menu: Restore Editor Setup",
+      "offered_when": "editor.setupInstalled",
+      "enabled_when": ""
     },
     {
       "id": "menu-review-forwarding-replacement",
@@ -306,7 +342,9 @@
       "enabled": "always",
       "confirmation": "Reconnect web forwards to the replacement?",
       "windows": "Tray menu: Review Forwarding Replacement…",
-      "linux": "Tray menu: Review Forwarding Replacement…"
+      "linux": "Tray menu: Review Forwarding Replacement…",
+      "offered_when": "web.replacement",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-cancel-forwarding-recovery",
@@ -324,7 +362,9 @@
       "offered": "web forwards recovery is running or a forwarding replacement waits",
       "enabled": "always",
       "windows": "Tray menu: Cancel Forwarding Recovery",
-      "linux": "Tray menu: Cancel Forwarding Recovery"
+      "linux": "Tray menu: Cancel Forwarding Recovery",
+      "offered_when": "web.replacement",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-webforwards-state-on-webforwards-state-starting-tur",
@@ -342,7 +382,9 @@
       "offered": "web forwards are on for the profile or running",
       "enabled": "always",
       "windows": "Tray menu: Turn On / Turn Off Web Forwards",
-      "linux": "Tray menu: Turn On / Turn Off Web Forwards"
+      "linux": "Tray menu: Turn On / Turn Off Web Forwards",
+      "offered_when": "web.enabled or web.state!=Off",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-open-forward-name",
@@ -357,7 +399,9 @@
       "offered": "web forwards are on, one item per local forward",
       "enabled": "always",
       "windows": "Tray menu: Open <forward name>",
-      "linux": "Tray menu: Open <forward name>"
+      "linux": "Tray menu: Open <forward name>",
+      "offered_when": "web.enabled & item.openPath or web.state!=Off & item.openPath",
+      "enabled_when": "web.state=On"
     },
     {
       "id": "menucontent-button-webforwards-isopeningbrowser-opening-browser-open-b",
@@ -373,7 +417,9 @@
       "enabled": "not while opening",
       "confirmation": "Choose a browser mode (when none is set); Set up browser proxy settings? (Use My Browser setup)",
       "windows": "Tray menu: Open Browser",
-      "linux": "Tray menu: Open Browser"
+      "linux": "Tray menu: Open Browser",
+      "offered_when": "web.socks & web.enabled or web.socks & web.state!=Off",
+      "enabled_when": "!web.openingBrowser"
     },
     {
       "id": "menucontent-menu-advanced",
@@ -388,7 +434,9 @@
       "offered": "web forwards are on for the profile",
       "enabled": "always",
       "windows": "Tray menu: Advanced",
-      "linux": "Tray menu: Advanced"
+      "linux": "Tray menu: Advanced",
+      "offered_when": "web.socks & web.enabled or web.socks & web.state!=Off",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-copy-pac-url",
@@ -403,7 +451,9 @@
       "offered": "inside Advanced",
       "enabled": "always",
       "windows": "Tray menu: Copy PAC URL",
-      "linux": "Tray menu: Copy PAC URL"
+      "linux": "Tray menu: Copy PAC URL",
+      "offered_when": "web.socks & web.enabled or web.socks & web.state!=Off",
+      "enabled_when": "web.pac"
     },
     {
       "id": "menucontent-button-reveal-pac-file",
@@ -418,7 +468,9 @@
       "offered": "inside Advanced",
       "enabled": "always",
       "windows": "Tray menu: Reveal PAC File",
-      "linux": "Tray menu: Reveal PAC File"
+      "linux": "Tray menu: Reveal PAC File",
+      "offered_when": "web.socks & web.enabled or web.socks & web.state!=Off",
+      "enabled_when": "web.pac"
     },
     {
       "id": "menucontent-button-apply-browser-setup",
@@ -434,7 +486,9 @@
       "enabled": "always",
       "confirmation": "Set up browser proxy settings?",
       "windows": "Tray menu: Apply Browser Setup",
-      "linux": "Tray menu: Apply Browser Setup"
+      "linux": "Tray menu: Apply Browser Setup",
+      "offered_when": "web.socks & web.browserMode=existing & web.enabled or web.socks & web.browserMode=existing & web.state!=Off",
+      "enabled_when": "!web.pendingChanges"
     },
     {
       "id": "menucontent-button-restore-browser-settings",
@@ -449,7 +503,9 @@
       "offered": "inside Advanced, Use My Browser mode set up",
       "enabled": "always",
       "windows": "Tray menu: Restore Browser Settings",
-      "linux": "Tray menu: Restore Browser Settings"
+      "linux": "Tray menu: Restore Browser Settings",
+      "offered_when": "web.socks & web.browserMode=existing & web.enabled or web.socks & web.browserMode=existing & web.state!=Off",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-apply-changes",
@@ -465,7 +521,9 @@
       "enabled": "always",
       "confirmation": "Apply saved changes?",
       "windows": "Tray menu: Apply Changes",
-      "linux": "Tray menu: Apply Changes"
+      "linux": "Tray menu: Apply Changes",
+      "offered_when": "web.pendingChanges",
+      "enabled_when": "!web.openingBrowser"
     },
     {
       "id": "menucontent-button-show-log",
@@ -481,7 +539,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Tray menu: Show Log",
-      "linux": "Tray menu: Show Log"
+      "linux": "Tray menu: Show Log",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menu-settings",
@@ -496,7 +556,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Tray menu: Settings",
-      "linux": "Tray menu: Settings"
+      "linux": "Tray menu: Settings",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-about",
@@ -511,7 +573,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Tray menu: About",
-      "linux": "Tray menu: About"
+      "linux": "Tray menu: About",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-button-quit",
@@ -526,7 +590,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Tray menu: Quit",
-      "linux": "Tray menu: Quit"
+      "linux": "Tray menu: Quit",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-separate-browser",
@@ -541,7 +607,9 @@
       "offered": "browser mode choice before Open Browser",
       "enabled": "always",
       "windows": "Confirmation dialog: Separate Browser",
-      "linux": "Confirmation dialog: Separate Browser"
+      "linux": "Confirmation dialog: Separate Browser",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-use-my-browser",
@@ -556,7 +624,9 @@
       "offered": "browser mode choice before Open Browser",
       "enabled": "always",
       "windows": "Confirmation dialog: Use My Browser",
-      "linux": "Confirmation dialog: Use My Browser"
+      "linux": "Confirmation dialog: Use My Browser",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-cancel",
@@ -571,7 +641,9 @@
       "offered": "browser mode choice before Open Browser",
       "enabled": "always",
       "windows": "Confirmation dialog: Cancel",
-      "linux": "Confirmation dialog: Cancel"
+      "linux": "Confirmation dialog: Cancel",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-continue",
@@ -586,7 +658,9 @@
       "offered": "every menu confirmation",
       "enabled": "always",
       "windows": "Confirmation dialog: Continue",
-      "linux": "Confirmation dialog: Continue"
+      "linux": "Confirmation dialog: Continue",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-cancel-2",
@@ -601,7 +675,9 @@
       "offered": "every menu confirmation",
       "enabled": "always",
       "windows": "Confirmation dialog: Cancel",
-      "linux": "Confirmation dialog: Cancel"
+      "linux": "Confirmation dialog: Cancel",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-ok",
@@ -616,7 +692,9 @@
       "offered": "a browser setup error",
       "enabled": "always",
       "windows": "Confirmation dialog: OK",
-      "linux": "Confirmation dialog: OK"
+      "linux": "Confirmation dialog: OK",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-stop-workstation",
@@ -631,7 +709,9 @@
       "offered": "the Stop Workstation confirmation",
       "enabled": "always",
       "windows": "Confirmation dialog: Stop Workstation",
-      "linux": "Confirmation dialog: Stop Workstation"
+      "linux": "Confirmation dialog: Stop Workstation",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "menucontent-alertbutton-cancel-3",
@@ -646,7 +726,9 @@
       "offered": "the Stop Workstation confirmation",
       "enabled": "always",
       "windows": "Confirmation dialog: Cancel",
-      "linux": "Confirmation dialog: Cancel"
+      "linux": "Confirmation dialog: Cancel",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-toggle-launch-at-login",
@@ -661,7 +743,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Launch at login",
-      "linux": "Settings window: Launch at login"
+      "linux": "Settings window: Launch at login",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-toggle-connect-automatically-on-launch",
@@ -677,7 +761,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Connect automatically on launch",
-      "linux": "Settings window: Connect automatically on launch"
+      "linux": "Settings window: Connect automatically on launch",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-toggle-reconnect-automatically-if-the-tunnel-drops",
@@ -693,7 +779,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Reconnect automatically if the tunnel drops",
-      "linux": "Settings window: Reconnect automatically if the tunnel drops"
+      "linux": "Settings window: Reconnect automatically if the tunnel drops",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-clipboard-auto-clear",
@@ -709,7 +797,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Clear copied password after N seconds",
-      "linux": "Settings window: Clear copied password after N seconds"
+      "linux": "Settings window: Clear copied password after N seconds",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-use",
@@ -724,7 +814,9 @@
       "offered": "per profile row",
       "enabled": "not for the active profile",
       "windows": "Settings window: Use",
-      "linux": "Settings window: Use"
+      "linux": "Settings window: Use",
+      "offered_when": "!item.active",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-add-a-blank-profile",
@@ -739,7 +831,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Add a blank profile",
-      "linux": "Settings window: Add a blank profile"
+      "linux": "Settings window: Add a blank profile",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-menu-import-a-profile-from-aws-config",
@@ -754,7 +848,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Import a profile from ~/.aws/config",
-      "linux": "Settings window: Import a profile from ~/.aws/config"
+      "linux": "Settings window: Import a profile from ~/.aws/config",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-profile-name",
@@ -769,7 +865,9 @@
       "offered": "one item per importable profile",
       "enabled": "always",
       "windows": "Settings window: <importable profile name>",
-      "linux": "Settings window: <importable profile name>"
+      "linux": "Settings window: <importable profile name>",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-duplicate-the-selected-profile",
@@ -784,7 +882,9 @@
       "offered": "always",
       "enabled": "a profile is selected",
       "windows": "Settings window: Duplicate the selected profile",
-      "linux": "Settings window: Duplicate the selected profile"
+      "linux": "Settings window: Duplicate the selected profile",
+      "offered_when": "",
+      "enabled_when": "selected"
     },
     {
       "id": "settings-button-delete-the-selected-profile",
@@ -799,7 +899,9 @@
       "offered": "always",
       "enabled": "a profile is selected and more than one profile exists",
       "windows": "Settings window: Delete the selected profile",
-      "linux": "Settings window: Delete the selected profile"
+      "linux": "Settings window: Delete the selected profile",
+      "offered_when": "",
+      "enabled_when": "selected & profiles>1"
     },
     {
       "id": "settings-menu-files",
@@ -814,7 +916,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Settings window: Files",
-      "linux": "Settings window: Files"
+      "linux": "Settings window: Files",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-open-profile-file",
@@ -830,7 +934,9 @@
       "enabled": "always",
       "confirmation": "Open <profile>? (previewProfileFile; Attach File or Import as Local Copy)",
       "windows": "Settings window: Open Profile File…",
-      "linux": "Settings window: Open Profile File…"
+      "linux": "Settings window: Open Profile File…",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-export-profile",
@@ -845,7 +951,9 @@
       "offered": "inside Files",
       "enabled": "a profile is selected",
       "windows": "Settings window: Export Profile…",
-      "linux": "Settings window: Export Profile…"
+      "linux": "Settings window: Export Profile…",
+      "offered_when": "",
+      "enabled_when": "selected"
     },
     {
       "id": "settings-button-save-a-local-copy",
@@ -860,7 +968,9 @@
       "offered": "inside Files",
       "enabled": "a profile is selected",
       "windows": "Settings window: Save a Local Copy",
-      "linux": "Settings window: Save a Local Copy"
+      "linux": "Settings window: Save a Local Copy",
+      "offered_when": "",
+      "enabled_when": "selected"
     },
     {
       "id": "settings-button-reload-review-changes",
@@ -875,7 +985,9 @@
       "offered": "inside Files, the selected profile is attached to a file",
       "enabled": "always",
       "windows": "Settings window: Reload / Review Changes",
-      "linux": "Settings window: Reload / Review Changes"
+      "linux": "Settings window: Reload / Review Changes",
+      "offered_when": "selected.attached",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-apply-external-changes",
@@ -891,7 +1003,9 @@
       "enabled": "outside changes are pending",
       "confirmation": "Apply external profile changes?",
       "windows": "Settings window: Apply External Changes",
-      "linux": "Settings window: Apply External Changes"
+      "linux": "Settings window: Apply External Changes",
+      "offered_when": "selected.attached",
+      "enabled_when": "selected.pending"
     },
     {
       "id": "settings-button-locate-file",
@@ -906,7 +1020,9 @@
       "offered": "inside Files, the selected profile is attached to a file",
       "enabled": "always",
       "windows": "Settings window: Locate File…",
-      "linux": "Settings window: Locate File…"
+      "linux": "Settings window: Locate File…",
+      "offered_when": "selected.attached",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-detach-keep-local-profile",
@@ -921,7 +1037,9 @@
       "offered": "inside Files, the selected profile is attached to a file",
       "enabled": "always",
       "windows": "Settings window: Detach (Keep Local Profile)",
-      "linux": "Settings window: Detach (Keep Local Profile)"
+      "linux": "Settings window: Detach (Keep Local Profile)",
+      "offered_when": "selected.attached",
+      "enabled_when": ""
     },
     {
       "id": "settings-button-edit",
@@ -936,7 +1054,9 @@
       "offered": "always",
       "enabled": "a profile is selected",
       "windows": "Settings window: Edit…",
-      "linux": "Settings window: Edit…"
+      "linux": "Settings window: Edit…",
+      "offered_when": "",
+      "enabled_when": "selected"
     },
     {
       "id": "settings-alertbutton-attach-file",
@@ -951,7 +1071,9 @@
       "offered": "the Open Profile File preview",
       "enabled": "always",
       "windows": "Confirmation dialog: Attach File",
-      "linux": "Confirmation dialog: Attach File"
+      "linux": "Confirmation dialog: Attach File",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-alertbutton-import-as-local-copy",
@@ -966,7 +1088,9 @@
       "offered": "the Open Profile File preview",
       "enabled": "always",
       "windows": "Confirmation dialog: Import as Local Copy",
-      "linux": "Confirmation dialog: Import as Local Copy"
+      "linux": "Confirmation dialog: Import as Local Copy",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-alertbutton-cancel",
@@ -981,7 +1105,9 @@
       "offered": "the Open Profile File preview",
       "enabled": "always",
       "windows": "Confirmation dialog: Cancel",
-      "linux": "Confirmation dialog: Cancel"
+      "linux": "Confirmation dialog: Cancel",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-alertbutton-keep-pending",
@@ -996,7 +1122,9 @@
       "offered": "the outside changes review",
       "enabled": "always",
       "windows": "Confirmation dialog: Keep Pending",
-      "linux": "Confirmation dialog: Keep Pending"
+      "linux": "Confirmation dialog: Keep Pending",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-alertbutton-continue",
@@ -1011,7 +1139,9 @@
       "offered": "every settings confirmation",
       "enabled": "always",
       "windows": "Confirmation dialog: Continue",
-      "linux": "Confirmation dialog: Continue"
+      "linux": "Confirmation dialog: Continue",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "settings-alertbutton-cancel-2",
@@ -1026,7 +1156,9 @@
       "offered": "every settings confirmation",
       "enabled": "always",
       "windows": "Confirmation dialog: Cancel",
-      "linux": "Confirmation dialog: Cancel"
+      "linux": "Confirmation dialog: Cancel",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-display-name",
@@ -1042,7 +1174,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Display name",
-      "linux": "Profile editor: Display name"
+      "linux": "Profile editor: Display name",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-sso-start-url",
@@ -1058,7 +1192,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: SSO start URL",
-      "linux": "Profile editor: SSO start URL"
+      "linux": "Profile editor: SSO start URL",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-sso-region",
@@ -1074,7 +1210,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: SSO region",
-      "linux": "Profile editor: SSO region"
+      "linux": "Profile editor: SSO region",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-account-id",
@@ -1090,7 +1228,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Account ID",
-      "linux": "Profile editor: Account ID"
+      "linux": "Profile editor: Account ID",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-role-name",
@@ -1106,7 +1246,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Role name",
-      "linux": "Profile editor: Role name"
+      "linux": "Profile editor: Role name",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-resource-region",
@@ -1122,7 +1264,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Resource region",
-      "linux": "Profile editor: Resource region"
+      "linux": "Profile editor: Resource region",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-instance-tag-key",
@@ -1138,7 +1282,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Instance tag key",
-      "linux": "Profile editor: Instance tag key"
+      "linux": "Profile editor: Instance tag key",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-instance-tag-value",
@@ -1154,7 +1300,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Instance tag value",
-      "linux": "Profile editor: Instance tag value"
+      "linux": "Profile editor: Instance tag value",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-dcv-password-secret-id-optional",
@@ -1170,7 +1318,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: DCV password secret id (optional)",
-      "linux": "Profile editor: DCV password secret id (optional)"
+      "linux": "Profile editor: DCV password secret id (optional)",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-agent-port",
@@ -1186,7 +1336,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Agent port",
-      "linux": "Profile editor: Agent port"
+      "linux": "Profile editor: Agent port",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-socks-port",
@@ -1202,7 +1354,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: SOCKS port",
-      "linux": "Profile editor: SOCKS port"
+      "linux": "Profile editor: SOCKS port",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-remote-folder-optional",
@@ -1218,7 +1372,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Remote folder (optional)",
-      "linux": "Profile editor: Remote folder (optional)"
+      "linux": "Profile editor: Remote folder (optional)",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-ssh-user-optional",
@@ -1234,7 +1390,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: SSH user (optional)",
-      "linux": "Profile editor: SSH user (optional)"
+      "linux": "Profile editor: SSH user (optional)",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-domain-suffix",
@@ -1250,7 +1408,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Domain suffix",
-      "linux": "Profile editor: Domain suffix"
+      "linux": "Profile editor: Domain suffix",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-name",
@@ -1266,7 +1426,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Name",
-      "linux": "Profile editor: Name"
+      "linux": "Profile editor: Name",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-remote-host",
@@ -1282,7 +1444,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Remote host",
-      "linux": "Profile editor: Remote host"
+      "linux": "Profile editor: Remote host",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-open-path-optional",
@@ -1298,7 +1462,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Open path (optional)",
-      "linux": "Profile editor: Open path (optional)"
+      "linux": "Profile editor: Open path (optional)",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-local-port",
@@ -1314,7 +1480,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Local port",
-      "linux": "Profile editor: Local port"
+      "linux": "Profile editor: Local port",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-local-port-2",
@@ -1330,7 +1498,9 @@
       "offered": "per local forward",
       "enabled": "always",
       "windows": "Profile editor: Local port",
-      "linux": "Profile editor: Local port"
+      "linux": "Profile editor: Local port",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-remote-port",
@@ -1346,7 +1516,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Remote port",
-      "linux": "Profile editor: Remote port"
+      "linux": "Profile editor: Remote port",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-textfield-remote-port-2",
@@ -1362,7 +1534,9 @@
       "offered": "per local forward",
       "enabled": "always",
       "windows": "Profile editor: Remote port",
-      "linux": "Profile editor: Remote port"
+      "linux": "Profile editor: Remote port",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-toggle-open-dcv-viewer-automatically",
@@ -1378,7 +1552,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Open DCV Viewer automatically",
-      "linux": "Profile editor: Open DCV Viewer automatically"
+      "linux": "Profile editor: Open DCV Viewer automatically",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-toggle-enable-native-vs-code-access",
@@ -1394,7 +1570,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Enable native VS Code access",
-      "linux": "Profile editor: Enable native VS Code access"
+      "linux": "Profile editor: Enable native VS Code access",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-toggle-enable-web-forwards",
@@ -1410,7 +1588,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Enable web forwards",
-      "linux": "Profile editor: Enable web forwards"
+      "linux": "Profile editor: Enable web forwards",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-toggle-socks-proxy",
@@ -1426,7 +1606,9 @@
       "offered": "web forwards are on",
       "enabled": "always",
       "windows": "Profile editor: SOCKS proxy",
-      "linux": "Profile editor: SOCKS proxy"
+      "linux": "Profile editor: SOCKS proxy",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-picker-mode",
@@ -1442,7 +1624,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Mode",
-      "linux": "Profile editor: Mode"
+      "linux": "Profile editor: Mode",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-picker-browser",
@@ -1458,7 +1642,9 @@
       "offered": "web forwards are on",
       "enabled": "always",
       "windows": "Profile editor: Browser",
-      "linux": "Profile editor: Browser"
+      "linux": "Profile editor: Browser",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-picker-browser-mode",
@@ -1474,7 +1660,9 @@
       "offered": "web forwards are on",
       "enabled": "always",
       "windows": "Profile editor: Browser Mode",
-      "linux": "Profile editor: Browser Mode"
+      "linux": "Profile editor: Browser Mode",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-choose-profile-folder",
@@ -1489,7 +1677,9 @@
       "offered": "Use My Browser mode",
       "enabled": "always",
       "windows": "Profile editor: Choose Profile Folder",
-      "linux": "Profile editor: Choose Profile Folder"
+      "linux": "Profile editor: Choose Profile Folder",
+      "offered_when": "item.browserMode=existing",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-remove-domain",
@@ -1504,7 +1694,9 @@
       "offered": "per proxy suffix",
       "enabled": "always",
       "windows": "Profile editor: Remove domain",
-      "linux": "Profile editor: Remove domain"
+      "linux": "Profile editor: Remove domain",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-add-a-proxy-domain-suffix",
@@ -1519,7 +1711,9 @@
       "offered": "web forwards are on",
       "enabled": "always",
       "windows": "Profile editor: Add a proxy domain suffix",
-      "linux": "Profile editor: Add a proxy domain suffix"
+      "linux": "Profile editor: Add a proxy domain suffix",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-remove-local-forward",
@@ -1534,7 +1728,9 @@
       "offered": "per local forward",
       "enabled": "always",
       "windows": "Profile editor: Remove local forward",
-      "linux": "Profile editor: Remove local forward"
+      "linux": "Profile editor: Remove local forward",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-add-local-forward",
@@ -1549,7 +1745,9 @@
       "offered": "web forwards are on",
       "enabled": "always",
       "windows": "Profile editor: Add Local Forward",
-      "linux": "Profile editor: Add Local Forward"
+      "linux": "Profile editor: Add Local Forward",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-cancel",
@@ -1564,7 +1762,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Profile editor: Cancel",
-      "linux": "Profile editor: Cancel"
+      "linux": "Profile editor: Cancel",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-save-a-local-copy",
@@ -1579,7 +1779,9 @@
       "offered": "the profile is attached to a file",
       "enabled": "always",
       "windows": "Profile editor: Save a Local Copy",
-      "linux": "Profile editor: Save a Local Copy"
+      "linux": "Profile editor: Save a Local Copy",
+      "offered_when": "item.attached",
+      "enabled_when": ""
     },
     {
       "id": "profileeditor-button-save",
@@ -1594,7 +1796,9 @@
       "offered": "always",
       "enabled": "the draft validates",
       "windows": "Profile editor: Save",
-      "linux": "Profile editor: Save"
+      "linux": "Profile editor: Save",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "log-button-clear",
@@ -1609,7 +1813,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "Log window: Clear",
-      "linux": "Log window: Clear"
+      "linux": "Log window: Clear",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "about-link-apache-license-2-0",
@@ -1624,7 +1830,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "About window: Apache License 2.0",
-      "linux": "About window: Apache License 2.0"
+      "linux": "About window: Apache License 2.0",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "about-link-project",
@@ -1639,7 +1847,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "About window: Project",
-      "linux": "About window: Project"
+      "linux": "About window: Project",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "about-link-release-notes",
@@ -1654,7 +1864,9 @@
       "offered": "always",
       "enabled": "always",
       "windows": "About window: Release Notes",
-      "linux": "About window: Release Notes"
+      "linux": "About window: Release Notes",
+      "offered_when": "",
+      "enabled_when": ""
     },
     {
       "id": "about-disclosuregroup-connection-states",
@@ -1669,7 +1881,10 @@
       "offered": "always",
       "enabled": "always",
       "windows": "About window: Connection States",
-      "linux": "About window: Connection States"
+      "linux": "About window: Connection States",
+      "offered_when": "",
+      "enabled_when": ""
     }
-  ]
+  ],
+  "rule_syntax": "offered_when and enabled_when read the helper details event and the shell context (selected, selected.attached, selected.pending, item.* for a per-item control). Alternatives are separated by \" or \", clauses by \" & \"; a clause is key (true: non-empty and not \"false\"), !key, key=a|b, key!=a|b, or key>N and key=N for numbers. Empty means always."
 }

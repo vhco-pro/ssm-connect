@@ -19,12 +19,13 @@ fi
 
 # The build directory is mounted at the same path inside and outside, so the test binary's
 # compiled-in paths to its helper programs resolve on the host as well.
-docker run --rm --user "$(id -u):$(id -g)" -v "$source":/src:ro -v "$build":"$build" "$image" \
-  bash -c "cmake -S /src -B '$build' -G Ninja -DCMAKE_BUILD_TYPE=Debug >/dev/null && cmake --build '$build'"
+contracts="$(cd "$here/../../contracts" && pwd)"
+docker run --rm --user "$(id -u):$(id -g)" -v "$source":/src:ro -v "$build":"$build" -v "$contracts":"$contracts":ro "$image" \
+  bash -c "cmake -S /src -B '$build' -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSSM_PARITY_INVENTORY='$contracts/macos-parity.json' >/dev/null && cmake --build '$build'"
 
 status=0
 : > "$build/test.log"
-for test in helper_host_test shell_test; do
+for test in helper_host_test shell_test parity_test; do
   "$build/$test" "$@" 2>&1 | tee -a "$build/test.log" || status=1
 done
 exit $status

@@ -95,12 +95,13 @@ notices="$work/ThirdPartyNotices.txt"
 # 3. The shell on each distribution, tested there.
 shell() {
     local tag="$1" directory="$2"
-    docker run --rm "${user[@]}" -e QT_QPA_PLATFORM=offscreen -v "$root/linux":/src:ro -v "$work":/work "$tag" bash -c "
+    docker run --rm "${user[@]}" -e QT_QPA_PLATFORM=offscreen -v "$root/linux":/src:ro -v "$root/contracts":/contracts:ro -v "$work":/work "$tag" bash -c "
         set -e; mkdir -p /tmp/home
-        cmake -S /src -B /work/$directory -G Ninja -DCMAKE_BUILD_TYPE=Release -DSSM_CONNECT_BUILD='$build' >/dev/null
+        cmake -S /src -B /work/$directory -G Ninja -DCMAKE_BUILD_TYPE=Release -DSSM_CONNECT_BUILD='$build' -DSSM_PARITY_INVENTORY=/contracts/macos-parity.json >/dev/null
         cmake --build /work/$directory
         /work/$directory/helper_host_test
-        /work/$directory/shell_test"
+        /work/$directory/shell_test
+        /work/$directory/parity_test"
 }
 shell ssm-connect-shell:fedora43 shell-fedora43
 shell ssm-connect-shell:noble shell-noble
