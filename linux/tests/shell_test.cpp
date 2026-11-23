@@ -10,6 +10,7 @@
 #include "startup_registration.h"
 #include "tray.h"
 
+#include <QAccessible>
 #include <QAction>
 #include <QApplication>
 #include <QDir>
@@ -121,7 +122,16 @@ private slots:
         QTRY_COMPARE(controller.profiles().size(), qsizetype(1));
         auto *list = findItem(window, "profiles");
         QVERIFY(list);
-        list->setProperty("currentIndex", 0);
+        // A profile row is selected through its accessible press action, as a screen reader does.
+        QAccessible::setActive(true);
+        QTRY_VERIFY(findItem(window, "profile-row"));
+        QAccessibleInterface *row = QAccessible::queryAccessibleInterface(findItem(window, "profile-row"));
+        QVERIFY(row && row->actionInterface());
+        QVERIFY(row->text(QAccessible::Name).contains(QStringLiteral("Workstation")));
+        row->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+        QTRY_COMPARE(list->property("currentIndex").toInt(), 0);
+        auto *clipboard = QAccessible::queryAccessibleInterface(findItem(window, "settings-clipboard-auto-clear"));
+        QVERIFY(clipboard && !clipboard->text(QAccessible::Name).isEmpty());
         auto *remove = findItem(window, "settings-button-delete-the-selected-profile");
         QVERIFY(remove);
         QTRY_VERIFY(!remove->property("enabled").toBool()); // the last profile cannot be deleted, as on macOS

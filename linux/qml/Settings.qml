@@ -76,6 +76,7 @@ ApplicationWindow {
             Label { text: "Clear copied password after" }
             SpinBox {
                 objectName: "settings-clipboard-auto-clear"
+                Accessible.name: "Clear copied password after, in seconds"
                 from: 0; to: 600; stepSize: 5
                 value: Number(shell.settings.clipboardAutoClearSeconds || 30)
                 onValueModified: shell.trigger(objectName, { "value": String(value) })
@@ -95,9 +96,15 @@ ApplicationWindow {
             delegate: ItemDelegate {
                 required property var modelData
                 required property int index
+                objectName: "profile-row"
                 width: ListView.view.width
                 highlighted: ListView.isCurrentItem
                 onClicked: profiles.currentIndex = index
+                // Screen readers select a profile with the row's press action.
+                Accessible.role: Accessible.ListItem
+                Accessible.name: modelData.name
+                Accessible.selected: ListView.isCurrentItem
+                Accessible.onPressAction: profiles.currentIndex = index
                 contentItem: RowLayout {
                     Label {
                         Layout.fillWidth: true
