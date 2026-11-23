@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Parity revision implemented on feat/shared-swift-core: T50 and T52 to T62 done, with the native pass on Windows, Fedora and Ubuntu; T51's macOS check, T1, T2, T30 and the macOS part of T31 wait for the Mac."
+status: draft
+status_description: "Revising after the owner's 2026-11-23 decisions: AC-22 (performance) moves to a follow-up, GetSecretValue stays on test coverage, sleep is tried on the sandbox VMs, and the Windows cancelled-upgrade defect is fixed before shipping."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
