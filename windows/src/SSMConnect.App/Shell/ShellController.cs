@@ -659,10 +659,13 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
+    /// <summary>Explorer's arguments that select a file: the path quoted after /select, with Windows separators.</summary>
+    internal static string ExplorerSelectArguments(string path) => $"/select,\"{path.Replace('/', '\\')}\"";
+
     /// <summary>Opens Explorer with the file selected.</summary>
     public void Reveal(string path)
     {
         if (!File.Exists(path)) return;
-        Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { "/select," + path }, UseShellExecute = false })?.Dispose();
+        Process.Start(new ProcessStartInfo("explorer.exe", ExplorerSelectArguments(path)) { UseShellExecute = false })?.Dispose();
     }
 }

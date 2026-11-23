@@ -439,6 +439,15 @@ public sealed class ProfileFileDialogTests
     }
 }
 
+/// <summary>Reveal opens Explorer with the file selected, whatever slashes or spaces its path has.</summary>
+public sealed class RevealTests
+{
+    [Theory]
+    [InlineData("C:/Users/m/AppData/Local/SSM Connect/WebForwards/A.pac", "/select,\"C:\\Users\\m\\AppData\\Local\\SSM Connect\\WebForwards\\A.pac\"")]
+    [InlineData(@"C:\Temp\b.pac", "/select,\"C:\\Temp\\b.pac\"")]
+    public void ExplorerSelectsTheFile(string path, string arguments) => Assert.Equal(arguments, WindowsShellPlatform.ExplorerSelectArguments(path));
+}
+
 /// <summary>A second launch brings the open settings window forward instead of opening another.</summary>
 public sealed class SingleWindowTests
 {
