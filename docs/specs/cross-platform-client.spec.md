@@ -1163,6 +1163,7 @@ None.
 | 2026-11-23 | R-29 | spec | `3bf2897` | gpt-6.1-sol | procedural | No blocking findings; one should-fix (a first pass at this commit could not read the conventions and returned no usable records) |
 | 2026-11-23 | R-30 | spec | `3c84f9a` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-23 | R-30 | spec | `3c84f9a` | n/a | n/a | accepted by owner |
+| 2026-11-23 | R-31 | spec | `dd210d5` | gpt-6.1-sol | procedural | One blocking (GetSecretValue exemption missing from the AC-28 proof), three should-fix and two nits |
 
 ### R-1
 
@@ -1770,6 +1771,50 @@ PROPOSAL: Exclude files whose launch windows remain active in the current helper
 ### R-30
 
 NO FINDINGS
+
+### R-31
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Frontmatter / status_description; Context / Owner summary:122-125; Design / AWS client:428; Test Plan / AC-28:875; Tasks / T27:1021, T28:1028, T29:1049 and their remaining-work annotations:1027,1048,1083
+EVIDENCE: The 2026-11-23 revision exempts GetSecretValue from native acceptance in the summary, service table and task descriptions. However, the AC-28 proof still requires every one of the 12 requests to succeed against AWS natively on every matrix target. The remaining-work annotations also continue listing GetSecretValue as outstanding native work. Following the revised tasks cannot satisfy the unchanged proof.
+PROPOSAL: Apply the owner's GetSecretValue exemption consistently to the AC-28 proof and remaining-work lists, retaining its fixture and client-test requirements.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:126-129; Design / Migration, performance and release boundaries:821-825; Acceptance Criteria / AC-21; Test Plan / AC-21:869; Tasks / T28 cancelled-upgrade finding, T63 and T64:1121-1122
+EVIDENCE: The new upgrade proof cancels at the Restart Manager prompt and injects a custom-action failure without specifying its position. Microsoft documents that the [Restart Manager dialog](https://learn.microsoft.com/en-us/windows/win32/msi/msirmfilesinuse-dialog) appears during InstallValidate. Package.wxs:33-36 removes the prior product after InstallInitialize. Prompt cancellation therefore precedes that removal, while an early injected failure could do the same. Both checks could pass without exercising the rollback after product removal that the recorded defect concerns.
+PROPOSAL: Require the injected failure after the prior product has been removed and before transaction completion, with installer-log evidence confirming that sequence. Include cancellation after mutation if cancellation rollback is also claimed.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:55-56,93-102; Design / Behavior, identity and local state:525-531; Design / Windows and Linux parity with the macOS interface; Acceptance Criteria / AC-16 and AC-29; Test Plan / AC-16 and AC-29; Tasks / T17, T22, T57, T28 and T29
+EVIDENCE: The design requires Zen in both browser modes and explicitly forbids omitting a required integration through capability refusal. T57 is checked complete, but HelperRuntime.swift:526-534 always refuses Apply Browser Setup, even after successful browser preflight, and ShellRequests.swift:163 implements restore as an empty function. WindowsBrowserDiscovery.swift:20 and LinuxBrowserDiscovery.swift:38 pin only Chrome. The unchecked tasks provide native acceptance but assign no implementation of the missing existing-browser setup and restore behavior.
+PROPOSAL: Add unchecked implementation and verification tasks for the required Zen modes, ownership, consent and restore behavior. Keep these capabilities explicitly outstanding until implemented and proven.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: should-fix
+WHERE: Acceptance Criteria / AC-29; Test Plan / AC-29:876; Tasks / T62:1114-1119
+EVIDENCE: T62 is checked complete and requires exercising each new control natively on all three targets. Its annotation explicitly excludes authorization, recovery, replacement, password-copy and browser controls, Linux text and picker interaction, and Ubuntu file pickers. The AC-29 proof still requires every new control natively, and no unchecked follow-up task carries those omissions. Automated parity coverage does not establish that native requirement.
+PROPOSAL: Preserve the partial results and represent the remaining native checks as unfinished work. Any reduction of the required native coverage needs an owner decision folded into the proof.
+
+FINDING: F-05
+KIND: factual
+SEVERITY: nit
+WHERE: Context / Owner summary:97-100; Design / Windows and Linux parity with the macOS interface:603-612; Design / DCV connection file lifetime:718-733,741-743; Design / Migration, performance and release boundaries:764-768
+EVIDENCE: These passages describe earlier behavior as current: missing parity commands, a five-second helper window without quit cleanup, a platform-independent missing-Viewer message, and release creation after the macOS build. The reviewed tree has the expanded command table at HelperRuntime.swift:156-234, quit cleanup at lines 140-142, the 120-second window and cleanup in ShellRequests.swift:48-114, and release creation before platform jobs in release.yml:118-132. The intended behavior remains clear, so these stale descriptions do not change implementation requirements.
+PROPOSAL: Label these descriptions with their historical baseline and cite that revision, or refresh them to describe the reviewed tree.
+
+FINDING: F-06
+KIND: factual
+SEVERITY: nit
+WHERE: Design / Migration, performance and release boundaries:759-762
+EVIDENCE: The revised paragraph says workloads for macOS, Windows and Linux are committed. The scripts/perf/workloads directory contains only macos.env and selftest.env. The generic harness supports workload hooks, but Windows and Linux application workloads are absent.
+PROPOSAL: State that the generic harness and macOS workload are committed, with Windows and Linux workloads remaining for the follow-up feature.
 
 ## Sources
 
