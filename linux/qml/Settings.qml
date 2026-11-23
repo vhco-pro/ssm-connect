@@ -112,6 +112,7 @@ ApplicationWindow {
                               + (window.attachment(modelData.id) ? "  (attached to a profile file)" : "")
                     }
                     Button {
+                        Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-use"
                         text: "Use"
                         visible: shell.isOffered(objectName, { "item.active": modelData.id === shell.activeProfileId ? "true" : "false" })
@@ -123,12 +124,14 @@ ApplicationWindow {
 
         RowLayout {
             ToolButton {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                 objectName: "settings-button-add-a-blank-profile"
                 text: "+"
                 ToolTip.text: "Add a blank profile"; ToolTip.visible: hovered
                 onClicked: shell.trigger(objectName)
             }
             ToolButton {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                 objectName: "settings-menu-import-a-profile-from-aws-config"
                 text: "Import from ~/.aws/config"
                 onClicked: shell.trigger(objectName)
@@ -143,16 +146,20 @@ ApplicationWindow {
                             onTriggered: shell.trigger(objectName, { "profile": modelData })
                         }
                     }
-                    MenuItem { text: "No SSO profiles found in ~/.aws/config"; enabled: false; visible: window.importable.length === 0 }
+                    MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
+                        text: "No SSO profiles found in ~/.aws/config"; enabled: false; visible: window.importable.length === 0 }
                 }
             }
             ToolButton {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                 objectName: "settings-button-duplicate-the-selected-profile"
                 text: "Duplicate"
                 enabled: shell.isEnabled(objectName, window.context())
                 onClicked: shell.trigger(objectName, window.selectedArguments(), window.context())
             }
             ToolButton {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                 objectName: "settings-button-delete-the-selected-profile"
                 text: "−"
                 ToolTip.text: "Delete the selected profile"; ToolTip.visible: hovered
@@ -161,23 +168,27 @@ ApplicationWindow {
             }
             Item { Layout.fillWidth: true }
             ToolButton {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                 objectName: "settings-menu-files"
                 text: "Files"
                 onClicked: filesMenu.open()
                 Menu {
                     id: filesMenu
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-open-profile-file"
                         text: "Open Profile File…"
                         onTriggered: shell.trigger(objectName, {}, window.context())
                     }
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-export-profile"
                         text: "Export Profile…"
                         enabled: shell.isEnabled(objectName, window.context())
                         onTriggered: shell.trigger(objectName, window.selectedArguments(), window.context())
                     }
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-save-a-local-copy"
                         text: "Save a Local Copy"
                         enabled: shell.isEnabled(objectName, window.context())
@@ -185,12 +196,14 @@ ApplicationWindow {
                     }
                     MenuSeparator { visible: shell.isOffered("settings-button-reload-review-changes", window.context()) }
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-reload-review-changes"
                         text: "Reload / Review Changes"
                         visible: shell.isOffered(objectName, window.context())
                         onTriggered: shell.trigger(objectName, window.selectedArguments(), window.context())
                     }
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-apply-external-changes"
                         text: "Apply External Changes"
                         visible: shell.isOffered(objectName, window.context())
@@ -198,12 +211,14 @@ ApplicationWindow {
                         onTriggered: shell.trigger(objectName, window.selectedArguments(), window.context())
                     }
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-locate-file"
                         text: "Locate File…"
                         visible: shell.isOffered(objectName, window.context())
                         onTriggered: shell.trigger(objectName, window.selectedArguments(), window.context())
                     }
                     MenuItem {
+                        Accessible.onPressAction: triggered() // screen readers: Qt 6.4 does not click on the press action
                         objectName: "settings-button-detach-keep-local-profile"
                         text: "Detach (Keep Local Profile)"
                         visible: shell.isOffered(objectName, window.context())
@@ -212,6 +227,7 @@ ApplicationWindow {
                 }
             }
             Button {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                 objectName: "settings-button-edit"
                 text: "Edit…"
                 enabled: shell.isEnabled(objectName, window.context())

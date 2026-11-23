@@ -33,7 +33,9 @@ ApplicationWindow {
         RowLayout {
             Label { text: log.entries.length + " entries" }
             Item { Layout.fillWidth: true }
-            Button { objectName: "log-button-clear"; text: "Clear"; onClicked: { shell.trigger(objectName); log.entries = [] } }
+            Button {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                objectName: "log-button-clear"; text: "Clear"; onClicked: { shell.trigger(objectName); log.entries = [] } }
         }
     }
 }

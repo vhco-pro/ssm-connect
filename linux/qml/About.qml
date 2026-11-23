@@ -25,13 +25,20 @@ ApplicationWindow {
         GridLayout {
             columns: 2
             Label { text: "License" }
-            Button { objectName: "about-link-apache-license-2-0"; text: "Apache License 2.0"; flat: true; onClicked: shell.trigger(objectName) }
+            Button {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                objectName: "about-link-apache-license-2-0"; text: "Apache License 2.0"; flat: true; onClicked: shell.trigger(objectName) }
         }
         RowLayout {
-            Button { objectName: "about-link-project"; text: "Project"; flat: true; onClicked: shell.trigger(objectName) }
-            Button { objectName: "about-link-release-notes"; text: "Release Notes"; flat: true; onClicked: shell.trigger(objectName) }
+            Button {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                objectName: "about-link-project"; text: "Project"; flat: true; onClicked: shell.trigger(objectName) }
+            Button {
+                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                objectName: "about-link-release-notes"; text: "Release Notes"; flat: true; onClicked: shell.trigger(objectName) }
         }
         Button {
+            Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
             objectName: "about-disclosuregroup-connection-states"
             text: (about.showStates ? "▾ " : "▸ ") + "Connection States"
             flat: true

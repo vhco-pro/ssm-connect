@@ -148,7 +148,9 @@ ApplicationWindow {
                 RowLayout {
                     visible: editor.text("webForwards.browserMode") === "existing"
                     Label { text: "Profile: " + (editor.text("webForwards.browserProfilePath") || "Not selected") }
-                    Button { objectName: "profileeditor-button-choose-profile-folder"; text: "Choose Profile Folder"
+                    Button {
+                        Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                        objectName: "profileeditor-button-choose-profile-folder"; text: "Choose Profile Folder"
                              onClicked: { var p = shell.chooseFolder("Choose the Zen profile folder"); if (p) editor.set("webForwards.browserProfilePath", p) } }
                 }
                 Label { text: "Zen only. Chrome requires a separately approved proxy extension and is unavailable in this mode."
@@ -161,11 +163,15 @@ ApplicationWindow {
                         TextField { objectName: "profileeditor-textfield-domain-suffix"; placeholderText: ".internal.example.com"; text: modelData
                                     Layout.fillWidth: true
                                     onEditingFinished: { var d = editor.ensure(); d.webForwards.proxySuffixes[index] = text; editor.draft = d } }
-                        ToolButton { objectName: "profileeditor-button-remove-domain"; text: "−"; ToolTip.text: "Remove domain"; ToolTip.visible: hovered
+                        ToolButton {
+                            Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                            objectName: "profileeditor-button-remove-domain"; text: "−"; ToolTip.text: "Remove domain"; ToolTip.visible: hovered
                                      onClicked: { var d = editor.ensure(); d.webForwards.proxySuffixes.splice(index, 1); editor.draft = d } }
                     }
                 }
-                Button { objectName: "profileeditor-button-add-a-proxy-domain-suffix"; text: "Add Domain"
+                Button {
+                    Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                    objectName: "profileeditor-button-add-a-proxy-domain-suffix"; text: "Add Domain"
                          onClicked: { var d = editor.ensure(); d.webForwards.proxySuffixes.push(""); editor.draft = d } }
                 Repeater {
                     model: editor.draft.webForwards ? editor.draft.webForwards.localForwards : []
@@ -176,7 +182,9 @@ ApplicationWindow {
                         RowLayout {
                             TextField { objectName: "profileeditor-textfield-name"; placeholderText: "Name"; text: modelData.name || ""
                                         onEditingFinished: update("name", text) }
-                            ToolButton { objectName: "profileeditor-button-remove-local-forward"; text: "−"; ToolTip.text: "Remove local forward"
+                            ToolButton {
+                                Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                                objectName: "profileeditor-button-remove-local-forward"; text: "−"; ToolTip.text: "Remove local forward"
                                          ToolTip.visible: hovered
                                          onClicked: { var d = editor.ensure(); d.webForwards.localForwards.splice(index, 1); editor.draft = d } }
                         }
@@ -194,7 +202,9 @@ ApplicationWindow {
                                     text: modelData.openPath || ""; onEditingFinished: update("openPath", text) }
                     }
                 }
-                Button { objectName: "profileeditor-button-add-local-forward"; text: "Add Local Forward"
+                Button {
+                    Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                    objectName: "profileeditor-button-add-local-forward"; text: "Add Local Forward"
                          onClicked: { var d = editor.ensure()
                                       d.webForwards.localForwards.push({ "name": "New Forward", "localPort": 8080, "remoteHost": "127.0.0.1", "remotePort": 8080 })
                                       editor.draft = d } }
@@ -202,12 +212,18 @@ ApplicationWindow {
 
             RowLayout {
                 Layout.topMargin: 12
-                Button { objectName: "profileeditor-button-cancel"; text: "Cancel"; onClicked: editor.close() }
+                Button {
+                    Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                    objectName: "profileeditor-button-cancel"; text: "Cancel"; onClicked: editor.close() }
                 Item { Layout.fillWidth: true }
-                Button { objectName: "profileeditor-button-save-a-local-copy"; text: "Save a Local Copy"
+                Button {
+                    Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                    objectName: "profileeditor-button-save-a-local-copy"; text: "Save a Local Copy"
                          visible: shell.isOffered(objectName, { "item.attached": editor.attached ? "true" : "false" })
                          onClicked: { shell.trigger(objectName, { "profile": JSON.stringify(editor.draft) }, { "item.attached": "true" }); editor.close() } }
-                Button { objectName: "profileeditor-button-save"; text: "Save"; highlighted: true
+                Button {
+                    Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
+                    objectName: "profileeditor-button-save"; text: "Save"; highlighted: true
                          onClicked: { shell.saveProfile(editor.draft); editor.close() } }
             }
         }

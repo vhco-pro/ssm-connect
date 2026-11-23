@@ -147,11 +147,14 @@ private slots:
         QTRY_VERIFY(!remove->property("enabled").toBool()); // the last profile cannot be deleted, as on macOS
         auto *duplicate = findItem(window, "settings-button-duplicate-the-selected-profile");
         QTRY_VERIFY(duplicate && duplicate->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(duplicate, "clicked"));
+        // Buttons are pressed through their accessible press action, as a screen reader does.
+        QAccessibleInterface *duplicateA11y = QAccessible::queryAccessibleInterface(duplicate);
+        QVERIFY(duplicateA11y && duplicateA11y->actionInterface());
+        duplicateA11y->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
         QTRY_VERIFY(spawner.started[0]->commands().contains("duplicateProfile"));
         QVariantMap edited;
         connect(&controller, &ShellController::editProfileRequested, this, [&](const QVariantMap &profile) { edited = profile; });
-        QVERIFY(QMetaObject::invokeMethod(findItem(window, "settings-button-edit"), "clicked"));
+        QAccessible::queryAccessibleInterface(findItem(window, "settings-button-edit"))->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
         QTRY_COMPARE(edited.value("id").toString(), QStringLiteral("55555555-5555-4555-8555-555555555555"));
         auto *reconnect = findItem(window, "settings-toggle-reconnect-automatically-if-the-tunnel-drops");
         QVERIFY(reconnect);
