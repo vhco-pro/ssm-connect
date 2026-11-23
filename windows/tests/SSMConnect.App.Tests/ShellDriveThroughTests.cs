@@ -251,6 +251,36 @@ public sealed class ShellDriveThroughTests
         Assert.EndsWith("[Keep Pending]", shown);
     }
 
+    /// <summary>The tray offers one Open item per local forward with a page, as the macOS menu does.</summary>
+    [Fact]
+    public void TheTrayOffersAnOpenItemPerLocalForward()
+    {
+        HelperHostTests.FakeHelper? helper = null;
+        var platform = new RecordingPlatform();
+        RunOnSta(async () =>
+        {
+            var spawner = new HelperHostTests.FakeSpawner(() => helper = new HelperHostTests.FakeHelper { OnCommand = Completed });
+            var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
+            await host.StartAsync();
+            var controller = new ShellController(host, platform);
+            var menu = TrayMenu.Build(controller, () => { }, () => { }, () => { });
+            helper!.Emit("details", "details", new()
+            {
+                ["profiles"] = "1", ["desktop.state"] = "disconnected", ["web.enabled"] = "true", ["web.state"] = "On",
+                ["web.forwards"] = """[{"name":"Dashboard","localPort":4466,"remoteHost":"127.0.0.1","remotePort":4466,"openPath":"/"},{"name":"Raw","localPort":5000,"remoteHost":"127.0.0.1","remotePort":5000}]""",
+            });
+            await Eventually(() => menu.Items.OfType<MenuItem>().Any(i => (string?)i.Header == "Open Dashboard"));
+            var open = menu.Items.OfType<MenuItem>().Single(i => (string?)i.Header == "Open Dashboard");
+            Assert.True(open.Visibility == Visibility.Visible && open.IsEnabled);
+            Assert.DoesNotContain(menu.Items.OfType<MenuItem>(), i => (string?)i.Header == "Open Raw");
+            open.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await Eventually(() => Commands(helper!).Contains("openForward"));
+        });
+        List<JsonObject> frames;
+        lock (helper!.Received) frames = [.. helper.Received];
+        Assert.Equal("Dashboard", (string?)frames.Single(f => (string?)f["name"] == "openForward")["arguments"]?["name"]);
+    }
+
     [Fact]
     public void HelperRequestsReachWindowsThroughTheShell()
     {
