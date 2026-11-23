@@ -1114,6 +1114,7 @@ None.
 | 2026-11-21 | R-25 | spec | `e74903d` | n/a | n/a | accepted by owner |
 | 2026-11-22 | R-26 | spec | `a44b14c` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
 | 2026-11-23 | R-27 | spec | `0a7fe89` | gpt-6.1-sol | procedural | No blocking findings; one should-fix and one nit |
+| 2026-11-23 | R-28 | spec | `2cc723c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 
 ### R-1
 
@@ -1692,6 +1693,22 @@ SEVERITY: nit
 WHERE: Design / DCV connection file lifetime:693-698
 EVIDENCE: The cleanup explanation addressing R-26 F-04 says the helper's quit work runs only registered tunnel termination. RemoteDevelopmentStateMachine.swift:83 and WebForwardsStateMachine.swift:65 also register quit handlers, and HelperExit.end runs those handlers at HelperRuntime.swift:422-424. The narrower claim that DCV file cleanup is missing remains correct.
 PROPOSAL: Say that existing quit handlers clean up desktop, editor and forwarding resources but do not remove waiting DCV connection files.
+
+### R-28
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:97-103; Design / Integration and feasibility:356-381; Design / Windows and Linux parity with the macOS interface:657-680; Acceptance Criteria / AC-27, AC-29; Test Plan / AC-27, AC-29
+EVIDENCE: The fallback added after R-27 F-01 distinguishes a running command from recovery that outlives it, but leaves their transition undefined. HelperSession.swift:140-142 removes the running command before sending its result, and lines 78-79 ignore cancellation for an absent command. A shell can therefore send cancel while it still considers Open VS Code running, after the helper has finished it with pendingReplacement still set (RemoteDevelopmentStateMachine.swift:378-382). The late cancel does nothing, and the arriving terminal result removes the shell's pending entry, so its cancellation timeout does not recover the situation (linux/src/helper_host.cpp:159-174; windows/src/SSMConnect.App/Helper/HelperHost.cs:166-177,300-305). The proof tests running-command and no-command cases separately and can pass while Cancel Replacement Recovery fails at this boundary.
+PROPOSAL: Define how the requested workflow cancellation completes when the initiating command finishes before the cancel arrives, preserving generation checks and the prohibition on replaying the original action. Add a deterministic proof that delays terminal-result delivery, sends cancellation after helper completion, and verifies that pending recovery clears without affecting another workflow.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:104-110; Design / DCV connection file lifetime:694-715; Acceptance Criteria / AC-30; Test Plan / AC-30
+EVIDENCE: The new next-connect sweep has no proof distinguishing crashed-helper leftovers from files still within a live helper's 120-second window. ShellRequests.swift:73-77 implements sweepOrphanedFiles by deleting every matching DCV file in its directory, without checking its owner or pending deletion. Connecting this existing method to each helper connect would pass the specified leftover-file proof, but a disconnect and reconnect within 120 seconds would delete the preceding connection file early. AC-30 permits early removal at Quit or following a crash, not an ordinary reconnect.
+PROPOSAL: Specify that the sweep preserves files whose live launch window has not expired. Add a back-to-back connect proof that verifies the earlier file survives until its own deadline while genuine crashed-helper leftovers are removed.
 
 ## Sources
 
