@@ -165,6 +165,43 @@ public sealed class ShellDriveThroughTests
         Assert.DoesNotContain(platform.Calls, c => c.StartsWith("error", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// The helper sends its details only after a first command, so the shell asks for its profiles
+    /// whenever a helper becomes ready; until the details arrive, only the controls the shell serves
+    /// itself are offered, and a replacement helper starts from no details.
+    /// </summary>
+    [Fact]
+    public void AReadyHelperIsAskedForItsDetailsAndNothingNeedingItIsOfferedBefore()
+    {
+        var helpers = new List<HelperHostTests.FakeHelper>();
+        var platform = new RecordingPlatform();
+        RunOnSta(async () =>
+        {
+            var spawner = new HelperHostTests.FakeSpawner(() =>
+            {
+                var helper = new HelperHostTests.FakeHelper { OnCommand = Completed };
+                lock (helpers) helpers.Add(helper);
+                return helper;
+            });
+            var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
+            var controller = new ShellController(host, platform);
+            const string web = "menucontent-button-webforwards-state-on-webforwards-state-starting-tur";
+            Assert.False(controller.IsOffered(web));
+            Assert.False(controller.IsOffered("menucontent-button-machine-actiontitle"));
+            Assert.True(controller.IsOffered("menu-settings") && controller.IsOffered("menucontent-button-quit"));
+            await host.StartAsync();
+            await Eventually(() => Commands(helpers[0]).Contains("listProfiles"));
+            helpers[0].Emit("details", "details", new() { ["profiles"] = "1", ["desktop.state"] = "disconnected", ["web.enabled"] = "false", ["web.state"] = "Off" });
+            await Eventually(() => controller.IsOffered("menucontent-button-machine-actiontitle"));
+            Assert.False(controller.IsOffered(web));
+            helpers[0].Exit();
+            await Eventually(() => { lock (helpers) return helpers.Count == 2; });
+            await Eventually(() => host.Status == HelperHostStatus.Ready);
+            Assert.False(controller.IsOffered("menucontent-button-machine-actiontitle"));
+            await Eventually(() => Commands(helpers[1]).Contains("listProfiles"));
+        });
+    }
+
     [Fact]
     public void HelperRequestsReachWindowsThroughTheShell()
     {

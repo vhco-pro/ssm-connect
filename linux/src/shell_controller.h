@@ -120,7 +120,7 @@ public:
     /// Latest state per workflow (desktop, web, editor), from the helper's events.
     QVariantMap states() const { return states_; }
 
-    Q_INVOKABLE void reloadProfiles(const QString &select = {});
+    Q_INVOKABLE void reloadProfiles(const QString &select = {}, bool quiet = false);
     Q_INVOKABLE void saveProfile(const QVariantMap &profile);
     Q_INVOKABLE void useProfile(const QString &id);
     Q_INVOKABLE void importProfile();

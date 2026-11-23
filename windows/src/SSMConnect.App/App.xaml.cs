@@ -53,7 +53,6 @@ public partial class App : Application
         instance.Activated += () => Dispatcher.Invoke(ShowSettings);
         UpdateTray();
         await host.StartAsync();
-        await shell.ReloadProfilesAsync();
     }
 
     void UpdateTray()

@@ -302,7 +302,9 @@ public sealed class HelperHostTests
 
         List<JsonObject> frames;
         lock (spawner.Started[0].Received) frames = spawner.Started[0].Received.Where(f => (string?)f["type"] == "command").ToList();
-        // A completed save reloads the profiles, keeping the saved one selected.
+        // The ready helper is asked for its profiles once, concurrently with the saves; a completed
+        // save reloads them, keeping the saved one selected.
+        frames.Remove(frames.First(f => (string?)f["name"] == "listProfiles"));
         Assert.Equal(["saveProfile", "saveProfile", "listProfiles", "saveProfile", "applyFileChanges"], frames.Select(f => (string)f["name"]!));
         Assert.Null(frames[0]["arguments"]?["acceptFormatting"]);
         Assert.Equal("true", (string?)frames[1]["arguments"]?["acceptFormatting"]);

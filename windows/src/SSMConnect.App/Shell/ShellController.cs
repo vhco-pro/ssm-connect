@@ -25,16 +25,29 @@ public sealed class ShellController
         this.host = host;
         this.platform = platform;
         host.EventReceived += Handle;
-        host.StatusChanged += ClearStatesWhenStopped;
+        host.StatusChanged += OnHelperStatus;
+        if (host.Status == HelperHostStatus.Ready) _ = ReloadProfilesAsync(quiet: true);
     }
 
     /// <summary>
-    /// A helper that stops takes its connections with it, and its replacement starts with none:
-    /// what the stopped helper reported no longer describes anything.
+    /// A helper sends its details only after a first command, so a helper that becomes ready is
+    /// asked for its profiles. A helper that stops takes its connections with it, and its
+    /// replacement starts with none: what the stopped helper reported no longer describes anything.
     /// </summary>
-    void ClearStatesWhenStopped()
+    void OnHelperStatus()
     {
-        if (host.Status == HelperHostStatus.Ready) return;
+        if (host.Status == HelperHostStatus.Ready)
+        {
+            _ = ReloadProfilesAsync(quiet: true);
+            return;
+        }
+        bool hadDetails;
+        lock (details)
+        {
+            hadDetails = details.Count > 0;
+            details.Clear();
+        }
+        if (hadDetails) DetailsChanged?.Invoke();
         lock (states)
         {
             if (states.Count == 0) return;
@@ -56,8 +69,15 @@ public sealed class ShellController
     public event Action? DetailsChanged;
 
     /// <summary>Whether macOS would show the control in this state; <paramref name="context"/> adds the shell's own state.</summary>
-    public bool IsOffered(string id, IReadOnlyDictionary<string, string>? context = null) =>
-        Control(id) is { } control && Evaluate(control.OfferedWhen, Merged(context));
+    public bool IsOffered(string id, IReadOnlyDictionary<string, string>? context = null)
+    {
+        if (Control(id) is not { } control) return false;
+        // Until the helper has sent its details, only the controls the shell serves itself are offered.
+        var needsHelper = control.Command.Length > 0 || control.Commands.Count > 0 || control.CancelWorkflow.Length > 0;
+        bool noDetails;
+        lock (details) noDetails = details.Count == 0;
+        return !(needsHelper && noDetails) && Evaluate(control.OfferedWhen, Merged(context));
+    }
 
     /// <summary>Whether macOS would let the user operate the control in this state.</summary>
     public bool IsEnabled(string id, IReadOnlyDictionary<string, string>? context = null) =>
@@ -161,10 +181,10 @@ public sealed class ShellController
     /// <summary>The ~/.aws/config profiles that can be imported.</summary>
     public event Action<IReadOnlyList<JsonObject>>? ImportableProfilesChanged;
 
-    /// <summary>Reloads the profiles from the helper.</summary>
-    public async Task ReloadProfilesAsync(string? select = null)
+    /// <summary>Reloads the profiles from the helper; the reload a ready helper gets is quiet, as the tray shows a helper that stops again.</summary>
+    public async Task ReloadProfilesAsync(string? select = null, bool quiet = false)
     {
-        var result = await RunAsync(new("Profiles", "listProfiles", Empty));
+        var result = quiet ? await host.SendAsync("listProfiles", Empty, CancellationToken.None) : await RunAsync(new("Profiles", "listProfiles", Empty));
         if (result.Outcome != HelperOutcome.Completed) return;
         profiles = Parse(result.Value.GetValueOrDefault("profiles")) as JsonArray ?? [];
         files = Parse(result.Value.GetValueOrDefault("files")) as JsonArray ?? [];

@@ -18,13 +18,24 @@ constexpr const char *SignInRequiredBody =
 ShellController::ShellController(HelperHost &host, ShellPlatform &platform, QObject *parent)
     : QObject(parent), host_(host), platform_(platform) {
     connect(&host_, &HelperHost::eventReceived, this, &ShellController::handle);
-    // A helper that stops takes its connections with it, and its replacement starts with none: what
-    // the stopped helper reported no longer describes anything.
+    // A helper sends its details only after a first command, so a helper that becomes ready is
+    // asked for its profiles. A helper that stops takes its connections with it, and its
+    // replacement starts with none: what the stopped helper reported no longer describes anything.
     connect(&host_, &HelperHost::statusChanged, this, [this] {
-        if (host_.status() == HelperHostStatus::Ready || states_.isEmpty()) return;
+        if (host_.status() == HelperHostStatus::Ready) {
+            reloadProfiles({}, true);
+            return;
+        }
+        if (!details_.isEmpty()) {
+            details_.clear();
+            emit detailsChanged();
+        }
+        if (states_.isEmpty()) return;
         states_.clear();
         emit stateChanged();
     });
+    if (host_.status() == HelperHostStatus::Ready)
+        QMetaObject::invokeMethod(this, [this] { reloadProfiles({}, true); }, Qt::QueuedConnection);
 }
 
 const QList<ShellAction> &ShellController::menuActions() {
@@ -61,8 +72,10 @@ HelperCommand *ShellController::run(const ShellAction &action) {
     return command;
 }
 
-void ShellController::reloadProfiles(const QString &select) {
-    HelperCommand *command = run({QStringLiteral("Profiles"), QStringLiteral("listProfiles"), {}});
+void ShellController::reloadProfiles(const QString &select, bool quiet) {
+    // The reload a ready helper gets is quiet: a helper that stops again is shown by the tray.
+    HelperCommand *command = quiet ? host_.send(QStringLiteral("listProfiles"), {})
+                                   : run({QStringLiteral("Profiles"), QStringLiteral("listProfiles"), {}});
     auto loaded = [this, command, select] {
         if (command->result().outcome != HelperOutcome::Completed) return;
         const QVariantMap value = command->result().value;
@@ -242,7 +255,11 @@ QVariantMap ShellController::merged(const QVariantMap &context) const {
 
 bool ShellController::isOffered(const QString &id, const QVariantMap &context) const {
     const ShellControl *c = control(id);
-    return c && evaluate(c->offeredWhen, merged(context));
+    if (!c) return false;
+    // Until the helper has sent its details, only the controls the shell serves itself are offered.
+    const bool needsHelper = !c->command.isEmpty() || !c->commands.isEmpty() || !c->cancelWorkflow.isEmpty();
+    if (needsHelper && details_.isEmpty()) return false;
+    return evaluate(c->offeredWhen, merged(context));
 }
 
 bool ShellController::isEnabled(const QString &id, const QVariantMap &context) const {

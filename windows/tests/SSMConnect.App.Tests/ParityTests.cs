@@ -188,6 +188,7 @@ public sealed class ParityTests
                 { ["profiles"] = """[{"name":"dev"}]""" } },
             _ => Done(name),
         });
+        await rig.DetailsAsync(States()[0].Values);
         await rig.Controller.ReloadProfilesAsync();
         var menu = TrayMenu.Build(rig.Controller, () => { }, () => { }, () => { });
         var settings = new SettingsWindow(rig.Controller, rig.Platform);

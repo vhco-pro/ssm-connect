@@ -208,6 +208,32 @@ private slots:
         QVERIFY(!LinuxShellPlatform::opens("javascript:alert(1)"));
     }
 
+    // The helper sends its details only after a first command, so the shell asks for its profiles
+    // whenever a helper becomes ready; until the details arrive, only the controls the shell serves
+    // itself are offered, and a replacement helper starts from no details.
+    void aReadyHelperIsAskedForItsDetailsAndNothingNeedingItIsOfferedBefore() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) { helper.onCommand = [](const QString &name) { return respond(name); }; };
+        HelperHost host(spawner, Build, limits(), clock);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        const QString web = QStringLiteral("menucontent-button-webforwards-state-on-webforwards-state-starting-tur");
+        QVERIFY(!controller.isOffered(web));
+        QVERIFY(!controller.isOffered("menucontent-button-machine-actiontitle"));
+        QVERIFY(controller.isOffered("menu-settings") && controller.isOffered("menucontent-button-quit"));
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        QTRY_VERIFY(spawner.started[0]->commands().contains("listProfiles"));
+        emitEvent(*spawner.started[0], "details", "details", {{"profiles", "1"}, {"desktop.state", "disconnected"}, {"web.enabled", "false"}, {"web.state", "Off"}});
+        QTRY_VERIFY(controller.isOffered("menucontent-button-machine-actiontitle"));
+        QVERIFY(!controller.isOffered(web));
+        spawner.started[0]->exit();
+        QTRY_VERIFY(spawner.started.size() == 2 && host.status() == HelperHostStatus::Ready);
+        QVERIFY(!controller.isOffered("menucontent-button-machine-actiontitle"));
+        QTRY_VERIFY(spawner.started[1]->commands().contains("listProfiles"));
+    }
+
     void aStoppedHelperClearsTheWorkflowStatesTheShellShows() {
         ManualClock clock;
         FakeSpawner spawner;
