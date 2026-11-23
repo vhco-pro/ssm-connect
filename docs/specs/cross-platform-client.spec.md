@@ -1100,6 +1100,7 @@ None.
 | 2026-11-21 | R-25 | spec | `e74903d` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-21 | R-25 | spec | `e74903d` | n/a | n/a | accepted by owner |
 | 2026-11-22 | R-26 | spec | `a44b14c` | gpt-6.1-sol | procedural | No blocking findings; four should-fix |
+| 2026-11-23 | R-27 | spec | `0a7fe89` | gpt-6.1-sol | procedural | No blocking findings; one should-fix and one nit |
 
 ### R-1
 
@@ -1662,6 +1663,22 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:103-107; Design / DCV connection file lifetime:660-669; Acceptance Criteria / AC-30; Test Plan / AC-30
 EVIDENCE: The new lifetime section says quit cleanup and the next-connect sweep already remove waiting or orphaned DCV files. ShellRequests.swift:60-77 implements delayed deletion and a sweep method, but registers no quit cleanup. HelperExit.end at HelperRuntime.swift:422-424 shuts down commands and runs registered handlers; ConnectionStateMachine.swift:131-140 registers only tunnel termination. The sole production call to dcv.sweepOrphanedFiles is ConnectionStateMachine.onLaunch at lines 170-172, and neither the helper entry point nor HelperRuntime invokes that method. The helper's connect path at HelperRuntime.swift:286-300 does not sweep. These are missing cleanup paths, not behavior preserved by changing the delay.
 PROPOSAL: Describe quit cleanup and the next-connect sweep as implementation work required by this revision. Require tests through the production helper shutdown and connect entry points, establishing cleanup before the 120-second timer expires and after a simulated crash.
+
+### R-27
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:100-104; Design / Windows and Linux parity with the macOS interface:610-613,650-669; Acceptance Criteria / AC-29; Test Plan / AC-29
+EVIDENCE: The cancellation policy added after R-26 F-03 assumes a running helper command always exists. Replacement review outlives its command: RemoteDevelopmentStateMachine.swift:378-382 sets pendingReplacement and throws, while HelperRuntime.swift:325-334 finishes openEditor and HelperSession.swift:140-142 removes the command. Automatic editor recovery also starts independently through RemoteDevelopmentStateMachine.swift:412-439 after the opening command finishes. A cancel frame only cancels running[id] at HelperSession.swift:78-79, so it cannot clear these states. The new proof exercises cancel controls only with a command running and can pass while these controls do nothing during replacement review or automatic recovery.
+PROPOSAL: Define how cancellation reaches the shared workflow when no admitted command remains, raising an owner question if that requires changing the selected policy. Add proofs for replacement review and automatic recovery after the initiating command has terminated, checking the resulting workflow state and preservation of unrelated workflows.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Design / DCV connection file lifetime:693-698
+EVIDENCE: The cleanup explanation addressing R-26 F-04 says the helper's quit work runs only registered tunnel termination. RemoteDevelopmentStateMachine.swift:83 and WebForwardsStateMachine.swift:65 also register quit handlers, and HelperExit.end runs those handlers at HelperRuntime.swift:422-424. The narrower claim that DCV file cleanup is missing remains correct.
+PROPOSAL: Say that existing quit handlers clean up desktop, editor and forwarding resources but do not remove waiting DCV connection files.
 
 ## Sources
 
