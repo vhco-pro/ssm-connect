@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Revision accepted 2026-11-23 (R-30): full macOS parity in the Windows and Linux shells (AC-29) and a 120-second DCV connection file window on Windows and Linux (AC-30). Next: tasks for the new criteria, then implementation on feat/shared-swift-core."
+status: in-progress
+status_description: "Implementing the accepted parity revision on feat/shared-swift-core: T50 to T52 (DCV window, AC-30) first, then T53 to T62 (macOS parity in the Windows and Linux shells, AC-29); T1, T2, T30 and T31 wait for the Mac baseline."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
