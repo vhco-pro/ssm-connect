@@ -2,7 +2,7 @@ version: 2
 updates:
   # Swift packages — the single source of truth is SSMConnectKit/Package.swift
   # (the app's local package; ADR-P1). Dependabot reads it + the committed
-  # Package.resolved and opens version + security PRs for aws-sdk-swift et al.
+  # Package.resolved and opens version + security PRs for Yams and swift-crypto.
   - package-ecosystem: swift
     directory: /SSMConnectKit
     schedule:

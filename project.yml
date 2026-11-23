@@ -11,8 +11,8 @@ options:
 
 packages:
   # The app's code + its external dependencies live in this LOCAL Swift package,
-  # the single source of truth for deps (ADR-P1). aws-sdk-swift is declared inside
-  # SSMConnectKit/Package.swift — that's the manifest Dependabot reads and bumps.
+  # the single source of truth for deps (ADR-P1). Its dependencies (Yams, swift-crypto)
+  # are declared in SSMConnectKit/Package.swift, the manifest Dependabot reads and bumps.
   SSMConnectKit:
     path: SSMConnectKit
 

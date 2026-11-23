@@ -135,8 +135,7 @@ jobs:
         shell: bash
         run: |
           # On Windows and Linux the manifest holds only the shared layers and the helper; on
-          # macOS it also builds the app's targets, so use the build system that handles the
-          # aws-sdk-swift build-tool plugin.
+          # macOS it also builds the app's targets.
           if [ "$RUNNER_OS" = "Windows" ]; then
             swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests|SSMConnectWindowsTests' -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
           elif [ "$RUNNER_OS" = "macOS" ]; then
