@@ -5,6 +5,7 @@
 // platform port. Runs with the offscreen platform against an in-process helper.
 
 #include "fakes.h"
+#include "linux_shell_platform.h"
 #include "shell_controller.h"
 #include "startup_registration.h"
 #include "tray.h"
@@ -192,6 +193,19 @@ private slots:
                                               "start dcvviewer /run/user/1000/ws.dcv", "start chrome --user-data-dir=/s/p --proxy-pac-url=data:x",
                                               "clipboard password", "notify Connected", "reveal /home/m/.config/ssm-connect/proxy.pac"}));
         QTRY_COMPARE(controller.states().value("desktop").toString(), QStringLiteral("Connected"));
+    }
+
+    // The sign-in page and documentation are https; Open <forward> opens the forward's local page
+    // over http on the loopback address. Nothing else is opened.
+    void theShellOpensHttpsAndLocalForwardPagesOnly() {
+        QVERIFY(LinuxShellPlatform::opens("https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD"));
+        QVERIFY(LinuxShellPlatform::opens("http://127.0.0.1:4466/"));
+        QVERIFY(LinuxShellPlatform::opens("http://localhost:8080/dashboard"));
+        QVERIFY(LinuxShellPlatform::opens("http://[::1]:4466/"));
+        QVERIFY(!LinuxShellPlatform::opens("http://example.com/"));
+        QVERIFY(!LinuxShellPlatform::opens("http://127.0.0.1.example.com/"));
+        QVERIFY(!LinuxShellPlatform::opens("file:///etc/passwd"));
+        QVERIFY(!LinuxShellPlatform::opens("javascript:alert(1)"));
     }
 
     void aStoppedHelperClearsTheWorkflowStatesTheShellShows() {

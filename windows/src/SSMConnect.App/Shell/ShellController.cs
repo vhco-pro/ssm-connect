@@ -530,10 +530,18 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
             .Select(root => Path.Combine(root, "NICE", "DCV", "Client", "bin", "dcvviewer.exe"))
             .FirstOrDefault(File.Exists);
 
+    /// <summary>
+    /// Whether the shell opens this URL: the sign-in page and documentation (https) and a local
+    /// forward's page (http to a loopback address).
+    /// </summary>
+    internal static bool Opens(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
+
     public void OpenUrl(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return;
-        Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+        if (!Opens(url)) return;
+        Process.Start(new ProcessStartInfo(new Uri(url).AbsoluteUri) { UseShellExecute = true })?.Dispose();
     }
 
     public void Start(string path, IReadOnlyList<string> arguments) => UserApplications.Start(path, arguments).Dispose();

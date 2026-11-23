@@ -290,6 +290,24 @@ public sealed class DcvViewerLocationTests
     }
 }
 
+/// <summary>
+/// The sign-in page and documentation are https; Open &lt;forward&gt; opens the forward's local page over
+/// http on the loopback address. Nothing else is opened.
+/// </summary>
+public sealed class OpenUrlTests
+{
+    [Theory]
+    [InlineData("https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD", true)]
+    [InlineData("http://127.0.0.1:4466/", true)]
+    [InlineData("http://localhost:8080/dashboard", true)]
+    [InlineData("http://[::1]:4466/", true)]
+    [InlineData("http://example.com/", false)]
+    [InlineData("http://127.0.0.1.example.com/", false)]
+    [InlineData("file:///C:/Windows/win.ini", false)]
+    [InlineData("javascript:alert(1)", false)]
+    public void TheShellOpensHttpsAndLocalForwardPagesOnly(string url, bool opens) => Assert.Equal(opens, WindowsShellPlatform.Opens(url));
+}
+
 /// <summary>A second launch brings the open settings window forward instead of opening another.</summary>
 public sealed class SingleWindowTests
 {

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
 #include "linux_shell_platform.h"
 
+#include <QRegularExpression>
+
 #include "user_applications.h"
 
 #include <QClipboard>
@@ -27,9 +29,18 @@ QString LinuxShellPlatform::dcvViewerPath() const {
     return QStandardPaths::findExecutable(QStringLiteral("dcvviewer"));
 }
 
+bool LinuxShellPlatform::opens(const QString &url) {
+    const QUrl parsed(url);
+    if (parsed.scheme() == QStringLiteral("https")) return true;
+    if (parsed.scheme() != QStringLiteral("http")) return false;
+    // Loopback only: localhost, 127.0.0.0/8 and ::1 (QHostAddress would need Qt Network).
+    static const QRegularExpression ipv4Loopback(QStringLiteral("^127(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$"));
+    const QString host = parsed.host();
+    return host == QStringLiteral("localhost") || host == QStringLiteral("::1") || ipv4Loopback.match(host).hasMatch();
+}
+
 void LinuxShellPlatform::openUrl(const QString &url) {
-    // Only the sign-in page and documentation: https URLs.
-    if (QUrl(url).scheme() != QStringLiteral("https")) return;
+    if (!opens(url)) return;
     UserApplications::launch(QStringLiteral("xdg-open"), {url});
 }
 

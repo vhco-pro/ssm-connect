@@ -17,6 +17,9 @@ public:
 
     QString dcvViewerPath() const override;
     void openUrl(const QString &url) override;
+    /// Whether the shell opens this URL: the sign-in page and documentation (https) and a local
+    /// forward's page (http to a loopback address).
+    static bool opens(const QString &url);
     void start(const QString &path, const QStringList &arguments) override;
     void setClipboard(const QString &text) override;
     void notify(const QString &title, const QString &body) override;
