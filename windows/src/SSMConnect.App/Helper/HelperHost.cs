@@ -292,7 +292,13 @@ public sealed class HelperHost
                 Complete((string?)frame["id"], result);
                 break;
             case "event":
-                EventReceived?.Invoke(frame);
+                // A subscriber that fails (a shell request Windows refused) must not end the helper's
+                // connection: each one runs on its own, and the next frame is still read.
+                foreach (var subscriber in EventReceived?.GetInvocationList() ?? [])
+                {
+                    try { ((Action<JsonObject>)subscriber)(frame); }
+                    catch (Exception error) { System.Diagnostics.Debug.WriteLine($"SSM Connect: a helper event handler failed: {error.Message}"); }
+                }
                 break;
         }
     }

@@ -579,12 +579,18 @@ public sealed class WindowsShellPlatform(Action<string, string> notify, Action<s
 
     public void Start(string path, IReadOnlyList<string> arguments) => UserApplications.Start(path, arguments).Dispose();
 
+    /// <summary>
+    /// Sets the clipboard on the UI thread: the helper's requests arrive on the host's reader thread,
+    /// and the WPF clipboard works only on the UI thread.
+    /// </summary>
     public void SetClipboard(string text)
     {
-        System.Windows.Clipboard.SetText(text);
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+        dispatcher.Invoke(() => System.Windows.Clipboard.SetText(text));
         var seconds = clipboardClearSeconds();
         if (seconds <= 0) return;
-        _ = Task.Delay(TimeSpan.FromSeconds(seconds)).ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        _ = Task.Delay(TimeSpan.FromSeconds(seconds)).ContinueWith(_ => dispatcher.Invoke(() =>
         {
             if (System.Windows.Clipboard.ContainsText() && System.Windows.Clipboard.GetText() == text) System.Windows.Clipboard.Clear();
         }), TaskScheduler.Default);

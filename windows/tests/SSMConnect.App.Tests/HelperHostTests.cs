@@ -163,6 +163,33 @@ public sealed class HelperHostTests
         Assert.Equal(Build, (string)hello["build"]!);
     }
 
+    /// <summary>
+    /// A shell request that fails in the shell (such as the clipboard refusing a background thread)
+    /// never ends the helper: the next events and commands still go through.
+    /// </summary>
+    [Fact]
+    public async Task AnEventHandlerThatThrowsLeavesTheHelperRunning()
+    {
+        var time = new FakeTimeProvider();
+        var spawner = new FakeSpawner(() => new FakeHelper { OnCommand = _ => new JsonObject { ["type"] = "result", ["outcome"] = "completed", ["value"] = new JsonObject() } });
+        var host = Host(spawner, time);
+        await host.StartAsync();
+        var received = 0;
+        host.EventReceived += frame =>
+        {
+            if ((string?)frame["name"] == "setClipboard") throw new InvalidOperationException("the clipboard needs the UI thread");
+            Interlocked.Increment(ref received);
+        };
+        spawner.Started[0].Emit("shell", "setClipboard", new() { ["text"] = "x" });
+        spawner.Started[0].Emit("shell", "notify", new() { ["title"] = "t" });
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (Volatile.Read(ref received) == 0 && DateTime.UtcNow < deadline) await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.Equal(1, received);
+        var result = await host.SendAsync("connect", new Dictionary<string, string>(), TestContext.Current.CancellationToken);
+        Assert.Equal(HelperOutcome.Completed, result.Outcome);
+        Assert.Equal(HelperHostStatus.Ready, host.Status);
+    }
+
     [Fact]
     public async Task ShutdownAsksTheHelperToEndThenEmptiesItsJobAndStartsNoReplacement()
     {
