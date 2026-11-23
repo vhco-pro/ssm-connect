@@ -1128,6 +1128,7 @@ None.
 | 2026-11-23 | R-27 | spec | `0a7fe89` | gpt-6.1-sol | procedural | No blocking findings; one should-fix and one nit |
 | 2026-11-23 | R-28 | spec | `2cc723c` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-23 | R-29 | spec | `3bf2897` | gpt-6.1-sol | procedural | No blocking findings; one should-fix (a first pass at this commit could not read the conventions and returned no usable records) |
+| 2026-11-23 | R-30 | spec | `3c84f9a` | gpt-6.1-sol | procedural | NO FINDINGS |
 
 ### R-1
 
@@ -1731,6 +1732,10 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:105-109; Design / DCV connection file lifetime:709-724; Acceptance Criteria / AC-30; Test Plan / AC-30
 EVIDENCE: The modification-time rule added to address R-28 F-02 does not reliably preserve a live file's 120-second window. ShellRequests.swift:64-69 writes the file before starting its duration-based deletion task. If the system clock advances five minutes ten seconds later, a reconnect's modification-time sweep sees a 310-second-old file even though 110 seconds remain in its launch window. It can delete the file before a cold Viewer reads it. The proposed back-to-back connect proof keeps the clock unchanged and would pass this implementation.
 PROPOSAL: Exclude files whose launch windows remain active in the current helper from the modification-time orphan sweep. Add a controlled-clock reconnect check showing that a forward clock correction cannot delete those files early.
+
+### R-30
+
+NO FINDINGS
 
 ## Sources
 
