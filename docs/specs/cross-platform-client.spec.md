@@ -1183,6 +1183,7 @@ None.
 | 2026-11-23 | R-30 | spec | `3c84f9a` | gpt-6.1-sol | procedural | NO FINDINGS |
 | 2026-11-23 | R-30 | spec | `3c84f9a` | n/a | n/a | accepted by owner |
 | 2026-11-23 | R-31 | spec | `dd210d5` | gpt-6.1-sol | procedural | One blocking (GetSecretValue exemption missing from the AC-28 proof), three should-fix and two nits |
+| 2026-11-23 | R-32 | spec | `a911131` | gpt-6.1-sol | procedural | One blocking (single-user desktop proof needs a workstation) and three should-fix |
 
 ### R-1
 
@@ -1835,6 +1836,36 @@ WHERE: Design / Migration, performance and release boundaries:759-762
 EVIDENCE: The revised paragraph says workloads for macOS, Windows and Linux are committed. The scripts/perf/workloads directory contains only macos.env and selftest.env. The generic harness supports workload hooks, but Windows and Linux application workloads are absent.
 PROPOSAL: State that the generic harness and macOS workload are committed, with Windows and Linux workloads remaining for the follow-up feature.
 
+
+### R-32
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Context / Owner summary:123-125; Design / AWS client:434; Acceptance Criteria / AC-12; Test Plan / AC-12:878 and AC-28:893; Tasks / T27-T29 and their remaining-work annotations:1039-1101
+EVIDENCE: The revision following R-31 exempts GetSecretValue from native acceptance because no single-user workstation resolves, but AC-12's proof still requires native connections in both modes with authenticated Viewer access. The single-user path calls fetchSecretAndLaunchDCV at ConnectionStateMachine.swift:380-386, and that function retrieves the configured secret before launching Viewer at lines 481-497. Exempting the standalone AWS request does not make this remaining native proof executable with the declared targets.
+PROPOSAL: Reconcile the single-user desktop proof with the exemption. If single-user native acceptance is also deferred, obtain that owner decision and name its replacement tests; otherwise identify an available, authorized target and retain this gate explicitly in the remaining-work lists.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:60-62,98-105,128-135; Scope / Included:253-256; Design / Behavior, identity and local state:531-543; Design / Windows and Linux parity with the macOS interface:615-618,642-659; Acceptance Criteria / AC-29; Test Plan / AC-16 and AC-29
+EVIDENCE: The revision following R-31 explicitly defers both Zen modes and their setup and restore workflows on Windows and Linux. However, the summary still says browser support matches macOS on every platform, and Scope, the parity design and AC-29 still require every macOS action to run its shared workflow with macOS's availability rules. Keeping a control that refuses an intentionally deferred integration leaves these passages open to different interpretations of complete parity.
+PROPOSAL: Carry the browser exception into the summary, Scope, parity design and AC-29. State consistently which controls remain visible but refuse the deferred capability, while preserving the complete macOS browser matrix.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design / Behavior, identity and local state:534-543; Acceptance Criteria / AC-25; Test Plan / AC-16:882 and AC-25:890; Tasks / T54, T57 and unchecked tail T63-T66
+EVIDENCE: The new browser deferral requires the deferred actions to refuse with a message naming the browser capability. Restore Browser Settings currently succeeds: HelperRuntime.swift:537-540 calls ShellBrowserOpener.restore, whose body is empty at ShellRequests.swift:163, then returns success. ParityCommandTests.swift checks command presence but contains no restore-refusal test. T57 is checked complete, and the unchecked implementation tasks address only the MSI defect, leaving this newly required behavior unassigned.
+PROPOSAL: Add an unfinished task and a failing helper test for Restore Browser Settings on an unsupported Zen profile. Require an actionable browser-capability refusal with no configuration change, then implement that behavior.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:131-135; Acceptance Criteria / AC-29; Test Plan / AC-29:894; Tasks / T58-T59, T62 and T66
+EVIDENCE: The revision following R-31 removes native Linux text-entry and picker checks and relies on the parity and helper tests instead. Those tests do not establish the omitted interaction: linux/tests/parity_test.cpp:178-196 checks that QML contains each control ID, and lines 200-225 call the controller directly and check command names. The editor check in shell_test.cpp:180-224 loads the window and checks accessible names. None edits a text field or activates a picker and verifies its saved value. Removing an Editor.qml onEditingFinished or onActivated handler would preserve these checks while making the setting unusable.
+PROPOSAL: Add Qt interaction tests for the fields and pickers whose native coverage is waived. Exercise the actual QML controls and verify their values reach the saveProfile payload and survive reload, with the missing-handler cases observed failing first.
 ## Sources
 
 - Owner direction on 2026-11-12: preserve working Swift, share its core across
