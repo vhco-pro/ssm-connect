@@ -102,10 +102,13 @@ struct HelperCommandTests {
         let auth: MockAuthProvider
         let ec2: MockEC2Service
         let root: URL
+        /// The runtime's own quit work, so a test can end this helper without running other fixtures' work.
+        let quit: AppQuitHandler
     }
 
     static func fixture(auth: MockAuthProvider = MockAuthProvider(), browserSupported: Bool = true,
-                        files: ProfileFileSnapshot? = nil, dcvCleanupDelay: Duration = .seconds(5),
+                        files: ProfileFileSnapshot? = nil, dcvCleanupDelay: Duration = ShellDCVLauncher.viewerReadWindow,
+                        dcvNow: @escaping @Sendable () -> Date = { Date() },
                         isRejectedAuthorization: @escaping @Sendable (any Error) -> Bool = { _ in false },
                         profileFiles: (any ProfileFileAccessing)? = nil) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("helper-" + UUID().uuidString, isDirectory: true)
@@ -131,7 +134,8 @@ struct HelperCommandTests {
             platform: platform, auth: auth, ec2: ec2, ssm: MockSSMService(), secrets: MockSecretsService(),
             instanceConnect: Connect(), tunnel: MockTunnelProvider(), sshTunnel: SSH(), keyGenerator: Keys(),
             dcv: ShellDCVLauncher(requests: requests, directory: root, viewerInstalled: { true },
-                                  writePrivate: { data, url in try data.write(to: url) }, cleanupDelay: dcvCleanupDelay),
+                                  writePrivate: { data, url in try data.write(to: url) }, cleanupDelay: dcvCleanupDelay,
+                                  now: dcvNow),
             readiness: Ready(), tunnelListener: Listening(), instanceIds: InstanceIds(), keyValues: InMemoryKeyValueStore(),
             profileFiles: profileFiles ?? Files(snapshot: files), pasteboard: Board(), notifier: SilentNotificationService(),
             writePAC: { _, _ in root.appendingPathComponent("proxy.pac") },
@@ -140,12 +144,13 @@ struct HelperCommandTests {
                           editorPreflight: { _ in }, owner: Owner(), sshAvailable: { true }),
             browserExecutable: { _ in browserSupported ? root.appendingPathComponent("chrome").path : nil },
             browserProfiles: root.appendingPathComponent("Browsers", isDirectory: true), requests: requests)
-        let runtime = HelperRuntime(services: services, pollInterval: .milliseconds(5))
+        let quit = AppQuitHandler()
+        let runtime = HelperRuntime(services: services, pollInterval: .milliseconds(5), quit: quit)
         let outbox = Outbox()
         let session = HelperSession(build: "b", commands: runtime.commands(), send: { outbox.send($0) })
         await session.receive(.hello(build: "b", protocolVersion: 1))
         requests.attach(session.events)
-        return Fixture(runtime: runtime, session: session, outbox: outbox, auth: auth, ec2: ec2, root: root)
+        return Fixture(runtime: runtime, session: session, outbox: outbox, auth: auth, ec2: ec2, root: root, quit: quit)
     }
 
     static func run(_ fixture: Fixture, _ id: String, _ name: String, _ arguments: [String: String] = [:]) async {
@@ -259,6 +264,102 @@ struct HelperCommandTests {
         #expect(!FileManager.default.fileExists(atPath: file))
         await Self.run(f, "d", "disconnect")
     }
+
+    // MARK: DCV connection file window (AC-30)
+
+    static func dcvFiles(_ f: Fixture) -> Set<String> {
+        Set(((try? FileManager.default.contentsOfDirectory(atPath: f.root.path)) ?? []).filter {
+            $0.hasPrefix(DCVConnectionFile.tempFilePrefix) && $0.hasSuffix("." + DCVConnectionFile.fileExtension)
+        })
+    }
+
+    static func leftover(_ f: Fixture, age: TimeInterval, now: Date = Date()) throws -> String {
+        let name = DCVConnectionFile.tempFilePrefix + UUID().uuidString + "." + DCVConnectionFile.fileExtension
+        let url = f.root.appendingPathComponent(name)
+        try Data("leftover".utf8).write(to: url)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-age)], ofItemAtPath: url.path)
+        return name
+    }
+
+    @Test("On Windows and Linux the Viewer gets 120 seconds to read the connection file, and Connect does not wait for them")
+    func dcvWindowIsLong() async throws {
+        #expect(ShellDCVLauncher.viewerReadWindow == .seconds(120))
+        let f = try await Self.fixture()
+        try await Self.save(f, Self.configured())
+        let started = ContinuousClock.now
+        await Self.run(f, "c", "connect")
+        #expect(ContinuousClock.now - started < .seconds(10))
+        guard case .completed = f.outbox.result("c") else { Issue.record("connect: \(String(describing: f.outbox.result("c")))"); return }
+        let file = try #require(f.outbox.launches("dcvViewer").first?["file"])
+        #expect(FileManager.default.fileExists(atPath: file))
+        await Self.run(f, "d", "disconnect")
+    }
+
+    @Test("Ending the helper removes a connection file still waiting for its window")
+    func quitRemovesWaitingFile() async throws {
+        let f = try await Self.fixture()
+        try await Self.save(f, Self.configured())
+        await Self.run(f, "c", "connect")
+        let file = try #require(f.outbox.launches("dcvViewer").first?["file"])
+        #expect(FileManager.default.fileExists(atPath: file))
+        await HelperExit.end(f.session, quit: f.quit)
+        #expect(!FileManager.default.fileExists(atPath: file))
+    }
+
+    @Test("A connect removes connection files a killed helper left once their window has passed, and keeps younger ones")
+    func connectSweepsOldLeftovers() async throws {
+        let f = try await Self.fixture()
+        try await Self.save(f, Self.configured(webForwards: false))
+        let old = try Self.leftover(f, age: 200)
+        let young = try Self.leftover(f, age: 10)
+        await Self.run(f, "c", "connect")
+        let files = Self.dcvFiles(f)
+        #expect(!files.contains(old))
+        #expect(files.contains(young))
+        let file = try #require(f.outbox.launches("dcvViewer").first?["file"])
+        #expect(FileManager.default.fileExists(atPath: file))
+        await Self.run(f, "d", "disconnect")
+    }
+
+    @Test("A reconnect keeps the earlier connection file until its own window ends, even after the clock moves forward")
+    func reconnectKeepsLiveFile() async throws {
+        final class Clock: @unchecked Sendable {
+            private let lock = NSLock()
+            private var offset: TimeInterval = 0
+            func advance(_ seconds: TimeInterval) { lock.withLock { offset += seconds } }
+            func now() -> Date { lock.withLock { Date().addingTimeInterval(offset) } }
+        }
+        let clock = Clock()
+        let f = try await Self.fixture(dcvNow: { clock.now() })
+        try await Self.save(f, Self.configured())
+        await Self.run(f, "c1", "connect")
+        let first = try #require(f.outbox.launches("dcvViewer").first?["file"])
+        await Self.run(f, "d1", "disconnect")
+        clock.advance(10)
+        await Self.run(f, "c2", "connect")
+        #expect(FileManager.default.fileExists(atPath: first))
+        await Self.run(f, "d2", "disconnect")
+        clock.advance(300)
+        await Self.run(f, "c3", "connect")
+        #expect(FileManager.default.fileExists(atPath: first))
+        #expect(f.outbox.launches("dcvViewer").count == 3)
+        await Self.run(f, "d3", "disconnect")
+    }
+
+    #if os(Linux) || os(Windows)
+    @Test("The missing-Viewer message names this platform's own install")
+    func missingViewerMessage() {
+        let message = DCVError.viewerNotInstalled.errorDescription ?? ""
+        #expect(!message.contains("/Applications"))
+        #expect(!message.contains("brew"))
+        #if os(Linux)
+        #expect(message.contains(".deb") && message.contains(".rpm"))
+        #else
+        #expect(message.contains("MSI"))
+        #endif
+        #expect(message.contains("https://download.amazondcv.com"))
+    }
+    #endif
 
     @Test("Ending the helper cancels its commands and runs the workflows' quit work")
     func endRunsQuitWork() async throws {

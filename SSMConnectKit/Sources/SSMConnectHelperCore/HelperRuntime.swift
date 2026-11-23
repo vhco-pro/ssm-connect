@@ -104,7 +104,8 @@ package struct HelperServices {
     private let browser: ShellBrowserOpener
     private let pollInterval: Duration
 
-    package init(services: HelperServices, pollInterval: Duration = .milliseconds(50)) {
+    /// `quit` is where the runtime registers its own quit work; the helper's exit runs it.
+    package init(services: HelperServices, pollInterval: Duration = .milliseconds(50), quit: AppQuitHandler = .shared) {
         self.services = services
         self.pollInterval = pollInterval
         profiles = ProfileStore(store: services.keyValues, files: services.profileFiles)

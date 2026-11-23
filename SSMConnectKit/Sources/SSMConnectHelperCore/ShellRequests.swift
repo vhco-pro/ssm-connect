@@ -40,19 +40,25 @@ package final class ShellRequests: @unchecked Sendable {
 /// viewer has had time to read it, as on macOS. A crash within that window is covered by the sweep
 /// at the next connect.
 package struct ShellDCVLauncher: DCVLaunching {
+    /// How long the connection file stays for the Viewer to read.
+    package static let viewerReadWindow: Duration = .seconds(5)
+
     let requests: ShellRequests
     let directory: URL
     let viewerInstalled: @Sendable () -> Bool
     let writePrivate: @Sendable (Data, URL) throws -> Void
     let cleanupDelay: Duration
+    let now: @Sendable () -> Date
 
     package init(requests: ShellRequests, directory: URL, viewerInstalled: @escaping @Sendable () -> Bool,
-                 writePrivate: @escaping @Sendable (Data, URL) throws -> Void, cleanupDelay: Duration = .seconds(5)) {
+                 writePrivate: @escaping @Sendable (Data, URL) throws -> Void,
+                 cleanupDelay: Duration = ShellDCVLauncher.viewerReadWindow, now: @escaping @Sendable () -> Date = { Date() }) {
         self.requests = requests
         self.directory = directory
         self.viewerInstalled = viewerInstalled
         self.writePrivate = writePrivate
         self.cleanupDelay = cleanupDelay
+        self.now = now
     }
 
     package func isViewerInstalled() -> Bool { viewerInstalled() }
@@ -76,6 +82,9 @@ package struct ShellDCVLauncher: DCVLaunching {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
         }
     }
+
+    /// Removes the connection files still waiting for their window to end; the helper's quit work.
+    package func removeWaitingFiles() {}
 }
 
 /// The managed browser through the shell, with the routing macOS uses: the core picks the installed,
