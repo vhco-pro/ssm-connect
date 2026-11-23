@@ -145,7 +145,10 @@ package struct HelperServices {
                   _ run: @escaping @Sendable @MainActor ([String: String], EventSink) async throws -> [String: String]) -> CommandSpec {
             CommandSpec(workflow: workflow,
                         admit: { arguments in try await admit(arguments) },
-                        run: { arguments, events in try await run(arguments, events) })
+                        run: { arguments, events in
+                            await self.startDetails(events)
+                            return try await run(arguments, events)
+                        })
         }
         return [
             "listProfiles": spec("profiles") { _, _ in try self.listProfiles() },
@@ -164,6 +167,36 @@ package struct HelperServices {
             "detachProfile": spec("profiles") { arguments, _ in try self.detachProfile(arguments) },
             "saveSettings": spec("profiles") { arguments, _ in try self.saveSettings(arguments) },
             "signIn": spec("authorization", admit: { _ in try self.requireConfigured() }) { _, _ in try await self.signIn() },
+            "retryAuthorization": spec("authorization", admit: { _ in try self.requireConfigured() }) { _, _ in
+                self.authorization.retry()
+                return ["status": self.authorization.status.eventName]
+            },
+            "copyPassword": spec("desktop", admit: { _ in try self.requireConnected() }) { _, _ in
+                self.connection.copyPassword()
+                return [:]
+            },
+            "reconnect": spec("desktop", admit: { _ in try self.requireConnected() }) { _, events in try await self.reconnect(events) },
+            "reconnectWorkspace": spec("editor", admit: { _ in try self.requireEditor() }) { _, events in
+                try await self.editorWork(events) { self.editor.reconnectExistingWorkspace() }
+            },
+            "renewEditorAccess": spec("editor") { _, events in try await self.editorWork(events) { self.editor.renewAccess() } },
+            "approveReplacement": spec("editor") { arguments, events in try await self.approveReplacement(arguments, events) },
+            "cancelEditorRecovery": spec("editor") { _, events in
+                self.editor.cancelRecovery()
+                events.emit(workflow: "editor", name: "state", fields: ["state": self.editorState])
+                return ["state": self.editorState]
+            },
+            "stopRemoteAccess": spec("editor") { _, events in
+                self.editor.stop()
+                events.emit(workflow: "editor", name: "state", fields: ["state": self.editorState])
+                return ["state": self.editorState]
+            },
+            "restoreEditorSetup": spec("editor") { _, events in
+                do { try self.editor.restoreSetup() }
+                catch { throw HelperError(code: "restoreFailed", message: error.localizedDescription) }
+                events.emit(workflow: "editor", name: "state", fields: ["state": self.editorState])
+                return ["state": self.editorState]
+            },
             "connect": spec("desktop", admit: { _ in try self.requireConfigured() }) { _, events in try await self.connect(events) },
             "disconnect": spec("desktop") { _, events in try await self.disconnect(events) },
             "stopWorkstation": spec("desktop", admit: { _ in try self.requireConnected() }) { _, events in
@@ -280,6 +313,124 @@ package struct HelperServices {
         let profile = try profiles.importFile(snapshot, attach: arguments["attach"] == "true")
         apply()
         return ["id": profile.id.uuidString]
+    }
+
+    // MARK: Connection and editor actions the macOS menu offers (AC-29)
+
+    private func reconnect(_ events: EventSink) async throws -> [String: String] {
+        connection.reconnect()
+        _ = try await follow("desktop", events, cancel: {
+            self.connection.disconnect()
+            await self.connection.awaitInFlightTask()
+        }) {
+            switch self.connection.state {
+            case .connected: return .done(["state": "connected"])
+            case .error: return .failed(HelperError(code: "connectFailed", message: self.connection.errorMessage ?? "The connection failed."))
+            default: return .running(self.connection.state.rawValue)
+            }
+        }
+        await connection.awaitInFlightTask()
+        return ["state": connection.state.rawValue]
+    }
+
+    /// The editor workflow's state for the shells: what macOS's menu shows for it.
+    var editorState: String {
+        if editor.isRenewingLease { return "renewing" }
+        if editor.isRecovering { return "recovering" }
+        if editor.isOpening { return "opening" }
+        if editor.pendingReplacement != nil { return "replacementPending" }
+        return editor.isActive ? "active" : "idle"
+    }
+
+    /// Starts editor work and follows it until the editor is no longer opening, recovering or
+    /// renewing; cancelling it cancels the recovery, as Cancel Recovery does.
+    private func editorWork(_ events: EventSink, _ start: () -> Void) async throws -> [String: String] {
+        start()
+        return try await follow("editor", events, cancel: { self.editor.cancelRecovery() }) {
+            if let message = self.editor.errorMessage, !self.editor.isOpening, !self.editor.isRecovering, !self.editor.isRenewingLease {
+                return .failed(HelperError(code: "editorFailed", message: message))
+            }
+            let state = self.editorState
+            return ["opening", "recovering", "renewing"].contains(state) ? .running(state) : .done(["state": state])
+        }
+    }
+
+    /// Review Replacement Workstation: approves the replacement waiting for review (the one the
+    /// shell showed, when it names one).
+    private func approveReplacement(_ arguments: [String: String], _ events: EventSink) async throws -> [String: String] {
+        guard let pending = editor.pendingReplacement else {
+            throw HelperError(code: "noReplacement", message: "No replacement workstation is waiting for review.")
+        }
+        if let id = arguments["id"], id != pending.id.uuidString {
+            throw HelperError(code: "replacementChanged", message: "The replacement waiting for review changed. Review it again.")
+        }
+        return try await editorWork(events) { self.editor.approveReplacement(pending.id) }
+    }
+
+    /// Everything the shells show and use to offer and enable controls, as macOS's menu reads it
+    /// from the workflows: one flat map, sent as a `details` event whenever it changes.
+    package func details() -> [String: String] {
+        func json<T: Encodable>(_ value: T) -> String { (try? JSONEncoder().encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "" }
+        let replacement = editor.pendingReplacement.map {
+            ["id": $0.id.uuidString, "previous": $0.previousInstanceID, "instance": $0.instanceID, "user": $0.user,
+             "profile": $0.profile.name, "account": $0.profile.accountId, "region": $0.profile.resourceRegion]
+        }
+        let webReplacement = web.pendingReplacement.map {
+            ["id": $0.id.uuidString, "previous": $0.previousInstanceID, "instance": $0.instanceID, "user": $0.user]
+        }
+        let forwards = (web.profile.webForwards?.localForwards ?? []).map {
+            ["name": $0.name, "localPort": String($0.localPort), "openPath": $0.openPath ?? ""]
+        }
+        return [
+            "profiles": String(profiles.profiles.count),
+            "authorization.status": authorization.status.eventName,
+            "authorization.detail": authorization.detailLine ?? "",
+            "desktop.state": connection.state.rawValue,
+            "desktop.maskedPassword": connection.maskedPassword ?? "",
+            "desktop.detailLines": connection.connectionDetailLines.joined(separator: "\n"),
+            "desktop.pendingProfile": connection.pendingProfile?.name ?? "",
+            "editor.enabled": String(editor.profile.remoteDevelopment?.enabled == true),
+            "editor.state": editorState,
+            "editor.setupInstalled": String(editor.setupInstalled),
+            "editor.setupConfigPath": editor.setupConfigPath,
+            "editor.leaseMessage": editor.leaseMessage ?? "",
+            "editor.recoveryMessage": editor.recoveryMessage ?? "",
+            "editor.error": editor.errorMessage ?? "",
+            "editor.replacement": replacement.map(json) ?? "",
+            "web.enabled": String(web.profile.webForwards?.enabled == true),
+            "web.state": web.state.rawValue,
+            "web.socks": String(web.profile.webForwards?.socksPort != nil),
+            "web.browserMode": web.profile.webForwards?.browserMode?.rawValue ?? "",
+            "web.openingBrowser": String(web.isOpeningBrowser),
+            "web.pendingChanges": String(web.pendingProfile != nil),
+            "web.recoveryMessage": web.recoveryMessage ?? "",
+            "web.error": web.errorMessage ?? "",
+            "web.replacement": webReplacement.map(json) ?? "",
+            "web.forwards": json(forwards),
+        ]
+    }
+
+    private var detailsTask: Task<Void, Never>?
+
+    /// The first admitted command, which only comes after the handshake, starts the details stream.
+    private func startDetails(_ events: EventSink) {
+        guard detailsTask == nil else { return }
+        detailsTask = streamDetails(to: events)
+    }
+
+    /// Sends `details` whenever it changes, until the task is cancelled.
+    package func streamDetails(to events: EventSink, interval: Duration = .milliseconds(250)) -> Task<Void, Never> {
+        Task { @MainActor in
+            var last: [String: String] = [:]
+            while !Task.isCancelled {
+                let current = self.details()
+                if current != last {
+                    events.emit(workflow: "details", name: "details", fields: current)
+                    last = current
+                }
+                try? await Task.sleep(for: interval)
+            }
+        }
     }
 
     // MARK: Profile and settings actions the macOS settings window offers (AC-29)
