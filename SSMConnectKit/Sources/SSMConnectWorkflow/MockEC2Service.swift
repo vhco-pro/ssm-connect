@@ -5,6 +5,8 @@ import SSMConnectDomain
 /// Configure the per-method outcomes and inspect the recorded call counts/arguments.
 package final class MockEC2Service: EC2Providing, @unchecked Sendable {
     package var resolveResult: Result<EC2Instance, Error> = .success(.stub())
+    /// Holds instance resolution this long, so a test can act while a workflow waits on it.
+    package var resolveDelay: Duration?
     package var startError: Error?
     package var stopError: Error?
     package var pollResult: Result<EC2Instance, Error> = .success(.stub(state: .running))
@@ -23,6 +25,7 @@ package final class MockEC2Service: EC2Providing, @unchecked Sendable {
         credentials: AWSCredentials
     ) async throws -> EC2Instance {
         resolveCount += 1
+        if let resolveDelay { try await Task.sleep(for: resolveDelay) }
         return try resolveResult.get()
     }
 
