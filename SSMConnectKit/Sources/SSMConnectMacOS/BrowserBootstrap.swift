@@ -20,8 +20,8 @@ package struct BrowserDescriptor: Equatable {
     package var family: BrowserFamily { choice == .chrome || choice == .edge ? .chromium : .firefox }
     package func supports(_ mode: BrowserMode) -> Bool {
         switch choice {
-        case .chrome: mode == .separate && version == "156.0.8078.12"
-        case .zen: version == "1.23.1b"
+        case .chrome: mode == .separate && version == "158.0.8127.37"
+        case .zen: version == "1.24.3b"
         default: false
         }
     }

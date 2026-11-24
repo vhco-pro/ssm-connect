@@ -9,7 +9,7 @@ import Testing
         .init(choice: choice, bundleID: choice == .zen ? "app.zen-browser.zen" : "com.google.Chrome",
               applicationURL: URL(fileURLWithPath: "/tmp/TestBrowser.app"),
               executableURL: URL(fileURLWithPath: "/tmp/TestBrowser.app/Contents/MacOS/browser"),
-              version: choice == .zen ? "1.23.1b" : "156.0.8078.12")
+              version: choice == .zen ? "1.24.3b" : "158.0.8127.37")
     }
     func profile(mode: BrowserMode = .separate) -> ConnectionProfile {
         var profile = ConnectionProfile.example

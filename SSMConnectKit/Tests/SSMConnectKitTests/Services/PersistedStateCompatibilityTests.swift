@@ -86,7 +86,7 @@ struct PersistedStateCompatibilityTests {
         let descriptor = BrowserDescriptor(choice: .zen, bundleID: "app.zen-browser.zen",
                                            applicationURL: URL(fileURLWithPath: "/tmp/TestBrowser.app"),
                                            executableURL: URL(fileURLWithPath: "/tmp/TestBrowser.app/Contents/MacOS/browser"),
-                                           version: "1.23.1b")
+                                           version: "1.24.3b")
         let browser = BrowserBootstrap(root: root, discover: { [descriptor] }, isRunning: { _ in false }, launch: { _, _ in })
         try await browser.open(profile: web)
         let profile = root.appendingPathComponent("\(Self.webID.uuidString)/zen")
