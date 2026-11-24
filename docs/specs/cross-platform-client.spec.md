@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Revising the release to follow the delivery standard: vhco-pro/version-workflow tags after checks with the bundled GitVersion configuration, and the same workflow publishes that tag."
+status: planned
+status_description: "Release revision accepted 2026-11-24: versioning through vhco-pro/version-workflow with the bundled GitVersion configuration, the full macOS suite before the tag, and no spikes; T83 to T87 remain."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -1426,6 +1426,7 @@ None.
 | 2026-11-24 | R-53 | spec | `4fcef8b` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-54 | spec | `bfd7b03` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-55 | spec | `6000fc2` | claude-opus-5-5 | procedural | No blocking or should-fix findings; one nit (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-55 | spec | `6000fc2` | n/a | n/a | accepted by owner |
 
 ### R-1
 
