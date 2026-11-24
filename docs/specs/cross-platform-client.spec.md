@@ -1418,6 +1418,7 @@ None.
 | 2026-11-24 | R-50 | spec | `4ffc162` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and three nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-51 | spec | `ef4840b` | claude-opus-5-5 | procedural | No blocking findings; one should-fix (a judgement for the owner) and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-52 | spec | `350c27e` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-53 | spec | `4fcef8b` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2866,6 +2867,38 @@ SEVERITY: nit
 WHERE: Design, First increment ("The spike's SDK half built dependencies the app no longer uses (AC-28). It used native `ubuntu-24.04` and `windows-2025` hosted runners ... It compiled the existing region validator and AWS config parser unchanged")
 EVIDENCE: This revision split the sentence as R-51 F-03 proposed. The two "It" sentences now follow "The spike's SDK half", so they read as being about the SDK half. But compiling the region validator and config parser and running the helper probe was the other half of the spike (run.sh:24-32 at b1c433f). The SDK probe comes later (run.sh:53).
 PROPOSAL: Start the next sentence with "The spike used native ..." so both "It" sentences refer to the whole spike.
+
+### R-53
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks T83, T85 (no task makes the full macOS package suite pass on a hosted runner); Design, Migration, performance and release boundaries ("The full macOS package suite runs in the macOS check job before the tag, so a failing macOS test blocks the tag"); Design, First increment ("which the macOS check job runs before the tag"); Context, Owner summary ("the full macOS package suite runs before the tag, so a failing macOS test blocks it"); Test Plan AC-24 and AC-31 rows ("with the label one run tags a prerelease after its checks")
+EVIDENCE: The full macOS package suite already fails on a hosted runner at this code. CodeQL run 45459504042 (pull_request on PR #41, head b1c433f, attempt 1, macos-26) failed in its "Run Swift unit tests" step (`swift test --package-path SSMConnectKit`), the same command the revision now makes a tag gate. The log shows: `Test "Turning web forwards off while they start ends the ssh that start opens" recorded an issue at WebForwardsStateMachineTests.swift:477:26: Expectation failed: (tunnel.handles → []).first → nil` and `Test run with 385 tests in 48 suites failed ... with 1 issue`. `git diff --stat b1c433f 4fcef8b` changes only this document, so HEAD runs the same code. The test (`stopWhileStartingEndsSSH`, added by T81) sleeps a fixed 100 ms after `connect()` and then expects the tunnel to have been started. On a slower runner the stop arrives before the start, so no handle exists. T81 was proven only on the owner's Mac. Under 350c27e and 4fcef8b this suite gates the version job, so T85's labelled run does not tag until the test passes on the hosted macOS runner, and no task fixes it or names it. The earlier swift-portability helper leg passed on macos-15 only because its `--filter` left SSMConnectKitTests out.
+PROPOSAL: Add a task before T85, failing first, that removes the timing assumption in `stopWhileStartingEndsSSH` (for example by waiting until the fake tunnel records its start before calling `stop()`). Its done condition is that the unfiltered macOS package suite passes in the macOS check job on the hosted runner.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Test Plan AC-24 row ("Holding an older run's latest-mark job before it starts, completing a newer release's publication, and then letting the older latest-mark job run leaves the newer release latest, and Homebrew installs its ZIP"); Design, Migration, performance and release boundaries ("so a paused older run decides only after a newer one has finished"; "`ci.yml` runs one at a time per ref ... on `main` a new run queues and never cancels one in progress"; "A rerun joins the ref's concurrency group again")
+EVIDENCE: Only `main` gets stable releases (version.yml at 46a1ac93, gate step: `github.ref_name == github.event.repository.default_branch || labelled`), and only a stable release can be marked latest (release.yml:203-206: mark-latest "never considers a prerelease"). cd15a7d gave `ci.yml` the shared example's workflow-level group `ci-${{ github.ref }}`. Under that group, while an older main run is in progress, including while its latest-mark job is held, a newer main run stays pending and cannot publish. The Design says the same about reruns. So the step cannot be staged as written with two stable releases. The only reachable late-older case is a Re-run failed jobs attempt after the newer run has finished, which the row's earlier step already covers ("a macOS ZIP uploaded to an older release after a newer one already has its ZIP leaves the newer release latest"). One implementer stages the step with an older prerelease run, which passes trivially because mark-latest ignores prereleases. Another uses the fake-gh mark-latest check. A third records it as unexecutable. 350c27e reworded the step (R-51 F-02) but kept its premise. The old AC-24 evidence at 3da82a3 already listed "the paused older macOS run" as not recorded.
+PROPOSAL: Remove the holding step from the AC-24 row, or restate it as the committed fake-gh check that mark-latest run after a newer release has its ZIP leaves that newer release latest. In the Design, say that per-ref serialization on main leaves a Re-run failed jobs attempt as the only late older run, and that the `release-latest` group and mark-latest's newest-with-ZIP rule cover it.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Test Plan AC-31 row ("the macOS check job runs `swift test --package-path SSMConnectKit` with no `--filter`" and "with the macOS filter restored"); Tasks T83 ("the macOS helper leg running the full macOS package suite" and done condition "a `--filter` on the macOS check job's `swift test --package-path SSMConnectKit`"); Design, First increment ("which the macOS check job runs before the tag")
+EVIDENCE: The job T83 moves into `ci.yml` is one matrix job, `helper`, with legs on ubuntu-24.04, windows-2025 and macos-15. A single bash step picks the command by `$RUNNER_OS` (.github/workflows/swift-portability.yml:111-145). T83 calls the macOS part a "leg", while the AC-31 row and T83's done condition call it "the macOS check job". If the matrix is kept, the graph check has to read the macOS branch of a shell conditional to find "the macOS check job". A check that only looks for an unfiltered `swift test --package-path SSMConnectKit` line anywhere would also pass if that line ended up in the Linux or Windows branch. R-52 F-02's proposal brought the phrase in.
+PROPOSAL: Have T83 give the macOS package suite its own check job with a macOS `runs-on`, and have the graph check read that job by name.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Sources ("Delivery conventions and shared delivery: ... `version-workflow` tagging after checks, and the same-workflow arrangement without an App"); Design, Migration, performance and release boundaries ("Versioning and publication follow the delivery standard (`conventions/delivery.md` and `knowledge/shared-delivery.md` at the pinned docs revision), in the same-workflow arrangement for a repository without a release GitHub App")
+EVIDENCE: At 0c983f6, conventions/delivery.md never mentions a same-workflow arrangement or a repository without an App. knowledge/shared-delivery.md only says go-release-workflow has "one example folder per arrangement". The arrangement and its `GITHUB_TOKEN` tag push are defined in knowledge/tag-driven-go-releases.md, "Same workflow or separate workflows" (table rows "How the release starts" and "Tag push identity"). Sources cites that page only for checks before the tag and the rerun. R-49 F-05 moved the rerun attribution to tag-driven-go-releases.md but left the arrangement under the other two pages.
+PROPOSAL: Credit the same-workflow arrangement without an App to knowledge/tag-driven-go-releases.md, in both the Sources entry and the Design citation.
+
+All four R-52 findings are resolved at 4fcef8b. F-01: `spikes/` is back in `covers`. F-02: the AC-31 row and T83's done condition require an unfiltered macOS suite and fail when the filter is restored. F-03: the citation now reads `run.sh:30-32` at `b1c433f`, and git show confirms lines 30 to 32. F-04: the sentence now reads "The spike used native ...". `vh-adlc lint` passes. `vh-adlc gate planned` fails only on spec_review_fresh, accepted and on_feature_branch_if_set, which is expected for a revised draft reviewed in a detached worktree.
 
 ## Sources
 
