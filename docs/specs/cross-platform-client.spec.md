@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Revising the failed-upgrade design (the MSI removes the prior version after InstallFinalize; the AC-21 check fails an upgrade before it registers itself and proves recovery from a failed late removal) and allowing the Linux browser version probe before an AC-25 refusal."
+status: planned
+status_description: "Accepted revision: the MSI removes the prior version after InstallFinalize, the AC-21 check fails an upgrade before it registers itself and records what a failed late removal leaves, two Windows Installer failures are a known limit, and the Linux browser version probe precedes an AC-25 refusal."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -1292,6 +1292,7 @@ None.
 | 2026-11-24 | R-36 | spec | `5cdd5c1` | gpt-6.1-sol | procedural | No blocking findings; one should-fix (an earlier pass at `a370ace` stayed pending because the owning worktree changed during it; its two findings went to the owner, whose answers `5cdd5c1` applies) |
 | 2026-11-24 | R-37 | spec | `69da261` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 | 2026-11-24 | R-38 | spec | `9f19db0` | gpt-6.1-sol | procedural | No blocking or should-fix findings; one nit |
+| 2026-11-24 | R-38 | spec | `9f19db0` | n/a | n/a | accepted by owner |
 
 ### R-1
 
