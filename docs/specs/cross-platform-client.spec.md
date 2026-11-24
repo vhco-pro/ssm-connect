@@ -1319,6 +1319,7 @@ None.
 | 2026-11-24 | R-38 | spec | `9f19db0` | gpt-6.1-sol | procedural | No blocking or should-fix findings; one nit |
 | 2026-11-24 | R-38 | spec | `9f19db0` | n/a | n/a | accepted by owner |
 | 2026-11-24 | R-39 | spec | `f3874b8` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (the owner routed this review to a Claude reviewer while the Codex route is out of usage; two Codex passes at this commit failed on the usage limit and returned nothing) |
+| 2026-11-24 | R-40 | spec | `dce39cb` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing; a pass started at `e86e26b` was stopped before it returned, as `dce39cb` corrected the macOS step) |
 
 ### R-1
 
@@ -2094,6 +2095,36 @@ SEVERITY: nit
 WHERE: Tasks / T80:1250-1251; README.md:96-98
 EVIDENCE: T80's evidence, added in this revision, records that the README now says "If an upgrade fails, the version you had keeps working". Design:930-932 states that a failure while the prior version is being removed "leaves the new version installed and working". T78's evidence observed exactly this: the upgrade exited 1603 with the new version installed and registered. In that case it is not the previous version that keeps working. The AC-21 row checks only that the guide asks users to report a refused upgrade, so the proof is unaffected.
 PROPOSAL: Reword the README sentence to "If an upgrade fails, SSM Connect stays usable", or name both outcomes, and align T80's wording.
+
+### R-40
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Test Plan / AC-18:979; Acceptance Criteria / AC-18:955; Context / Owner summary:166-168; Frontmatter / status_description:3; Tasks / T27:1137, 1143
+EVIDENCE: The revised AC-18 row now says "macOS cancellation and logout rest on the connection state machine tests". `SSMConnectKit/Tests/SSMConnectKitTests/StateMachine/ConnectionStateMachineTests.swift` (655 lines) has no test for either transition. Its only teardown case is "disconnect tears down and returns to disconnected" (line 523), which disconnects from `.connected`: it is not a cancel during connecting, and it does not quit. Nothing in the test tree calls the macOS quit path that logout takes (`AppDelegate.applicationWillTerminate` -> `AppQuitHandler.shared.runShutdown()`, `SSMConnectKit/Sources/SSMConnectMacOS/AppDelegate.swift:33`), and nothing calls `ConnectionStateMachine.terminateTunnelForQuit` (`SSMConnectKit/Sources/SSMConnectWorkflow/ConnectionStateMachine.swift:131-141`). `grep -rn "terminateTunnelForQuit\|runShutdown" SSMConnectKit/Tests` finds only `WebForwardsStateMachineTests.swift:87` and the remote development `terminateForQuit` calls. The nearest cancel test, "Cancelling a connect tears the connection down" (`Tests/SSMConnectHelperTests/HelperCommandTests.swift:429`), drives the helper path, not the in-process macOS composition. The named proof therefore passes whatever macOS cancellation or logout does, and a T27 executor has no test to cite for those AC-18 evidence lines. The macOS part of the row is also silent on sleep, which AC-18 covers ("supported sleep/logoff transitions"). The wake cases at ConnectionStateMachineTests.swift:482 and 506 exist, but the row never says macOS sleep rests on them. The status description still says cancel and logout "stay in AC-18" without saying how they are proved. This traces to dce39cb, which narrowed the native macOS step after e86e26b had kept cancel and logout in it. The owner's decision assumes tests that do not exist.
+PROPOSAL: Name the exact tests that establish macOS cancellation, logout (the quit handler ending the desktop plugin, web forwards ssh and editor work) and sleep. Where no test exists, add a failing-first task, for example a ConnectionStateMachine test that a cancel during connecting and a `runShutdown` with a live tunnel PID each end the plugin. Otherwise put cancellation and logout back in the native macOS step.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Test Plan / AC-26:986; Context / Owner summary:164-167
+EVIDENCE: The row requires the preferences to be "restored byte-identical afterwards", and also requires the preferences domain to be "restored with the app quit through `defaults import` and compared again after a relaunch". After `defaults import`, cfprefsd writes the on-disk plist with its own serialization and on its own schedule (the repository notes this asynchronous flush at `SSMConnectKit/Sources/SSMConnectWorkflow/KeyValueStoring.swift:5-9`). A correct restore can therefore leave a file whose bytes differ from the backup, while its contents are the same. The row does not say what "compared again" compares: the plist file's bytes, `defaults export` output, or the decoded keys. It also does not say which app is relaunched, or whether keys that a launch legitimately writes are allowed. One executor would byte-compare `~/Library/Preferences/<domain>.plist` and might fail a correct restore. Another would diff `defaults export` output. This traces to e86e26b, which added the `defaults import` step in response to R-39 F-02.
+PROPOSAL: Define the preferences comparison: for example, `defaults export <domain> -` converted to XML and compared with the backup's export, before and after relaunching the restored current release, with byte identity kept for the files that are copied back directly.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Scope / Not included:332-339; Context / Owner summary:95-98, 161-164; Tasks / T27:1137-1143
+EVIDENCE: Scope now says the children stay running after a `kill -9` with "both builds observed in T27", and the summary says "(both observed under `kill -9`)". T27's progress lines (1138-1143) record no `kill -9` run on 0.7.1 or on the refactored build, so the citation points at evidence the document does not hold. R-39 F-03 proposed recording that observation as a T27 progress line, and this revision did not add it. The progress paragraph at 95-98 still reports native acceptance only for Windows 11, Fedora 43 and Ubuntu 24.04, although T27 has macOS progress. Issue #39 and the quit-handler citation (`git show eb4f0bc:.../ConnectionStateMachine.swift:141-154`, checked and accurate) support the claim, so nothing built changes.
+PROPOSAL: Add a T27 progress line that records the `kill -9` observation on both builds (processes left, ports listening, key folder left), and mention T27's partial macOS progress in the paragraph at 95-98.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Tasks / T80:1244-1245; README.md:96-98; Design / Migration, performance and release boundaries:929-934
+EVIDENCE: R-39 F-04 is still unapplied. T80's description and evidence still say the README tells users "a failed upgrade keeps the previous version working", and README.md:96 still reads "If an upgrade fails, the version you had keeps working". Design:932-934 says a failure while the prior version is being removed "leaves the new version installed and working", and T78's evidence observed that outcome. e86e26b applied R-39's should-fix findings to the baseline without fixing this nit of the same pass, which the nit rule in the pinned feature-documents standard requires. The AC-21 row checks only that the guide asks users to report a refused upgrade, so no proof changes.
+PROPOSAL: Reword the README sentence to say that SSM Connect stays usable after a failed upgrade (or name both outcomes), and align T80's description and evidence.
 
 ## Sources
 
