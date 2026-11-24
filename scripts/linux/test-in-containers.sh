@@ -15,7 +15,8 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-kit="$(cd "$here/../../SSMConnectKit" && pwd)"
+# The repository is mounted whole: the helper tests read the parity inventory under contracts/.
+repo="$(cd "$here/../.." && pwd)"
 cache="${SSM_LINUX_CACHE:-/tmp/ssm-linux-build}"
 which="${1:-all}"
 filter="${2:-SSMConnectLinuxTests|SSMConnectWorkflowTests|SSMConnectHelperTests|SSMConnectAWSTests}"
@@ -41,7 +42,7 @@ run() {
   set +e
   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp/home -e NO_COLOR=1 \
     -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro \
-    -v "$kit":/kit -v "$cache/$distro":/build -w /kit "$image" \
+    -v "$repo":/repo -v "$cache/$distro":/build -w /repo/SSMConnectKit "$image" \
     bash -c 'mkdir -p /tmp/home && cat /etc/os-release | grep PRETTY_NAME && swift --version 2>&1 | head -1 &&
              swift test --build-system native --scratch-path /build --only-use-versions-from-resolved-file --filter "$0"' "$filter" > "$log" 2>&1
   local status=$?

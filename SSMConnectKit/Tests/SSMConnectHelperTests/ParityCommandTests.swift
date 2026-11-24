@@ -191,4 +191,71 @@ struct ParityCommandTests {
         #expect(Self.connects(f) == 1)
         #expect(f.runtime.connection.state == .connected)
     }
+
+    // MARK: Web forwards and the editor after a sleep (T76, AC-18)
+
+    static func waitUntil(seconds: Int, _ condition: @MainActor () -> Bool) async {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    static func saveSettings(_ f: Fixture, autoReconnect: Bool) async {
+        await HelperCommandTests.run(f, "settings-\(UUID())", "saveSettings", ["autoReconnect": String(autoReconnect)])
+    }
+
+    @Test("When a sleep ends the web forwards' SSH process, Reconnect automatically brings them back with a fresh key")
+    func webForwardsReconnectAfterSSHExit() async throws {
+        let f = try await HelperCommandTests.fixture()
+        await Self.saveSettings(f, autoReconnect: true)
+        try await HelperCommandTests.save(f, HelperCommandTests.configured(webForwards: true))
+        await HelperCommandTests.run(f, "w", "startWebForwards")
+        #expect(Self.outcome(f, "w") == "completed")
+        let first = try #require(f.ssh.started.first)
+        first.handle.simulateDrop(code: 255, stderr: "Connection closed by remote host")
+        await Self.waitUntil(seconds: 15) { f.ssh.started.count == 2 && f.runtime.web.state == .on }
+        #expect(f.ssh.started.count == 2)
+        #expect(f.runtime.web.state == .on && f.runtime.web.errorMessage == nil)
+        let second = try #require(f.ssh.started.last)
+        #expect(second.keyPath != first.keyPath)
+        #expect(!FileManager.default.fileExists(atPath: first.keyPath))
+        await HelperCommandTests.run(f, "x", "stopWebForwards")
+    }
+
+    @Test("When a sleep ends the web forwards' SSH process with Reconnect automatically off, they stop with an error")
+    func webForwardsStopAfterSSHExitWithoutReconnect() async throws {
+        let f = try await HelperCommandTests.fixture()
+        await Self.saveSettings(f, autoReconnect: false)
+        try await HelperCommandTests.save(f, HelperCommandTests.configured(webForwards: true))
+        await HelperCommandTests.run(f, "w", "startWebForwards")
+        #expect(Self.outcome(f, "w") == "completed")
+        let first = try #require(f.ssh.started.first)
+        first.handle.simulateDrop(code: 255, stderr: "Connection closed by remote host")
+        await Self.waitUntil(seconds: 5) { f.runtime.web.state == .error }
+        #expect(f.runtime.web.state == .error)
+        #expect(f.runtime.web.errorMessage?.isEmpty == false)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(f.ssh.started.count == 1)
+    }
+
+    @Test("A recovery request for an editor lease that expired during a sleep starts recovery and ends with the editor active")
+    func expiredEditorLeaseRecovers() async throws {
+        let f = try await HelperCommandTests.fixture()
+        let profile = HelperCommandTests.configured(editor: true)
+        try await HelperCommandTests.save(f, profile)
+        await HelperCommandTests.run(f, "setup", "installEditorSetup", ["consent": "true"])
+        await HelperCommandTests.run(f, "e", "openEditor")
+        #expect(Self.outcome(f, "e") == "completed")
+        #expect(f.runtime.editor.isActive)
+        let leaseURL = f.root.appendingPathComponent("access/\(profile.id.uuidString)/lease.json")
+        let lease = try JSONDecoder().decode(RemoteSSHLease.self, from: Data(contentsOf: leaseURL))
+        // Slow enough for the recovery to be seen while it runs.
+        f.ec2.resolveDelay = .milliseconds(500)
+        try EditorRecoveryRequest(lease: lease, reason: .expired).write(for: leaseURL)
+        await Self.waitUntil(seconds: 5) { f.runtime.editor.isRecovering }
+        #expect(f.runtime.editor.isRecovering)
+        await Self.waitUntil(seconds: 10) { !f.runtime.editor.isRecovering }
+        #expect(!f.runtime.editor.isRecovering)
+        #expect(f.runtime.editor.isActive)
+        #expect(f.runtime.editor.errorMessage == nil)
+    }
 }
