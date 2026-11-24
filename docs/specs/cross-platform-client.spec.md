@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Release revision accepted 2026-11-24: versioning through vhco-pro/version-workflow with the bundled GitVersion configuration, the full macOS suite before the tag, and no spikes; T83 to T87 remain."
+status: in-progress
+status_description: "Implementing the accepted release revision: versioning through vhco-pro/version-workflow with the bundled GitVersion configuration, the full macOS suite before the tag, and no spikes; T83 to T87 remain."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
