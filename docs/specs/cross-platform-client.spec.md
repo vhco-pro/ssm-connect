@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Implementing the accepted failed-upgrade revision on feat/shared-swift-core: T72 to T80, then the Ubuntu suspend (T65), T66, macOS acceptance (T27), the macOS part of T31, criterion evidence and the implementation review."
+status: draft
+status_description: "Revising after the macOS native acceptance (T27): a force-killed macOS app leaving its plugin and ssh running moves to #39, and AC-26 runs in the owner's account with backups."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
