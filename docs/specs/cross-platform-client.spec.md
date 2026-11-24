@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Every task is done; each criterion carries its evidence and, by owner decision, a residual on #40 for the native checks that did not run or could not be observed; the implementation review is rerun before shipping."
+status: draft
+status_description: "Revising the release to follow the delivery standard: vhco-pro/version-workflow tags after checks with the bundled GitVersion configuration, and the same workflow publishes that tag."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
