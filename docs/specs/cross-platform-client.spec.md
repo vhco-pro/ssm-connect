@@ -1372,6 +1372,7 @@ None.
 | 2026-11-24 | R-45 | implementation | `312164a` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and two nits; every criterion residualised on #40 (Claude reviewer on a Linux-only host, owner's routing) |
 | 2026-11-24 | R-46 | implementation | `32acbbb` | claude-opus-5-5 | procedural | No blocking findings; two should-fix (Claude reviewer on a Linux-only host, owner's routing) |
 | 2026-11-24 | R-47 | implementation | `3da82a3` | claude-opus-5-5 | procedural | No findings; every criterion residualised on #40 (Claude reviewer on a Linux-only host, owner's routing) |
+| 2026-11-24 | R-48 | spec | `0e2e2ab` | claude-opus-5-5 | procedural | One blocking (`fail_job` reruns fail again), six should-fix and four nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2621,6 +2622,85 @@ EVIDENCE: `node scripts/check-macos-parity.mjs` printed "macOS parity: 107 contr
 CRITERION: AC-30 On Windows and Linux the DCV connection file stays readable for 120 seconds after the Viewer is asked to open it, without delaying Connected, and is removed at the end of that window, at Quit, or after a crash by the sweep of a later connect once its window has passed; a Viewer that takes up to that long to start opens the desktop; the missing-Viewer message names the platform's own install; and macOS keeps its current window and message.
 VERDICT: not verified
 EVIDENCE: My swift:6.4.2-noble run passed "On Windows and Linux the Viewer gets 120 seconds to read the connection file, and Connect does not wait for them", "Ending the helper removes a connection file still waiting for its window", "A connect removes connection files a killed helper left once their window has passed, and keeps younger ones", "A reconnect keeps the earlier connection file until its own window ends, even after the clock moves forward" and "The missing-Viewer message names this platform's own install". T82's change (2 s window, removal awaited up to 10 s) resolves R-46 F-02. The rebuilt "The DCV connection file is deleted once the viewer has had time to read it" passed in the full run (2.667 s). It also passed in five helper-suite runs (56 tests each) with the container limited to 0.5 CPU (three runs), 0.2 CPU and 0.1 CPU, taking up to 8.551 s. Limitations: I did not observe the macOS launcher and message tests (T51) or the native Ubuntu cold-start Connect (T52). In T52 the Viewer started within seconds, so the case of a Viewer that takes close to 120 seconds rests on the helper test.
+
+### R-48
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Design (Migration, performance and release boundaries: "A failed release is retried with Re-run failed jobs ... A manual dispatch on a labelled branch may set `fail_job`"); Test Plan AC-24 row ("Re-run failed jobs after the failed one is fixed publishes its missing assets"); Tasks T85 ("Re-run failed jobs without it publishes the ZIP"); Tasks T84 (README describes Re-run failed jobs)
+EVIDENCE: This revision (0e2e2ab) added these steps. GitHub reruns a run with the original event payload, which includes the `workflow_dispatch` inputs, and with the original GITHUB_SHA. The pinned delivery convention says a re-run "repeats the original checkout" (conventions/delivery.md, Workflows and permissions), and knowledge/tag-driven-go-releases.md says "A re-run fixes a transient failure ... It does not fix a deterministic one". The Design states `fail_job` fails the platform job "at its start, on a prerelease only", with no attempt condition. The current fail steps (.github/workflows/release.yml, "Fail on request (test run)", `if: inputs.fail_job == 'macos' && needs.release.outputs.prerelease == 'true'`) would fire again on every attempt. So "Re-run failed jobs without it" cannot happen: the rerun keeps `fail_job=macos` and the macOS job fails again. "After the failed one is fixed" cannot be done by a rerun either, because a rerun cannot pick up a fixed commit. As written, T85's done condition and this AC-24 step cannot be executed against a correct implementation of the Design.
+PROPOSAL: Define `fail_job` so it fails only the first attempt (for example `github.run_attempt == 1`), and say so in Design, the AC-24 row and T85. Reword "after the failed one is fixed" so a rerun recovers a transient failure on the same commit, and a code fix releases a new version.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks T85; Test Plan AC-24 row; Design ("A manual dispatch on a labelled branch may set `fail_job`")
+EVIDENCE: vhco-pro/version-workflow v0.1.2 (version.yml, read with gh api at ref v0.1.2) tags only when gitversion-tag-action pushes a new tag. On a commit that already carries its tag, GitVersion returns that version, the action skips with `tag-exists`, and `tagged` is false, so no release or platform job runs. T85 orders the steps as: the labelled run tags the head, then "a dispatch with `fail_job=macos`". On the same head that dispatch tags nothing and publishes nothing. Every new push to the labelled branch starts its own push run without `fail_job`, which tags that head first. The step works only through an unstated sequence, such as a `[skip ci]` push followed by the dispatch, or cancelling the push run before its version job. This was added in 0e2e2ab.
+PROPOSAL: In T85 and the AC-24 row, state how the `fail_job` dispatch reaches an untagged head, for example a `[skip ci]` commit on the labelled branch followed by the dispatch. Record the commit and tag in the evidence.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Test Plan AC-24 row ("a run whose checks fail pushes no tag"); Tasks T83, T85
+EVIDENCE: The AC-24 row added in 0e2e2ab requires that a run whose checks fail pushes no tag, but no task executes it. T85 lists the unlabelled run, the labelled run, the `fail_job` dispatch and the rerun, and T83's done condition checks actionlint, test-release-assets.sh and the absence of direct GitVersion calls. The row also names no branch. A failing run on an unlabelled branch pushes no tag whether or not `version` depends on the checks (version.yml gate: `github.ref_name == default_branch || labelled`). So the step can pass on a workflow whose version job runs without `needs:` on the checks.
+PROPOSAL: Make the step observable on a branch that would tag: either a labelled run with a deliberately failing check pushes no tag, or a static check that `version` `needs:` every check job and that every publishing job `needs: version` and gates on `tagged`. Add it to T83 or T85.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Acceptance Criteria AC-24; Test Plan AC-24 row; Design release paragraph
+EVIDENCE: The owner's question was why the release stopped using the shared tag action. The revision's answer (versioning through vhco-pro/version-workflow with the bundled configuration, after the checks, with only that run's tag published) exists only in Design and in the AC-24 proof row. The AC-24 text is unchanged: "macOS, Windows and Linux artifacts remain independently buildable and releasable, with all selected core/helper assets and required notices present in their final packages." A release that calls GitVersion directly with a repository `gitversion.yml`, which is the defect that started this revision, satisfies that text. The standard says a criterion states the end state, and IDs are never reused.
+PROPOSAL: Add a new criterion (AC-31) for the versioning end state: each release version is calculated and tagged once, after the checks pass, by vhco-pro/version-workflow with the action's bundled GitVersion configuration, only on main or a labelled PR head, and only the tag that run pushed is published. Move the version-workflow checks from the AC-24 row into an AC-31 row.
+
+FINDING: F-05
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design release paragraph; Tasks T83
+EVIDENCE: The Design defines the `release-latest` group but not the concurrency of `ci.yml` itself. The shared example it follows (go-release-workflow examples/same-workflow/ci.yml) sets `concurrency: group: ci-${{ github.ref }}`, `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`. In this repository the publishing jobs run in the same run, for up to 90 minutes on Windows and 120 on Linux. On a labelled branch, a new push would then cancel a run that has already pushed its prerelease tag partway through publication. The next run tags a new version and leaves the earlier prerelease partly published. On main, cancelling in progress would do the same to a stable release. The Design leaves the choice open, and the delivery convention asks to "Serialize publication where competing runs could conflict".
+PROPOSAL: State the `ci.yml` concurrency in Design and T83: on main, queue and never cancel. On branches, either never cancel a run once its version job has tagged, or accept a partial prerelease and recover it with Re-run failed jobs, and say which.
+
+FINDING: F-06
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design ("Its checks (the portability, AWS client and helper jobs and the release script tests) run first"); Tasks T83; Open Questions
+EVIDENCE: The checks before the tag leave out the WPF shell tests (`dotnet test windows/SSMConnect.slnx`, release.yml windows job), the Qt shell, host and parity tests (packaging/linux/build-packages.sh:95-104), the macOS app build (`scripts/release.sh`) and the full macOS package suite. The helper job on macOS filters to the helper, workflow and AWS tests (swift-portability.yml:140-144). Those run only inside the platform jobs, after the tag, and only on runs that tag. So a deterministic shell test failure on main gets a stable tag and a release missing that platform's asset. knowledge/tag-driven-go-releases.md explains that checks before the tag "protect the version number from tags that never get an artifact" and that a version needs "All caller checks to pass". Untagged branch pushes never run the shell tests at all. Choosing which checks gate the tag is a trade-off the document settles without an Open Question ("Open Questions: None."). This was added in 0e2e2ab.
+PROPOSAL: Raise an Open Question: run the shell, Qt and macOS app tests as check jobs before `version` (longer CI on every push, a tag only for a commit whose platform tests pass), or keep them in the platform jobs (faster, and a tag can lack an asset).
+
+FINDING: F-07
+KIND: factual
+SEVERITY: should-fix
+WHERE: Frontmatter `covers`; Tasks T83, T84
+EVIDENCE: T83 deletes the root `gitversion.yml` and T84 edits `README.md`. Neither path is in `covers` (frontmatter lists SSMConnectKit/, SSMConnect/, windows/, linux/, contracts/, packaging/, project.yml, scripts/, .github/workflows/, spikes/...). The standard says covers lists every path whose change can affect the feature. `feature_tree_clean` reads it, so an uncommitted `gitversion.yml` deletion or README change would not hold the gate. R-22 raised the same kind of omission for spikes/helper-feasibility/. This revision added the gitversion.yml dependency.
+PROPOSAL: Add `gitversion.yml` (while it exists) and `README.md` to `covers`.
+
+FINDING: F-08
+KIND: judgement
+SEVERITY: nit
+WHERE: Context, Owner summary (lines 95-105 and 125-130); Tasks T86
+EVIDENCE: The summary still says "No acceptance criterion is ticked: by owner decision of 2026-11-24, each carries its evidence and a residual on #40", but 0e2e2ab removed every evidence and residual line, and they return only in T86. The added revision paragraph leaves out material changes in Design. `chore` commits, including dependency updates, now bump the patch and so cut a full release, where `gitversion.yml` marked them no-bump. The `release:preview` label replaces `test_tag`. Checks now run on every branch push. Recovery is Re-run failed jobs. A tag pushed by hand is no longer released. T86 re-adds `Residual: #40` lines, but the standard says a residual needs the owner's decision and a revision resets residuals.
+PROPOSAL: Say the evidence and residuals return in T86 after the owner reconfirms the residuals, and list the release behavior changes above in the summary's revision paragraph.
+
+FINDING: F-09
+KIND: factual
+SEVERITY: nit
+WHERE: Sources; Design release paragraph
+EVIDENCE: The revision relies on vhco-pro/version-workflow v0.1.2 (`.github/workflows/version.yml`), the go-release-workflow `examples/same-workflow/ci.yml` and `preview.yml`, conventions/delivery.md, knowledge/shared-delivery.md and knowledge/tag-driven-go-releases.md, and on the owner's 2026-11-24 question. Sources lists none of them. Its only vhco-pro/docs entries are feature-documents.md and humanize-prose.md.
+PROPOSAL: Add each page with its pinned ref and the claim it supports, and the owner's 2026-11-24 request.
+
+FINDING: F-10
+KIND: factual
+SEVERITY: nit
+WHERE: Tasks T84; Design release paragraph
+EVIDENCE: Once T83 removes release.yml and gitversion.yml, other committed text goes stale and no task updates it. docs/specs/macos-trusted-distribution.spec.md:167 links `../../.github/workflows/release.yml`. docs/specs/ssm-connect.spec.md:525-530, the client spec Context names as defining current behavior, describes `gitversion.yml` with chore commits causing "no bump, no release". The codeql.yml header says it "Mirrors the release workflow's" build environment.
+PROPOSAL: Extend T84, or add a task, to update those references to ci.yml and the bundled-configuration behavior.
+
+FINDING: F-11
+KIND: factual
+SEVERITY: nit
+WHERE: Tasks T85
+EVIDENCE: `gh label list -R vhco-pro/ssm-connect` shows no `release:preview` label, and PR #41 (head feat/shared-swift-core, open) has no labels. `gh pr edit --add-label release:preview` fails for a label the repository does not have. T85 and T83 do not create it.
+PROPOSAL: Have T85 create the `release:preview` label before labelling PR #41.
 
 ## Sources
 
