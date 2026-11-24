@@ -14,14 +14,22 @@
     quits it, reinstalls, and uninstalls, checking that the program folder is gone afterwards. Then
     it upgrades a prior copy whose Swift runtime carries a higher file version than this package's,
     as a build from a newer toolchain leaves it, and checks that every file of this package is laid
-    down and the helper starts.
+    down and the helper starts. It then fails an upgrade of a prior copy with a copy of this MSI whose
+    deferred custom action fails right after RemoveExistingProducts, and checks that the rollback
+    leaves the prior copy installed and registered, so this MSI then replaces it and uninstalls with
+    nothing left.
+
+    With -Interactive as well (run from the signed-in user's session, which shows the installer), it
+    cancels an upgrade of a running prior copy at Restart Manager's files-in-use prompt and checks
+    that the prior copy stays installed, registered and running.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string] $Msi,
     [Parameter(Mandatory)] [string] $Build,
     [string] $Manifest,
-    [switch] $Install
+    [switch] $Install,
+    [switch] $Interactive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -167,6 +175,151 @@ if ($Install) {
     Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the upgraded install uninstalls'
     Check (-not (Test-Path $folder)) 'that uninstall leaves no program folder'
     Remove-Item $prior -Force -ErrorAction SilentlyContinue
+}
+
+if ($Install) {
+    $folder = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect'
+    $api = New-Object -ComObject WindowsInstaller.Installer
+    $upgradeCode = (Select-String -Path (Join-Path $PSScriptRoot 'Package.wxs') -Pattern 'UpgradeCode="([^"]+)"').Matches[0].Groups[1].Value
+    function Related { @(try { $api.RelatedProducts("{$upgradeCode}") } catch { @() }) }
+
+    # A copy of this MSI under new package (and, for a prior copy, product) codes; -FailAfterRemoval adds
+    # a deferred custom action that fails right after RemoveExistingProducts.
+    function New-MsiCopy([switch] $NewProduct, [switch] $FailAfterRemoval) {
+        $path = Join-Path ([IO.Path]::GetTempPath()) ('ssm-copy-' + [guid]::NewGuid().ToString('N') + '.msi')
+        Copy-Item $Msi $path
+        $database = Invoke-Com $api 'OpenDatabase' -arguments @([string] $path, 1)
+        $queries = @()
+        $productCode = $null
+        if ($NewProduct) {
+            $productCode = '{' + [guid]::NewGuid().ToString().ToUpper() + '}'
+            $queries += "UPDATE ``Property`` SET ``Value`` = '$productCode' WHERE ``Property`` = 'ProductCode'"
+        }
+        if ($FailAfterRemoval) {
+            $view = Invoke-Com $database 'OpenView' -arguments @("SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action`` = 'RemoveExistingProducts'")
+            Invoke-Com $view 'Execute' | Out-Null
+            $record = Invoke-Com $view 'Fetch'
+            $sequence = (Invoke-Com $record 'IntegerData' 'GetProperty' @(1)) + 1
+            Invoke-Com $view 'Close' | Out-Null
+            foreach ($handle in $record, $view) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+            $cmd = Join-Path $env:SystemRoot 'System32\cmd.exe'
+            $queries += "INSERT INTO ``Property`` (``Property``, ``Value``) VALUES ('TESTFAILCMD', '$cmd')"
+            # 50 (an executable named by a property) + 1024 (deferred): runs inside the transaction.
+            $queries += "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('FailAfterRemovingPrior', 1074, 'TESTFAILCMD', '/c exit 1')"
+            $queries += "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('FailAfterRemovingPrior', '', $sequence)"
+        }
+        foreach ($query in $queries) {
+            $view = Invoke-Com $database 'OpenView' -arguments @($query)
+            Invoke-Com $view 'Execute' | Out-Null
+            Invoke-Com $view 'Close' | Out-Null
+            [Runtime.InteropServices.Marshal]::ReleaseComObject($view) | Out-Null
+        }
+        $summary = Invoke-Com $database 'SummaryInformation' 'GetProperty' @(4)
+        # Parentheses: the comma binds tighter than +.
+        Invoke-Com $summary 'Property' 'SetProperty' @(9, ('{' + [guid]::NewGuid().ToString().ToUpper() + '}')) | Out-Null
+        Invoke-Com $summary 'Persist' | Out-Null
+        Invoke-Com $database 'Commit' | Out-Null
+        foreach ($handle in $summary, $database) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+        # msiexec cannot open a package this process still holds.
+        [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+        [pscustomobject]@{ Path = $path; ProductCode = $productCode }
+    }
+
+    # A failed upgrade that has already removed the prior version rolls back to it.
+    $prior = New-MsiCopy -NewProduct
+    $code = Invoke-Msi @('/i', "`"$($prior.Path)`"", '/qn', '/norestart')
+    Check ($code -eq 0) "a prior copy installs for the failed upgrade (exit $code, $($prior.Path))"
+    $failing = New-MsiCopy -FailAfterRemoval
+    $log = Join-Path ([IO.Path]::GetTempPath()) 'ssm-failed-upgrade.log'
+    $code = Invoke-Msi @('/i', "`"$($failing.Path)`"", '/qn', '/norestart', '/l*v', "`"$log`"")
+    Check ($code -eq 1603) "an upgrade failing after the prior version's removal fails (exit $code)"
+    $text = Get-Content $log -Raw
+    $removed = $text.IndexOf('Doing action: RemoveExistingProducts')
+    $failed = $text.IndexOf('FailAfterRemovingPrior')
+    Check ($removed -ge 0 -and $failed -gt $removed) 'the log shows the prior version removed before the failure'
+    Check ($text.Contains('Rollback')) 'the log shows the rollback'
+    Check ((Related) -contains $prior.ProductCode) 'the rolled-back prior copy is still registered for the next upgrade'
+    Check (Test-Path (Join-Path $folder 'SSMConnectHelper.exe')) "the rolled-back prior copy's files are back"
+    Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the next upgrade replaces the prior copy'
+    Check (-not ((Related) -contains $prior.ProductCode)) 'the prior copy is no longer registered after that upgrade'
+    Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the upgraded install uninstalls after the failed upgrade'
+    Check (-not (Test-Path $folder)) 'that uninstall leaves no program folder'
+    Check (@(Related).Count -eq 0) 'no product of the upgrade code remains'
+    Remove-Item $prior.Path, $failing.Path, $log -Force -ErrorAction SilentlyContinue
+
+    if ($Interactive) {
+        # Cancel at Restart Manager's prompt, before anything changes. The installer's controls are plain
+        # panes to UI Automation, so they are clicked by position.
+        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+        Add-Type -Namespace Win32 -Name Input -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, System.UIntPtr e); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);'
+        $ae = [Windows.Automation.AutomationElement]; $scope = [Windows.Automation.TreeScope]
+        $windowType = [Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
+        $paneType = [Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty, [Windows.Automation.ControlType]::Pane)
+        # Finds a pane by name in the installer's windows, or only in $within; returns the pane and its window.
+        function Find-Pane([string] $pattern, [int] $seconds, $within = $null) {
+            $deadline = (Get-Date).AddSeconds($seconds)
+            while ((Get-Date) -lt $deadline) {
+                $windows = if ($within) { @($within) } else { $ae::RootElement.FindAll($scope::Children, $windowType) }
+                foreach ($window in $windows) {
+                    if ($window.Current.Name -notmatch 'SSM Connect Setup') { continue }
+                    foreach ($pane in $window.FindAll($scope::Descendants, $paneType)) {
+                        if ($pane.Current.Name -match $pattern) { return [pscustomobject]@{ Pane = $pane; Window = $window } }
+                    }
+                }
+                Start-Sleep -Milliseconds 500
+            }
+            return $null
+        }
+        function Press($found) {
+            # The installer's window must be in front for a click to reach it.
+            [Win32.Input]::SetForegroundWindow([IntPtr]$found.Window.Current.NativeWindowHandle) | Out-Null
+            Start-Sleep -Milliseconds 300
+            $r = $found.Pane.Current.BoundingRectangle
+            [Win32.Input]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
+            Start-Sleep -Milliseconds 150
+            [Win32.Input]::mouse_event(0x2, 0, 0, 0, [UIntPtr]::Zero); [Win32.Input]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 500
+        }
+        $prior = New-MsiCopy -NewProduct
+        Check ((Invoke-Msi @('/i', "`"$($prior.Path)`"", '/qn', '/norestart')) -eq 0) 'a prior copy installs for the cancelled upgrade'
+        $app = Start-Process (Join-Path $folder 'SSMConnect.exe') -PassThru
+        Start-Sleep -Seconds 8
+        $installer = Start-Process msiexec.exe -PassThru -ArgumentList @('/i', "`"$Msi`"")
+        $null = $installer.Handle # PowerShell reports no exit code unless the handle is read while it runs
+        $accept = Find-Pane 'accept' 120
+        if ($accept) { Press $accept; Start-Sleep -Seconds 2 }
+        # Install is enabled a moment after the license is accepted, so it is pressed until the installer
+        # moves on, and a click on the checkbox that did not land is repeated. Not $install: PowerShell
+        # names are case-insensitive, and -Install is this script's switch.
+        $close = $null
+        for ($try = 0; $try -lt 4 -and -not $close; $try++) {
+            $installButton = Find-Pane '^&?Install$|^&?Upgrade$' 10
+            if ($installButton -and $accept -and -not $installButton.Pane.Current.IsEnabled) { Press $accept; Start-Sleep -Seconds 1 }
+            if ($installButton) { Press $installButton }
+            $close = Find-Pane 'Close SSM Connect' 30
+        }
+        Check ($null -ne $close) "Restart Manager's prompt offers closing SSM Connect"
+        # The prompt's own Cancel: the wizard behind it has one too.
+        $cancel = if ($close) { Find-Pane '^&?Cancel$' 10 $close.Window } else { $null }
+        if ($cancel) { Press $cancel }
+        # The installer may ask to confirm the cancel, then shows its interrupted page.
+        $deadline = (Get-Date).AddSeconds(60)
+        while ($cancel -and -not $installer.HasExited -and (Get-Date) -lt $deadline) {
+            foreach ($step in '^&?Yes$', '^&?Finish$') { $button = Find-Pane $step 1; if ($button) { Press $button } }
+        }
+        # An installer left open would hold the next check's msiexec.
+        if (-not $installer.HasExited) { Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue }
+        $installer.WaitForExit(60000) | Out-Null
+        Check ($installer.ExitCode -eq 1602) "the cancelled upgrade ends with nothing changed (exit $($installer.ExitCode))"
+        Check (-not $app.HasExited) 'SSM Connect keeps running after the cancel'
+        Check ((Related) -contains $prior.ProductCode) 'the prior copy is still registered after the cancel'
+        Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+        Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the next upgrade replaces the prior copy after the cancel'
+        Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'that install uninstalls'
+        Check (-not (Test-Path $folder)) 'that uninstall leaves no program folder'
+        Remove-Item $prior.Path -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($failures.Count -gt 0) { throw "$($failures.Count) package check(s) failed." }
