@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Accepted revision: a force-quit macOS app's leftovers move to #39; macOS Disconnect and Quit are proved natively, and macOS cancellation, logout and sleep rest on the new T81 tests and the existing editor tests; AC-26 runs in the owner's account with backups, a scratch Zen profile and a decoded preferences comparison."
+status: in-progress
+status_description: "Implementing the accepted macOS acceptance revision on feat/shared-swift-core: T81, T27's evidence and the macOS pins, T77, T31, then the Ubuntu suspend (T65), criterion evidence and the implementation review."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
