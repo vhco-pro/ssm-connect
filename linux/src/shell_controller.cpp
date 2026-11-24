@@ -497,4 +497,9 @@ HelperCommand *ShellController::runCommand(const QString &command, const QVarian
     return sent;
 }
 
+void ShellController::systemResumed() {
+    // Quiet: a helper that is busy or stopped needs no wake check, and the user did nothing to be told about.
+    if (host_.status() == HelperHostStatus::Ready) host_.send(QStringLiteral("systemWake"), {});
+}
+
 } // namespace ssmconnect

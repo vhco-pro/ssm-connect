@@ -7,6 +7,7 @@
 #include "fakes.h"
 #include "linux_shell_platform.h"
 #include "shell_controller.h"
+#include "sleep_watcher.h"
 #include "startup_registration.h"
 #include "tray.h"
 
@@ -17,6 +18,7 @@
 #include <functional>
 #include <QAction>
 #include <QApplication>
+#include <QDBusMessage>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -566,6 +568,43 @@ private slots:
         QCOMPARE(appliedID, QStringLiteral("55555555-5555-4555-8555-555555555555"));
         QCOMPARE(platform.calls.filter(QStringLiteral("confirm")).size(), qsizetype(2));
         for (const QString &call : platform.calls) QVERIFY2(!call.startsWith("error"), qPrintable(call));
+    }
+
+    void aResumeFromSleepSendsOneSystemWake() {
+        // The package build runs these tests in containers, which have no session bus to host a fake logind.
+        if (!QDBusConnection::sessionBus().isConnected()) QSKIP("needs a session bus for the fake logind");
+        ManualClock clock;
+        FakeSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) { helper.onCommand = [](const QString &name) { return respond(name); }; };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        // A fake logind on the session bus, under its own name.
+        const QString service = QStringLiteral("pro.vhco.SSMConnect.FakeLogin%1").arg(QCoreApplication::applicationPid());
+        QDBusConnection logind = QDBusConnection::connectToBus(QDBusConnection::SessionBus, QStringLiteral("fake-logind"));
+        QVERIFY(logind.isConnected());
+        QVERIFY(logind.registerService(service));
+        SleepWatcher watcher(QDBusConnection::sessionBus(), service);
+        connect(&watcher, &SleepWatcher::resumed, &controller, &ShellController::systemResumed);
+        auto prepareForSleep = [&](bool starting) {
+            QDBusMessage signal = QDBusMessage::createSignal(QStringLiteral("/org/freedesktop/login1"),
+                                                             QStringLiteral("org.freedesktop.login1.Manager"), QStringLiteral("PrepareForSleep"));
+            signal << starting;
+            return logind.send(signal);
+        };
+        auto wakes = [&] { return spawner.started[0]->commands().count(QStringLiteral("systemWake")); };
+        QVERIFY(prepareForSleep(true));
+        QTest::qWait(300);
+        QCOMPARE(wakes(), 0); // going to sleep sends nothing
+        QVERIFY(prepareForSleep(false));
+        QTRY_COMPARE(wakes(), 1);
+        QTest::qWait(300);
+        QCOMPARE(wakes(), 1);
+        QVERIFY(platform.calls.filter(QStringLiteral("error")).isEmpty());
+        logind.unregisterService(service);
+        QDBusConnection::disconnectFromBus(QStringLiteral("fake-logind"));
     }
 
     void startingAtSignInIsAnXdgAutostartEntry() {

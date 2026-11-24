@@ -111,6 +111,8 @@ public:
     Q_INVOKABLE HelperCommand *trigger(const QString &id, const QVariantMap &arguments = {}, const QVariantMap &context = {});
     /// Sends a helper command directly and reports a failure.
     HelperCommand *runCommand(const QString &command, const QVariantMap &arguments = {});
+    /// The system woke from sleep: asks a ready helper, quietly, to check its connections.
+    void systemResumed();
     /// A folder the user picks, for the profile editor's Zen profile folder.
     Q_INVOKABLE QString chooseFolder(const QString &title) { return platform_.chooseFolder(title); }
     /// The label macOS shows for the control in this state.

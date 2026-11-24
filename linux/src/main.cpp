@@ -5,6 +5,7 @@
 // transient systemd user service bound to the shell's scope.
 #include "helper_host.h"
 #include "linux_shell_platform.h"
+#include "sleep_watcher.h"
 #include "shell_controller.h"
 #include "single_instance.h"
 #include "startup_registration.h"
@@ -41,6 +42,9 @@ int main(int argc, char **argv) {
     LinuxShellPlatform platform([&](const QString &title, const QString &body) { if (tray) tray->showMessage(title, body, false); },
                                 [&](const QString &action, const QString &message) { if (tray) tray->showMessage(action, message, true); });
     ShellController controller(host, platform);
+    // After a sleep the helper checks its connections, as macOS does on its wake notification.
+    SleepWatcher sleep;
+    QObject::connect(&sleep, &SleepWatcher::resumed, &controller, &ShellController::systemResumed);
     StartupRegistration startup;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("shell", &controller);
