@@ -1400,6 +1400,7 @@ None.
 | 2026-11-24 | R-46 | implementation | `32acbbb` | claude-opus-5-5 | procedural | No blocking findings; two should-fix (Claude reviewer on a Linux-only host, owner's routing) |
 | 2026-11-24 | R-47 | implementation | `3da82a3` | claude-opus-5-5 | procedural | No findings; every criterion residualised on #40 (Claude reviewer on a Linux-only host, owner's routing) |
 | 2026-11-24 | R-48 | spec | `0e2e2ab` | claude-opus-5-5 | procedural | One blocking (`fail_job` reruns fail again), six should-fix and four nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-49 | spec | `0310307` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and three nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2728,6 +2729,43 @@ SEVERITY: nit
 WHERE: Tasks T85
 EVIDENCE: `gh label list -R vhco-pro/ssm-connect` shows no `release:preview` label, and PR #41 (head feat/shared-swift-core, open) has no labels. `gh pr edit --add-label release:preview` fails for a label the repository does not have. T85 and T83 do not create it.
 PROPOSAL: Have T85 create the `release:preview` label before labelling PR #41.
+
+### R-49
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Acceptance Criteria AC-31 ("tagged once, after every check of its run has passed"); Test Plan AC-31 row ("the version job needs every check job"); Design, Migration, performance and release boundaries ("Its checks (the AWS client and helper tests on Linux, Windows and macOS, and the release script tests) run first" and "The shell, Qt and macOS app tests run inside the platform jobs after the tag, as the release's own checks"); Context, Owner summary ("The shell, Qt and macOS app tests still run after the tag"); Tasks T83 ("needing every check job")
+EVIDENCE: Following the owner's answer to R-48 F-06, the Design calls the shell, Qt and macOS app tests checks of the same run that run after the tag. The new AC-31 says the version is tagged "after every check of its run has passed". Read literally, a correct implementation of the Design fails AC-31, because some checks of the run run after the tag. A reviewer could rule it either way. "Check job" is not defined in AC-31, its row or T83, so the committed graph check can either hard-code the four named check jobs or treat every job outside the version and publishing set as a check. With a hard-coded list, a check job added later without `needs` on the version job passes the check.
+PROPOSAL: Reword AC-31 to say the tag follows every check job of its run, naming those jobs as the ones that run before the version job and are not release, platform or latest-mark jobs. Have the graph check in the AC-31 row and T83 count every job outside that publishing set as a check job.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks T83 ("`swift-portability.yml`'s AWS client and helper jobs moved into it without its spike job"); Design, Integration and feasibility ("ran through the former `swift-portability.yml` workflow and its runner, which stay as history and are not a CI check"); Design, Migration, performance and release boundaries ("no feasibility spike runs in CI"); Context, Owner summary ("without the feasibility spikes")
+EVIDENCE: The owner decided that no feasibility spike runs in the workflows. At this commit `.github/workflows/swift-portability.yml` has a `portability` job that runs `bash spikes/swift-portability/run.sh` (line 67), triggered on push to feat/shared-swift-core with path filters (lines 3 to 28) and on workflow_dispatch. T83 says release.yml is "folded into" ci.yml but only that swift-portability.yml's other two jobs are "moved into it without its spike job". One literal reading leaves the spike job and its push trigger in swift-portability.yml. "Stay as history" could mean the file stays in the tree or only in Git history. No done condition of T83 and no row in the Test Plan checks that no workflow runs a spike, so an implementation that keeps the spike workflow passes every listed check.
+PROPOSAL: State in T83 and the Integration paragraph that swift-portability.yml is deleted and the runner stays only as a file. Add to T83's done condition that no workflow under .github/workflows references `spikes/`.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Test Plan AC-31 row ("every release, platform and latest-mark job needs the version job and runs only on its `tagged` output"); Tasks T83 ("then the release, platform and latest-mark jobs needing it"); Design ("every publishing job needs the version job and acts only on its `tagged` output")
+EVIDENCE: The Design requires every publishing job to need the version job. The workflow being folded in has a separate `winget` job that submits the WinGet manifest (.github/workflows/release.yml:321-350, `needs: [release, windows]`, environment `winget`). The AC-31 row and T83 list only the release, platform and latest-mark jobs. So a graph check written to the row may skip the WinGet submission job, which the Design counts as a publishing job.
+PROPOSAL: Name the WinGet submission job in the AC-31 row and T83, or say "every publishing job (release, platform, latest-mark and WinGet submission)".
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Design, Integration and feasibility ("the AWS client and helper jobs of ci.yml test the code it probed")
+EVIDENCE: This revision (cd15a7d) added this sentence. The spike compiled and ran the region validator and AWS config parser. Their unit tests, `SSMConnectKit/Tests/SSMConnectKitTests/Models/AWSRegionTests.swift` and `Services/AWSConfigParserTests.swift`, belong to SSMConnectKitTests, which is declared only under `#if os(macOS)` (SSMConnectKit/Package.swift:110-158). The helper job's filters (`SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests` plus the platform test target, swift-portability.yml:134-144) exclude it on every OS. The AWS client and helper jobs build that code on Linux and Windows and exercise it only through the helper tests. They do not run its tests there.
+PROPOSAL: Narrow the sentence to say the jobs build the code the spike probed and run the helper protocol tests, and that the region and config parser tests run on macOS only.
+
+FINDING: F-05
+KIND: factual
+SEVERITY: nit
+WHERE: Design, Migration, performance and release boundaries ("on a branch a new push cancels the older run, so a prerelease cancelled partway stays partly published until Re-run failed jobs completes it, or is left" and "A job that failed for a transient reason is retried with Re-run failed jobs"); Context, Owner summary ("a failed release is retried with Re-run failed jobs"); Tasks T84 (README describes Re-run failed jobs); Sources (Delivery conventions and shared delivery entry, "the same-workflow arrangement without an App with its rerun recovery")
+EVIDENCE: This revision (cd15a7d, applying R-48 F-05) added the concurrency sentence. A re-run attempt is queued again under the same `ci-${{ github.ref }}` group. GitHub cancels a pending run in the group when a new one queues, and with `cancel-in-progress` true it also cancels the running one. So re-running an older branch run cancels a newer run that is publishing its own prerelease. Re-running an older main run while a newer one is pending cancels the pending run, and the newest main commits stay unreleased until another push or a dispatch. The Design does not define either path. The pinned conventions/delivery.md (Workflows and permissions) says "Recover a failed release run with a fresh dispatch on the current head, not a re-run". The rerun recovery comes only from knowledge/tag-driven-go-releases.md ("Same workflow or separate workflows") and the shared example, but Sources attributes it to delivery.md and shared-delivery.md, and neither page states it.
+PROPOSAL: Say to re-run only when no other run of that ref is queued or running, and otherwise to dispatch on the current head. Note that the delivery convention's fresh-dispatch rule does not apply because a fresh dispatch on a head that already has its tag releases nothing. Cite tag-driven-go-releases.md for the rerun recovery.
 
 ## Sources
 
