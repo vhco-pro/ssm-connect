@@ -37,8 +37,8 @@ targets:
         # Task I3 / NF-04 — outbound-network entitlement, applied during code signing.
         CODE_SIGN_ENTITLEMENTS: SSMConnect/SSMConnect.entitlements
     dependencies:
-      # The thin @main shell depends only on the local package; the AWS SDK products
-      # are SSMConnectKit's dependencies (declared in its Package.swift).
+      # The thin @main shell depends only on the local package, which reaches AWS
+      # through its own SSMConnectAWSClient (no AWS SDK is linked).
       - package: SSMConnectKit
         product: SSMConnectKit
     # Task A5/A6 — Build-time plugin fetch + embed (ADR-7, ADR-P3)
