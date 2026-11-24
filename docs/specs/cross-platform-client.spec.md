@@ -1424,6 +1424,7 @@ None.
 | 2026-11-24 | R-51 | spec | `ef4840b` | claude-opus-5-5 | procedural | No blocking findings; one should-fix (a judgement for the owner) and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-52 | spec | `350c27e` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-53 | spec | `4fcef8b` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-54 | spec | `bfd7b03` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2904,6 +2905,38 @@ EVIDENCE: At 0c983f6, conventions/delivery.md never mentions a same-workflow arr
 PROPOSAL: Credit the same-workflow arrangement without an App to knowledge/tag-driven-go-releases.md, in both the Sources entry and the Design citation.
 
 All four R-52 findings are resolved at 4fcef8b. F-01: `spikes/` is back in `covers`. F-02: the AC-31 row and T83's done condition require an unfiltered macOS suite and fail when the filter is restored. F-03: the citation now reads `run.sh:30-32` at `b1c433f`, and git show confirms lines 30 to 32. F-04: the sentence now reads "The spike used native ...". `vh-adlc lint` passes. `vh-adlc gate planned` fails only on spec_review_fresh, accepted and on_feature_branch_if_set, which is expected for a revised draft reviewed in a detached worktree.
+
+### R-54
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks T87 (change "waits until the fake tunnel has recorded its start before calling `stop()`" and done condition "with the fake tunnel's start delayed past 100 ms the old wait fails and the new one passes"); the property it must keep is stated in the Test Plan AC-18 row ("Turn Off Web Forwards while they start ends the ssh") and in T81's evidence ("Turn Off Web Forwards while the ssh start is in flight ends the handle that start returns")
+EVIDENCE: bfd7b03 added T87 from R-53 F-01's proposal. In the test, the fake's start is already delayed 300 ms (`tunnel.startDelay = .milliseconds(300)`, WebForwardsStateMachineTests.swift:469), the test sleeps 100 ms (:473), and this passed on MacBook-Pro under T81. So "start delayed past 100 ms" is the current setup, and under it the old wait passes. It does not fail. FakeSSHTunnel.start (WebForwardsStateMachineTests.swift:57-65) records its start (`recorder.append("ssh")`, `handles.append`) only after `try? await Task.sleep(for: startDelay)`, which means after the delay. The machine runs `try Task.checkCancellation()` just before `tunnel.start` (SSMConnectWorkflow/WebForwardsStateMachine.swift:337-338), and `stop()` cancels the task (:153-155). If start had been entered, cancellation would end the fake's swallowed sleep and a handle would still be recorded. So the empty `tunnel.handles` in CodeQL run 45459504042 (`gh run view 45459504042 --log-failed`: "WebForwardsStateMachineTests.swift:477:26: Expectation failed: (tunnel.handles → []).first → nil") means stop came before start was entered: the steps before the tunnel start took over 100 ms on the hosted runner. This leads to two problems. First, an implementer who waits on what the fake records today (`handles` or "ssh") calls `stop()` only after start has returned. The test still passes, but it no longer stops web forwards while they start, which is the AC-18 property T81 added it for. A second implementer adds an entry signal to the fake. Second, the failing-first step as written cannot show the old wait failing. To reproduce the hosted failure, a step before the tunnel start has to be delayed, for example the key generator or the SSH session.
+PROPOSAL: Reword T87: the fake tunnel records when its start is entered, before its delay, and the test waits for that before calling `stop()`. The done condition becomes: with a step before the tunnel start (for example the key generator) delayed past 100 ms, the old wait fails with no handle and the new one passes, and the unfiltered suite passes in the `macos-package` job on the hosted runner.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Test Plan AC-31 row ("the `macos-package` check job runs on a macOS runner and runs `swift test --package-path SSMConnectKit` with no `--filter`; it fails on copies of `ci.yml` with one of those `needs` or the gate removed, with a non-publishing job added after the version job, and with the macOS filter restored"); Tasks T83 (done condition lists "a `--filter` on the `macos-package` job's `swift test --package-path SSMConnectKit`" and never mentions the runner); Design, Migration, performance and release boundaries ("runs in the `macos-package` check job, on a macOS runner, before the tag")
+EVIDENCE: bfd7b03 added "runs on a macOS runner" to the AC-31 row's check. It did not add a copy of `ci.yml` that the check must reject for it, and it added nothing about the runner to T83's done condition. In SSMConnectKit/Package.swift, SSMConnectKitTests and the macOS targets are declared only under `#if os(macOS)` (Package.swift:111-160). On Linux, `swift test --package-path SSMConnectKit` builds and passes without them; T82's evidence runs the full suite in the Fedora 43 image. If `macos-package` is given an ubuntu `runs-on`, its step stays green while running none of the macOS package suite, including the WebForwards test T87 fixes. A graph check written to T83's done condition, or one that passes every listed must-fail copy, can still skip the runner check. That leaves the guarantee the owner chose in R-51 (a failing macOS test blocks the tag) without a proof.
+PROPOSAL: Add to the AC-31 row's must-fail list, and to T83's done condition, a copy of `ci.yml` whose `macos-package` job has a non-macOS `runs-on`, which the graph check must reject.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Context, Owner summary ("in one workflow that also publishes (AC-31, T83 to T86)"); Tasks T86 ("updating AC-24's and adding AC-31's from T83 to T85")
+EVIDENCE: bfd7b03 added T87, which advances AC-18 and AC-31 and sits between T84 and T85. The summary's task range and T86's source range both stop at T86 and T85, so neither names T87. T86 restores AC-18's evidence line from before the revision. That line describes `stopWhileStartingEndsSSH` as T81 left it, which T87 then changes.
+PROPOSAL: Write "T83 to T87" in the summary. In T86, say AC-31's evidence comes from T83, T85 and T87, and note T87's hosted pass with AC-18's restored evidence.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Sources; Tasks T87 ("which failed in CodeQL run 45459504042 on a hosted macOS runner")
+EVIDENCE: This revision rests T87 on the log of GitHub Actions run 45459504042 (CodeQL, pull_request, head b1c433f; `gh run view` shows conclusion failure). Sources does not list that run. The standard says Sources lists every external page read, with the claim it supports.
+PROPOSAL: Add a Sources entry linking run 45459504042: the full macOS package suite failed on a hosted macOS runner in `stopWhileStartingEndsSSH` (WebForwardsStateMachineTests.swift:477).
+
+All four R-53 findings are addressed at bfd7b03. F-01: T87 now comes before T85 and requires the unfiltered suite to pass in the `macos-package` job on the hosted runner, though its wording has the defect in F-01 above. F-02: the held latest-mark step is gone from the AC-24 row, and the Design says per-ref serialization on main leaves a Re-run failed jobs attempt as the only late older run. F-03: the macOS package suite has its own `macos-package` check job on a macOS runner in T83, the AC-31 row and the Design, and the helper job runs on Linux and Windows. F-04: Sources and the Design credit the same-workflow arrangement to `knowledge/tag-driven-go-releases.md`, and I confirmed that page's "Same workflow or separate workflows" table defines it. `vh-adlc lint` passes. `vh-adlc gate planned` fails only on spec_review_fresh, accepted and on_feature_branch_if_set, which is expected for a revised draft reviewed in a detached worktree.
 
 ## Sources
 
