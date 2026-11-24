@@ -280,12 +280,14 @@ struct HelperCommandTests {
 
     @Test("The DCV connection file is deleted once the viewer has had time to read it")
     func connectionFileRemoved() async throws {
-        let f = try await Self.fixture(dcvCleanupDelay: .milliseconds(200))
+        // The window starts when the Viewer launch is requested, before connect returns, so it must
+        // outlast connect's return even on a loaded machine.
+        let f = try await Self.fixture(dcvCleanupDelay: .seconds(2))
         try await Self.save(f, Self.configured())
         await Self.run(f, "c", "connect")
         let file = try #require(f.outbox.launches("dcvViewer").first?["file"])
         #expect(FileManager.default.fileExists(atPath: file))
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
         while FileManager.default.fileExists(atPath: file), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
         #expect(!FileManager.default.fileExists(atPath: file))
         await Self.run(f, "d", "disconnect")
