@@ -76,6 +76,29 @@ public sealed class ShellDriveThroughTests
     }
 
     [Fact]
+    public void AResumeFromSleepSendsOneSystemWake()
+    {
+        HelperHostTests.FakeHelper? helper = null;
+        var platform = new RecordingPlatform();
+        RunOnSta(async () =>
+        {
+            var spawner = new HelperHostTests.FakeSpawner(() => helper = new HelperHostTests.FakeHelper { OnCommand = Completed });
+            var host = new HelperHost(spawner, "build-1", HelperHostLimits.Default, TimeProvider.System);
+            await host.StartAsync();
+            var controller = new ShellController(host, platform);
+            int Wakes() => Commands(helper!).Count(c => c == "systemWake");
+            controller.PowerModeChanged(Microsoft.Win32.PowerModes.Suspend);
+            await Task.Delay(300);
+            Assert.Equal(0, Wakes()); // going to sleep sends nothing
+            controller.PowerModeChanged(Microsoft.Win32.PowerModes.Resume);
+            await Eventually(() => Wakes() == 1);
+            await Task.Delay(300);
+            Assert.Equal(1, Wakes());
+            lock (platform.Calls) Assert.DoesNotContain(platform.Calls, c => c.StartsWith("error", StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
     public void TrayAndSettingsControlsReachTheHelper()
     {
         HelperHostTests.FakeHelper? helper = null;

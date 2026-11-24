@@ -51,9 +51,13 @@ public partial class App : Application
         // A click on the tray icon is Connect, as the first macOS action, when macOS would offer it.
         tray.PrimaryActionRequested += () => _ = shell.TriggerAsync("menucontent-button-machine-actiontitle");
         instance.Activated += () => Dispatcher.Invoke(ShowSettings);
+        // After a sleep the helper checks its connections, as macOS does on its wake notification.
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         UpdateTray();
         await host.StartAsync();
     }
+
+    void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e) => controller?.PowerModeChanged(e.Mode);
 
     void UpdateTray()
     {
@@ -90,6 +94,8 @@ public partial class App : Application
     {
         if (helperStopped) return;
         helperStopped = true;
+        // SystemEvents holds its handlers statically: detach before the shell goes away.
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         if (host is { } running) Task.Run(() => running.ShutdownAsync(TimeSpan.FromSeconds(5))).Wait(TimeSpan.FromSeconds(10));
         tray?.Dispose();
         instance?.Dispose();

@@ -399,6 +399,17 @@ public sealed class ShellController
     CancellationTokenSource? connecting;
 
     /// <summary>
+    /// The system's power mode changed: after a resume, asks a ready helper, quietly, to check its
+    /// connections, as macOS does on its wake notification (AC-18).
+    /// </summary>
+    public void PowerModeChanged(Microsoft.Win32.PowerModes mode)
+    {
+        // Quiet: a helper that is busy or stopped needs no wake check, and nothing here is the user's doing.
+        if (mode != Microsoft.Win32.PowerModes.Resume || host.Status != HelperHostStatus.Ready) return;
+        _ = host.SendAsync("systemWake", Empty, CancellationToken.None);
+    }
+
+    /// <summary>
     /// Sends an action's command and reports a failure to the user. The helper refuses a second
     /// desktop command while Connect runs, so Disconnect then cancels the Connect, as Disconnect while
     /// connecting does on macOS: the helper's cancel ends what the Connect started.
