@@ -93,7 +93,7 @@ protected your PC". Choose **More info**, then **Run anyway**. To upgrade, run t
 same way. If SSM Connect is running, setup offers to close it first, or to cancel and leave it
 running.
 
-If an upgrade fails, the version you had keeps working. If the next attempt is then refused,
+If an upgrade fails, SSM Connect stays usable. If the next attempt is then refused,
 please [report it](https://github.com/vhco-pro/ssm-connect/issues) with the version you had and the
 one you were installing.
 
@@ -233,7 +233,7 @@ profile folder, a closed browser and explicit proxy-setup confirmation. It keeps
 logins in place without reading or importing them. **Restore Browser Settings** restores only
 owned proxy values and refuses later user/extension/policy changes; close Zen first.
 
-The verified preview matrix is Chrome **156.0.8078.12** (Separate Browser) and Zen **1.23.1b**
+The verified preview matrix is Chrome **158.0.8127.37** (Separate Browser) and Zen **1.24.3b**
 (both modes). Other versions/products are unavailable until verified. Chrome existing-profile
 setup requires a separately approved extension and is not implemented. Shared Chromium/Firefox
 backends do not automatically enable Edge/Firefox or untested forks.
