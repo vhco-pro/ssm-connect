@@ -142,7 +142,8 @@ Ubuntu's portal file picker) to the parity and helper tests, while Retry
 Authorization and Set Up a Workstation are still exercised natively (T66). Review
 R-33 found that the Windows and Linux shells never report waking from sleep, so their
 connections never get macOS's reconnect-on-wake check: each shell now sends the
-helper a `systemWake` command on resume (T70 to T75). Windows support starts at
+helper a `systemWake` command on resume (T70 to T75), and helper tests cover the web
+forwards and editor recovery that follow a sleep (T76). Windows support starts at
 Windows 11 24H2, as the installer already requires (owner decision, 2026-11-24).
 
 ### Harm and the simplest alternative
@@ -603,7 +604,15 @@ so their connections never get that check (review R-33). Each shell now sends th
 a `systemWake` command when the system resumes: the WPF shell on
 `SystemEvents.PowerModeChanged` with `PowerModes.Resume`, the Qt shell on logind's
 `PrepareForSleep(false)` signal on the system bus. The helper runs the same
-`handleSystemWake`. `systemWake` is a shell event, not a user control, so the parity
+`handleSystemWake`. Web forwards and the editor need no wake command, on any platform:
+after a sleep their transports have dropped, and their own recovery runs. Web forwards
+see their SSH process exit and, with Reconnect automatically on, reconnect with a fresh
+SSH key; with it off they stop with an error
+(`SSMConnectWorkflow/WebForwardsStateMachine.swift:230-240`). The editor's lease
+expires during a long sleep, VS Code's proxy then writes a recovery request, and the
+helper's recovery monitor starts editor recovery
+(`SSMConnectWorkflow/RemoteDevelopmentStateMachine.swift:412-439`). `systemWake` is a
+shell event, not a user control, so the parity
 inventory does not list it; it is admitted like any command and refused only by a busy
 desktop workflow, which is then already reconnecting or connecting.
 
@@ -717,9 +726,11 @@ while opening and Cancel Recovery only while recovering, lines 117-122). The
 shells show and enable each control from the workflow states the helper streams,
 and a control that is not available cannot send its command.
 
-Some macOS controls interrupt work in progress: Disconnect during a connect,
-Cancel Recovery, Cancel Replacement Recovery, Cancel Forwarding Recovery, Stop
-Remote Access and Restore Editor Setup. The helper runs one command per workflow
+Some macOS controls interrupt work in progress: Cancel Recovery, Cancel
+Replacement Recovery, Cancel Forwarding Recovery, Stop Remote Access and Restore
+Editor Setup. macOS offers Disconnect only while connected
+(`MenuContentView.swift:94-103`), and the Windows and Linux trays follow that rule;
+their cancel of a running command on Disconnect stays as a defensive protocol path. The helper runs one command per workflow
 and refuses a second one as busy (`SSMConnectHelperProtocol/HelperSession.swift:108-110`),
 so these controls use the protocol's cancel for the running command, as
 Disconnect does since 8efc7dd (owner decision, 2026-11-22). When a command of
@@ -735,8 +746,8 @@ workflow running, the controls therefore send a command that calls the
 workflow's own cancellation, as macOS does: `cancelEditorRecovery` (Cancel
 Recovery and Cancel Replacement Recovery, `remoteDevelopment.cancelRecovery()`),
 `cancelForwardingRecovery` (`webForwards.stop()`), and Stop Remote Access and
-Restore Editor Setup as themselves. This is how Disconnect already behaves: it
-cancels a running Connect, and otherwise sends `disconnect`.
+Restore Editor Setup as themselves, the same pattern as the shells' defensive
+Disconnect path, which cancels a running Connect and otherwise sends `disconnect`.
 
 The command can finish in the helper while the shell's cancel is on its way: the
 helper removes a command before it sends the result
@@ -917,7 +928,7 @@ core, or change macOS signing claims through this refactor.
 | AC-15 | Controlled clock/expiry tests and native expiry/revocation scenarios: silent renewal, rejected refresh, one explicit login, pending-action resume, profile change, Stop and cancellation. Healthy established transports retain their target/auth context. |
 | AC-16 | On macOS for Chrome Separate Browser and Zen in both modes, and on Windows and Linux for Chrome Separate Browser (Zen deferred to #38, its actions refused naming the browser capability), at each platform's pinned versions, run consent/setup/restore, policy/ownership refusal and transport-loss scenarios. Selected private suffixes must fail closed while unrelated public browsing remains unchanged. |
 | AC-17 | Native Remote-SSH scenarios cover concurrent windows, expired authorization/lease recovery, dirty buffers, app interruption and confirmed replacement. On Windows and Linux, start with VS Code closed, open a workspace through SSM Connect so it launches VS Code, create unsaved content, then kill the helper: VS Code keeps running with the unsaved content, its channels end, and editor recovery reconnects them through the replacement helper. Verify VS Code is outside the helper's job object or systemd unit. Reopen the original workspace authority and verify remote commands/editing without bypassing host-key checks. |
-| AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes, and VS Code, DCV Viewer and browser windows SSM Connect launched, keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. On Windows and Linux, helper tests send `systemWake` with a connected desktop whose tunnel no longer answers (it reconnects) and with a healthy one (left alone), and shell tests raise a resume event (the WPF shell's PowerModeChanged with Resume, a fake logind's PrepareForSleep(false) for the Qt shell) and assert one `systemWake` command, each seen failing first. Natively, ubuntu-sandbox suspends with an RTC wake alarm with the desktop, web forwards and the editor connected; w11-sandbox's firmware offers no sleep state, so Windows sleep rests on these tests (owner decision, 2026-11-23). |
+| AC-18 | Kill only the owned test client/process by PID during an active transport, start no replacement client, and check that every owned descendant (helper, plugin, SSH) ends while unrelated processes, and VS Code, DCV Viewer and browser windows SSM Connect launched, keep running. On Linux, also suspend the helper with SIGSTOP before killing the shell and verify that systemd ends the helper's unit and all its processes within 10 seconds; repeat disconnect/cancel, restart, sleep and logoff scenarios from a separate native test controller. On Windows and Linux, helper tests send `systemWake` with a connected desktop whose tunnel no longer answers (it reconnects) and with a healthy one (left alone), and shell tests raise a resume event (the WPF shell's PowerModeChanged with Resume, a fake logind's PrepareForSleep(false) for the Qt shell) and assert one `systemWake` command, each seen failing first. Helper tests with fake services also cover web forwards and the editor after a sleep: a web forwards SSH process that exits reconnects with a fresh key when Reconnect automatically is on and stops with an error when it is off, and a recovery request for an editor lease that expired starts editor recovery and ends with the editor active again. Natively, ubuntu-sandbox suspends with an RTC wake alarm with the desktop, web forwards and the editor connected; w11-sandbox's firmware offers no sleep state, so Windows sleep rests on these tests (owner decision, 2026-11-23). |
 | AC-19 | Seed synthetic secrets, then inspect profiles, state/events, logs and temp artifacts; exercise cross-user access, file substitution and stale-owner/generation cases using native OS permissions. Report unexecuted native cases separately. |
 | AC-20 | Run the complete current macOS package suite and build the release artifact on its native runner. Execute the current documented native flows against the baseline, without replacing an installed app unless separately authorized. |
 | AC-21 | On Windows, fail an upgrade with a test build whose custom action fails after the prior product has been removed and before the transaction completes, the installer log showing RemoveExistingProducts before the failure and the rollback after it; and cancel another at its Restart Manager prompt: each time the prior version stays installed and is the product the next upgrade replaces, `msiexec /x` of the new version then leaves no program folder, and Windows Installer lists no product of SSM Connect's upgrade code. On a clean target for each matrix entry, install the final package (Windows 11 x64: `winget install` from a locally validated manifest for the MSI; Fedora 43: `dnf install` of the `.rpm`; Ubuntu 24.04: `apt install` of the `.deb`), verify dependencies and launch, upgrade over the prior candidate, uninstall and check owned residue. Repeat the upgrade with the prior candidate running an active connection: on Windows, declining the Restart Manager prompt leaves the prior version installed and connected, and accepting closes it cleanly before install; on Linux, the running pair keeps its established connection; between builds whose bundled plugins differ, starting a new connection is refused with the "updated; restart it" message before any AWS call, and between builds that bundle a byte-identical plugin it proceeds on the running old helper; in both cases opening VS Code or requesting a new channel from an already open VS Code window is refused by the replaced proxy with that message before any AWS call, and killing the helper refuses its replacement launch. Repeat uninstall with an active connection: on Windows, declining leaves the client installed and connected and accepting closes it cleanly first; on Linux the running client keeps its established connection, a new connection or VS Code action shows the "removed; quit it" message without launching anything, a new channel from an open VS Code window fails with VS Code's SSH connection error and no AWS call, and after the user quits no program file or transient artifact (helper unit, lease, temporary file) remains while profiles, settings, browser profiles and routing and restore files are still present. Pause an `.rpm` and a `.deb` upgrade after only the helper executable is replaced: a new connection handled by the running old helper proceeds on the old build, a new channel from an open VS Code window proceeds on the old build, and killing the helper then refuses the replacement launch with the "updated; restart it" message. Repeat with only the plugin replaced: a new connection and a new VS Code channel are both refused with that message, and no launch whose files were replaced before its check starts files from two builds. Replace the helper between its check and its start and verify the handshake refuses it. Force a failed MSI upgrade and verify the previous version remains installed and runs with its state intact. For the `.rpm` and `.deb`, force a failure after at least one file has been replaced, reinstall the package with dnf or apt, and verify the client starts with its profiles and settings unchanged. Inspect both packages and verify every maintainer script action is non-fatal. Record exact OS/CPU/desktop and artifact hash. |
@@ -1185,6 +1196,7 @@ The parity revision (accepted 2026-11-23) adds T50 to T62. AC-30 comes first bec
 - [ ] T73 `windows/src/SSMConnect.App/` - send `systemWake` on `SystemEvents.PowerModeChanged` with `PowerModes.Resume`; done: T72 and the Windows suite pass on w11-sandbox (AC-18)
 - [ ] T74 `linux/tests/shell_test.cpp` - a failing test that a fake logind's `PrepareForSleep(false)` sends one `systemWake` command; done: it fails in `scripts/linux/shell-tests.sh` (AC-18)
 - [ ] T75 `linux/src/` - send `systemWake` on logind's `PrepareForSleep(false)`; done: T74 and the Linux suites pass on Fedora's and Ubuntu's Qt (AC-18)
+- [ ] T76 `SSMConnectKit/Tests/SSMConnectHelperTests/ParityCommandTests.swift` - helper tests with fake services for web forwards and the editor after a sleep: an SSH process exit reconnects web forwards with a fresh key with Reconnect automatically on and stops them with an error with it off, and a recovery request for an expired editor lease starts recovery and ends with the editor active; done: they pass in swift:6.4.2-noble and on w11-sandbox, each also seen failing with its recovery path disabled (AC-18)
 - [ ] T65 `docs/specs/cross-platform-client.spec.md` - with T70 to T75 built, suspend ubuntu-sandbox with an RTC wake alarm while the desktop, web forwards and the editor are connected, and record w11-sandbox's sleep states (`powercfg /a`); done: an AC-18 evidence line for Ubuntu showing the wake handling, and the Windows line naming the tests its sleep rests on (AC-18)
 ## Open Questions
 
