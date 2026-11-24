@@ -1327,6 +1327,7 @@ None.
 | 2026-11-24 | R-39 | spec | `f3874b8` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (the owner routed this review to a Claude reviewer while the Codex route is out of usage; two Codex passes at this commit failed on the usage limit and returned nothing) |
 | 2026-11-24 | R-40 | spec | `dce39cb` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing; a pass started at `e86e26b` was stopped before it returned, as `dce39cb` corrected the macOS step) |
 | 2026-11-24 | R-41 | spec | `f467d4f` | claude-opus-5-5 | procedural | No blocking findings; four should-fix and one nit (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-42 | spec | `81341b5` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and one nit (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2169,6 +2170,22 @@ SEVERITY: nit
 WHERE: Context / Owner summary:161-168; Frontmatter / status_description:3
 EVIDENCE: The summary still says AC-26 runs "with full backups, a scratch Zen profile and a byte-identical restore" (lines 165-166). After f467d4f, the AC-26 row makes only the copied-back files byte-identical and compares the preferences domain as `defaults export` key by key. The summary still ends at "A normal Quit and Disconnect on macOS stay inside AC-18's native proof (owner decision after review R-39)". It does not record the decisions after R-40: cancel and logout rest on new T81 tests, macOS sleep rests on the existing wake cases, and preferences are compared decoded. f467d4f updated status_description with these decisions but not the summary. R-40 F-01 and F-02 both named the Owner summary in their WHERE.
 PROPOSAL: Reword lines 164-168 to say the files are restored byte-identical and the preferences domain is compared through `defaults export`, and add one sentence on how macOS cancel, logout and sleep are proved (owner decision after review R-40).
+
+### R-42
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Test Plan / AC-18:983; Context / Owner summary:169-172; Design / Windows and Linux parity with the macOS interface:761-763
+EVIDENCE: The AC-18 row says "Stop Remote Access ending editor access rests on `EditorWorkspaceRecoveryTests` ("UPGRADE-05: A stopped profile cannot be revived by a stale helper request")". That test (`SSMConnectKit/Tests/SSMConnectKitTests/Tunnel/EditorWorkspaceRecoveryTests.swift:325-338`) asserts only three things after `stop()`: no further authorization call, `!isActive`, and a forgotten recovery intent. It never checks that the lease file or the key is removed. Those removals are what `stop()` does to end access (`SSMConnectWorkflow/RemoteDevelopmentStateMachine.swift:214-242`), and AC-18's end state is "no ... reusable unauthorized access". An implementation that forgot the intent but left the lease on disk would pass the cited test. A test that does check this already exists: `EditorLeaseContinuationTests.swift:308-347` (LEASE-05, `stop` and `quit` cases), which expects the lease file to be gone. R-41 F-02 asked the row to name the macOS cancellations it covers. 81341b5 added the profile change, Turn Off Web Forwards and Stop Remote Access, but the row still names no macOS proof for Cancel Recovery, Cancel Replacement Recovery or Restore Editor Setup. Design:761-763 lists all three as controls that interrupt work in progress, and `cancelRecovery()` is at `RemoteDevelopmentStateMachine.swift:159-168`. `EditorWorkspaceRecoveryTests.swift:235-256` (REBUILD-09 and UPGRADE-05, Cancel and Stop during a readiness wait) covers the first two. Cancel Forwarding Recovery calls the same `webForwards.stop()` as Turn Off (`MenuContentView.swift:197`). The Owner summary also says "macOS cancellation, logout and sleep rest on new failing-first tests", but the row rests Stop Remote Access on an existing test. Traces to 81341b5, which chose the UPGRADE-05 test.
+PROPOSAL: Name LEASE-05 (stop case) alongside or instead of the UPGRADE-05 test for Stop Remote Access, and name REBUILD-09 for Cancel Recovery and Cancel Replacement Recovery. Either name a test for Restore Editor Setup or say it shares Stop's path. Reword the summary to say that macOS cancellation rests on new and existing tests.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Tasks / T81:1251; Test Plan / AC-18:983
+EVIDENCE: T81's helper case ("a wake with a dead tunnel ends the original tunnel before the replacement starts ... in the helper") names only `ParityCommandTests.swift`. The helper fixture builds its tunnel inline as `tunnel: MockTunnelProvider()` (`SSMConnectKit/Tests/SSMConnectHelperTests/HelperCommandTests.swift:153`) and does not keep it in `Fixture` (lines 114-126). `MockTunnelProvider.startTunnel` returns a fresh `MockTunnelHandle` without recording it (`SSMConnectWorkflow/TunnelMocks.swift:62-72`). So the helper test cannot see the first handle's `terminateCount` unless it changes `HelperCommandTests.swift` or `TunnelMocks.swift`, and T81 lists neither. The profile-change case has a similar gap. `ConnectionStateMachine.apply` cancels a connect only when the provider is an `AuthorizationSession` (`ConnectionStateMachine.swift:157-162`), and otherwise returns at `guard state == .disconnected`. `makeMachine` defaults to `MockAuthProvider` (`ConnectionStateMachineTests.swift:15`), so that case needs a real `AuthorizationSession`, as `AuthorizationSessionTests.swift:313` uses. macOS always passes one (`SSMConnect/App/SSMConnectApp.swift:23`). T81 also lists `ConnectionStateMachine.swift` as a source change, so an implementer must not "fix" `apply` to make the test pass. Careful implementers would still build the same thing.
+PROPOSAL: Add the helper fixture file (or `TunnelMocks.swift`) to T81's file list, and say that the profile-change case uses an `AuthorizationSession` provider and leaves `apply` unchanged.
 
 ## Sources
 
