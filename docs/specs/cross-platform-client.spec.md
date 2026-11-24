@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Revising after the owner's 2026-11-23 and 2026-11-24 decisions: performance (#37) and Zen on Windows and Linux (#38) move to follow-ups, GetSecretValue, single-user desktops and unreachable controls rest on tests, Windows starts at 24H2, and the shells gain reconnect-on-wake."
+status: in-progress
+status_description: "Implementing the 2026-11-24 revision on feat/shared-swift-core: T63 and T66 to T76, then the Ubuntu suspend (T65), macOS acceptance (T27), the macOS part of T31, criterion evidence and the implementation review."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
