@@ -32,11 +32,14 @@ final class FakeInstanceConnect: InstanceConnectProviding, @unchecked Sendable {
     let recorder: WebEventRecorder
     var fail = false
     var error: Error?
+    /// Holds each push this long, as a slow runner does, before the tunnel starts.
+    var pushDelay: Duration?
     private(set) var publicKeys: [String] = []
     private(set) var user: String?
     init(_ recorder: WebEventRecorder) { self.recorder = recorder }
     func sendPublicKey(instanceId: String, user: String, publicKey: String,
                        region: String, credentials: AWSCredentials) async throws {
+        if let pushDelay { try? await Task.sleep(for: pushDelay) }
         recorder.append("push")
         if let error { throw error }
         if fail { throw WebForwardsError.keyPushFailed }
@@ -51,11 +54,14 @@ final class FakeSSHTunnel: SSHTunnelProviding, @unchecked Sendable {
     func unavailableCapabilities() -> [Capability] { unavailable }
     private(set) var handles: [MockTunnelHandle] = []
     private(set) var keyPaths: [String] = []
+    /// Starts entered, counted before the start delay, so a test can wait for one in progress.
+    private(set) var startsBegun = 0
     /// Holds each start this long before returning its handle, so a test can act while starting.
     var startDelay: Duration?
     init(_ recorder: WebEventRecorder) { self.recorder = recorder }
     func start(session: SSMSessionResponse, region: String, instanceId: String, user: String,
                keyPath: String, configuration: WebForwardsConfiguration) async throws -> TunnelHandle {
+        startsBegun += 1
         if let startDelay { try? await Task.sleep(for: startDelay) }
         recorder.append("ssh")
         let handle = MockTunnelHandle()
@@ -437,13 +443,15 @@ struct WebForwardsStateMachineTests {
     // MARK: macOS teardown paths (T81, AC-18)
 
     func recordingMachine(_ termination: RecordingTermination, quit: AppQuitHandler, tunnel: FakeSSHTunnel,
-                          recorder: WebEventRecorder) -> WebForwardsStateMachine {
+                          recorder: WebEventRecorder,
+                          instanceConnect: FakeInstanceConnect? = nil) -> WebForwardsStateMachine {
         var profile = ConnectionProfile.example
         profile.webForwards = .init(enabled: true, sshUser: "alice")
         let ec2 = MockEC2Service()
         ec2.resolveResult = .success(.stub(state: .running))
         return WebForwardsStateMachine(platform: termination.platform, profile: profile, log: ConnectionLog(),
-            auth: MockAuthProvider(), ec2: ec2, ssm: MockSSMService(), instanceConnect: FakeInstanceConnect(recorder),
+            auth: MockAuthProvider(), ec2: ec2, ssm: MockSSMService(),
+            instanceConnect: instanceConnect ?? FakeInstanceConnect(recorder),
             keyGenerator: FakeSSHKeyGenerator(recorder: recorder), tunnel: tunnel,
             writePAC: { _, _ in URL(fileURLWithPath: "/tmp/test.pac") }, sleep: { _ in }, quit: quit)
     }
@@ -467,10 +475,15 @@ struct WebForwardsStateMachineTests {
         let recorder = WebEventRecorder()
         let tunnel = FakeSSHTunnel(recorder)
         tunnel.startDelay = .milliseconds(300)
-        let web = recordingMachine(RecordingTermination(), quit: AppQuitHandler(), tunnel: tunnel, recorder: recorder)
+        // The steps before the ssh start take longer than any fixed wait on a slow runner, so wait
+        // for the start itself instead.
+        let connector = FakeInstanceConnect(recorder)
+        connector.pushDelay = .milliseconds(200)
+        let web = recordingMachine(RecordingTermination(), quit: AppQuitHandler(), tunnel: tunnel, recorder: recorder,
+                                   instanceConnect: connector)
         web.connect()
         #expect(web.state == .starting)
-        try await Task.sleep(for: .milliseconds(100))
+        try await wait { tunnel.startsBegun == 1 }
         web.stop()
         await web.awaitStopped()
         #expect(web.state == .off)
