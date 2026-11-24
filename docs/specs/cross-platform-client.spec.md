@@ -1408,6 +1408,7 @@ None.
 | 2026-11-24 | R-47 | implementation | `3da82a3` | claude-opus-5-5 | procedural | No findings; every criterion residualised on #40 (Claude reviewer on a Linux-only host, owner's routing) |
 | 2026-11-24 | R-48 | spec | `0e2e2ab` | claude-opus-5-5 | procedural | One blocking (`fail_job` reruns fail again), six should-fix and four nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-49 | spec | `0310307` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and three nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-50 | spec | `4ffc162` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and three nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2773,6 +2774,36 @@ SEVERITY: nit
 WHERE: Design, Migration, performance and release boundaries ("on a branch a new push cancels the older run, so a prerelease cancelled partway stays partly published until Re-run failed jobs completes it, or is left" and "A job that failed for a transient reason is retried with Re-run failed jobs"); Context, Owner summary ("a failed release is retried with Re-run failed jobs"); Tasks T84 (README describes Re-run failed jobs); Sources (Delivery conventions and shared delivery entry, "the same-workflow arrangement without an App with its rerun recovery")
 EVIDENCE: This revision (cd15a7d, applying R-48 F-05) added the concurrency sentence. A re-run attempt is queued again under the same `ci-${{ github.ref }}` group. GitHub cancels a pending run in the group when a new one queues, and with `cancel-in-progress` true it also cancels the running one. So re-running an older branch run cancels a newer run that is publishing its own prerelease. Re-running an older main run while a newer one is pending cancels the pending run, and the newest main commits stay unreleased until another push or a dispatch. The Design does not define either path. The pinned conventions/delivery.md (Workflows and permissions) says "Recover a failed release run with a fresh dispatch on the current head, not a re-run". The rerun recovery comes only from knowledge/tag-driven-go-releases.md ("Same workflow or separate workflows") and the shared example, but Sources attributes it to delivery.md and shared-delivery.md, and neither page states it.
 PROPOSAL: Say to re-run only when no other run of that ref is queued or running, and otherwise to dispatch on the current head. Note that the delivery convention's fresh-dispatch rule does not apply because a fresh dispatch on a head that already has its tag releases nothing. Cite tag-driven-go-releases.md for the rerun recovery.
+
+### R-50
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Design, Migration, performance and release boundaries (line 898, "The shell, Qt and macOS app tests run inside the platform jobs after the tag, as the release's own checks"); Design, Integration and feasibility (line 585, "the region and config parser tests run on macOS only"); Context, Owner summary (lines 112 to 114, "The shell, Qt and macOS app tests still run after the tag, so a platform test that always fails leaves that release without its asset"); Tasks T83 (no step adds them)
+EVIDENCE: The macOS platform job that T83 folds into ci.yml runs no test at all. `.github/workflows/release.yml:129-196` checks out, installs XcodeGen, stamps the version and runs `./scripts/release.sh`, which does only `xcodebuild build`, a helper presence check and `codesign --verify` (scripts/release.sh:33-52). project.yml:86-87 says there is no Xcode test target. The baseline release.yml at eb4f0bc also ran no tests. The macOS package suite, SSMConnectKitTests, which holds the region and config parser tests, runs only in `.github/workflows/codeql.yml:77-79`, triggered on pull_request to main, a weekly schedule and dispatch. The macOS helper job filters to `SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests` (swift-portability.yml:142). So under T83 the macOS app tests run in no job of ci.yml, before or after the tag. The Windows job does run `dotnet test` (release.yml:260) and the Linux job runs the Qt host, shell and parity tests (packaging/linux/build-packages.sh:96-105), so the claim holds for those two only. One implementer folds release.yml as it is and the macOS asset ships with no test. Another adds `swift test --package-path SSMConnectKit` to the macOS job to match the Design. The owner reads in the summary that macOS tests guard the macOS asset, which is not so. The line 898 sentence came from cd15a7d, applying R-48 F-06, whose evidence wrongly listed "the full macOS package suite" among the tests inside the platform jobs. The line 585 sentence came from 4ffc162, applying R-49 F-04.
+PROPOSAL: Either have T83 run the full macOS package suite inside the macOS platform job (or in the macOS check job before the version job), or correct the Design, the Integration sentence and the Owner summary to say the macOS job builds and verifies the signed app with no tests, and the macOS package suite runs only in CodeQL on PRs to main and weekly. If tests are added after the tag, keep them inside the macOS platform job so AC-31's set of check jobs stays as written.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Acceptance Criteria AC-31 ("every job other than the version job and the release, platform, latest-mark and WinGet submission jobs that publish"); Test Plan AC-31 row ("counts every job that does not depend on the version job as a check job"); Tasks T83 ("each job that does not depend on it")
+EVIDENCE: 4ffc162 added these two definitions of a check job, applying R-49 F-01. They agree only while every job that depends on the version job is a publishing job. A job added after the version job that does not publish, such as a separate post-tag test job, is a check job by AC-31, which then cannot be met, but not by the row's graph check, which passes. No such job is planned today.
+PROPOSAL: Use one definition in all three places, for example AC-31's set of publishing jobs, and have the graph check also fail when a job depending on the version job is not one of them.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Design, Migration, performance and release boundaries (line 914 to 917, "The macOS job sets it after uploading its ZIP ... that check and the update run as one step in a repository-wide `release-latest` concurrency group"; line 938 to 940, "The Windows job builds a per-user WiX MSI ..., uploads it, and then submits a WinGet manifest"); Acceptance Criteria AC-31 and its Test Plan row ("latest-mark and WinGet submission jobs"); Tasks T83
+EVIDENCE: GitHub Actions accepts `concurrency` only at workflow or job level, not on a step. The workflow being folded in already has separate `macos-latest` (release.yml:198-224, job-level `concurrency: group: release-latest`) and `winget` (release.yml:321-350) jobs, which AC-31, its row and T83 now name as jobs. The Design still describes both as steps of the macOS and Windows jobs. The step wording predates this revision (0ffb4ce and 3040421); AC-31's job names come from cd15a7d and 4ffc162.
+PROPOSAL: Say in the Design that a separate latest-mark job, needing the macOS job, runs in the queued `release-latest` group, and that a separate WinGet submission job, needing the Windows job, submits the manifest for stable releases only.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Design, Migration, performance and release boundaries (line 926 to 929, "otherwise the newer run releases the current head and the older release keeps its missing asset")
+EVIDENCE: 4ffc162 added this sentence, applying R-49 F-05. The bundled configuration of gitversion-tag-action at the pin version-workflow v0.1.2 uses (8cf5869, gitversion.yml) sets main to `increment: None` with commit-message incrementing, so a newer main run whose commits since the tag are only `docs`, `style`, `test` or `ci` computes the existing version, finds its tag and releases nothing. The sentence also reads as if the older release's asset is lost for good. But the same paragraph allows Re-run failed jobs once no other run of the ref is queued or running, so the older release can still be completed after the newer run ends.
+PROPOSAL: Reword to say that while another run of the ref is queued or running, the older run waits, and is re-run with Re-run failed jobs once that run has finished.
 
 ## Sources
 
