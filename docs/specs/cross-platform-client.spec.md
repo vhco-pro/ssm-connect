@@ -1,5 +1,5 @@
 ---
-status: draft
+status: planned
 status_description: "Revising after the owner's 2026-11-23 and 2026-11-24 decisions: performance (#37) and Zen on Windows and Linux (#38) move to follow-ups, GetSecretValue, single-user desktops and unreachable controls rest on tests, Windows starts at 24H2, and the shells gain reconnect-on-wake."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
@@ -1245,6 +1245,7 @@ None.
 | 2026-11-24 | R-33 | spec | `4aefc9d` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-24 | R-34 | spec | `906e714` | gpt-6.1-sol | procedural | No blocking findings; one should-fix and one nit |
 | 2026-11-24 | R-35 | spec | `549cbc2` | gpt-6.1-sol | procedural | NO FINDINGS (a first pass at this commit could not run commands to read the conventions and was discarded) |
+| 2026-11-24 | R-35 | spec | `549cbc2` | n/a | n/a | accepted by owner |
 
 ### R-1
 
