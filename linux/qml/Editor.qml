@@ -178,10 +178,11 @@ ApplicationWindow {
                     delegate: ColumnLayout {
                         required property var modelData
                         required property int index
-                        function update(key, value) { var d = editor.ensure(); d.webForwards.localForwards[index][key] = value; editor.draft = d }
+                        // Not "update": inside a TextField that name is the item's own update(), which ignores arguments.
+                        function setForward(key, value) { var d = editor.ensure(); d.webForwards.localForwards[index][key] = value; editor.draft = d }
                         RowLayout {
                             TextField { objectName: "profileeditor-textfield-name"; placeholderText: "Name"; text: modelData.name || ""
-                                        onEditingFinished: update("name", text) }
+                                        onEditingFinished: setForward("name", text) }
                             ToolButton {
                                 Accessible.onPressAction: clicked() // screen readers: Qt 6.4 does not click on the press action
                                 objectName: "profileeditor-button-remove-local-forward"; text: "−"; ToolTip.text: "Remove local forward"
@@ -191,15 +192,15 @@ ApplicationWindow {
                         RowLayout {
                             Label { text: "Local port" }
                             TextField { objectName: "profileeditor-textfield-local-port-2"; Accessible.name: "Forward local port"; text: String(modelData.localPort || "")
-                                        onEditingFinished: update("localPort", Number(text)) }
+                                        onEditingFinished: setForward("localPort", Number(text)) }
                             Label { text: "Remote port" }
                             TextField { objectName: "profileeditor-textfield-remote-port-2"; Accessible.name: "Forward remote port"; text: String(modelData.remotePort || "")
-                                        onEditingFinished: update("remotePort", Number(text)) }
+                                        onEditingFinished: setForward("remotePort", Number(text)) }
                         }
                         TextField { objectName: "profileeditor-textfield-remote-host"; placeholderText: "Remote host"; text: modelData.remoteHost || ""
-                                    onEditingFinished: update("remoteHost", text) }
+                                    onEditingFinished: setForward("remoteHost", text) }
                         TextField { objectName: "profileeditor-textfield-open-path-optional"; placeholderText: "Open path (optional)"
-                                    text: modelData.openPath || ""; onEditingFinished: update("openPath", text) }
+                                    text: modelData.openPath || ""; onEditingFinished: setForward("openPath", text) }
                     }
                 }
                 Button {
