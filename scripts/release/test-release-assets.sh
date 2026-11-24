@@ -126,5 +126,12 @@ check "a filter on the macOS package suite fails the graph check" '! cmp -s "$ci
 yq '.jobs.macos-package.runs-on = "ubuntu-24.04"' "$ci" > "$work/linux-suite.yml"
 check "the macOS package suite on a Linux runner fails the graph check" '! graph "$work/linux-suite.yml"'
 
+# The Linux package version: a tilde before the prerelease so it sorts below its release, and only
+# characters rpmbuild accepts in Version (letters, digits, . _ + ~ ^).
+pkg() { SSM_PRINT_PACKAGE_VERSION=1 bash "$here/../../packaging/linux/build-packages.sh" "$1"; }
+check "a stable version keeps its package version" '[ "$(pkg 1.2.3)" = 1.2.3 ]'
+check "a prerelease sorts below its release" '[ "$(pkg 0.0.0-t28.7)" = "0.0.0~t28.7" ]'
+check "a branch prerelease gives an RPM-legal version" '[ "$(pkg 0.8.0-feat-shared-swift-core.1)" = "0.8.0~feat.shared.swift.core.1" ] && [[ "$(pkg 0.8.0-feat-shared-swift-core.1)" =~ ^[0-9A-Za-z._+~^]+$ ]]'
+
 [ "$failures" = 0 ] || { echo "$failures release check(s) failed"; exit 1; }
 echo "Every release check passed."

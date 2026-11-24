@@ -26,8 +26,12 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 output="$(mkdir -p "${3:-$root/dist}" && cd "${3:-$root/dist}" && pwd)"
 work="$root/.build/linux-release"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "Expected a semantic version, got '$version'." >&2; exit 1; }
-# RPM and Debian versions sort a prerelease below its release with a tilde.
+# RPM and Debian versions sort a prerelease below its release with a tilde. RPM accepts no hyphen
+# in Version, so the prerelease's own hyphens, as in a branch label, become dots.
 package_version="${version/-/\~}"
+package_version="${package_version//-/.}"
+# Prints the package version and stops, for the release checks.
+[ "${SSM_PRINT_PACKAGE_VERSION:-}" = 1 ] && { echo "$package_version"; exit 0; }
 user=(--user "$(id -u):$(id -g)" -e HOME=/tmp/home)
 
 image() {
