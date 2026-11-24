@@ -1322,6 +1322,7 @@ None.
 | 2026-11-24 | R-38 | spec | `9f19db0` | n/a | n/a | accepted by owner |
 | 2026-11-24 | R-39 | spec | `f3874b8` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (the owner routed this review to a Claude reviewer while the Codex route is out of usage; two Codex passes at this commit failed on the usage limit and returned nothing) |
 | 2026-11-24 | R-40 | spec | `dce39cb` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing; a pass started at `e86e26b` was stopped before it returned, as `dce39cb` corrected the macOS step) |
+| 2026-11-24 | R-41 | spec | `f467d4f` | claude-opus-5-5 | procedural | No blocking findings; four should-fix and one nit (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2127,6 +2128,43 @@ SEVERITY: nit
 WHERE: Tasks / T80:1244-1245; README.md:96-98; Design / Migration, performance and release boundaries:929-934
 EVIDENCE: R-39 F-04 is still unapplied. T80's description and evidence still say the README tells users "a failed upgrade keeps the previous version working", and README.md:96 still reads "If an upgrade fails, the version you had keeps working". Design:932-934 says a failure while the prior version is being removed "leaves the new version installed and working", and T78's evidence observed that outcome. e86e26b applied R-39's should-fix findings to the baseline without fixing this nit of the same pass, which the nit rule in the pinned feature-documents standard requires. The AC-21 row checks only that the guide asks users to report a refused upgrade, so no proof changes.
 PROPOSAL: Reword the README sentence to say that SSM Connect stays usable after a failed upgrade (or name both outcomes), and align T80's description and evidence.
+
+### R-41
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks / T81:1247; Test Plan / AC-18:979
+EVIDENCE: T81 names only `ConnectionStateMachineTests.swift` and asks for a test that "`AppQuitHandler.runShutdown` with a connected desktop and active web forwards ends the plugin and the ssh process". Neither state machine can be given its own quit handler. `ConnectionStateMachine` registers its teardown only on the process-wide singleton (`SSMConnectWorkflow/ConnectionStateMachine.swift:131`, `AppQuitHandler.shared.register`), and so does `WebForwardsStateMachine` (`WebForwardsStateMachine.swift:65`). So the test has to call `AppQuitHandler.shared.runShutdown()` inside the SSMConnectKitTests bundle. That call also runs the registered handlers of every live machine, profile store and authorization session that suites running at the same time have created. No suite there is `.serialized` apart from the disabled live suite (`LiveClientFlowsTests.swift:13`). The existing builders, `makeMachine` (`ConnectionStateMachineTests.swift:14-48`) and the web forwards `machine(...)`, go through the macOS convenience inits (`SSMConnectKit/App/MacOSWorkflow.swift:89`, `:138`), which inject `WorkflowPlatform.macOS`. That platform's `terminateChildProcess` sends a real `kill(pid, SIGTERM)` and then `SIGKILL` (`MacOSWorkflow.swift:20-26`), and `MockTunnelHandle.processIdentifier` is 4242 (`SSMConnectWorkflow/TunnelMocks.swift:79`). A test built the usual way would therefore signal whatever process holds PID 4242 on the Mac and observe nothing, because `terminateTunnelForQuit` signals the PID directly and never calls `handle.terminate()`, so `terminateCount` stays 0 (`ConnectionStateMachine.swift:136-141`). One implementer adds an injectable quit handler to both state machines, a source change outside T81's single named file. Another calls `.shared` with a recording platform through the package designated init (`ConnectionStateMachine.swift:89`) and accepts interference with other suites. Traces to f467d4f, which added T81.
+PROPOSAL: Name the seam in T81. Either add an injected `AppQuitHandler` to `ConnectionStateMachine` and `WebForwardsStateMachine` (and list those files and a source task), or build both machines through their package designated inits with a recording `WorkflowPlatform` in a `.serialized` suite. Say that the test never uses the `WorkflowPlatform.macOS` builders for the quit case.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Test Plan / AC-18:979; Tasks / T81:1247; Frontmatter / status_description:3; Design / Windows and Linux parity with the macOS interface:761-765
+EVIDENCE: The row now says "macOS cancellation ... rest on ... T81: a Disconnect while connecting ends the plugin it started". macOS offers no Disconnect while connecting. Design:763-764 says so ("macOS offers Disconnect only while connected (`MenuContentView.swift:94-103`)"). The primary action is disabled and does nothing in every connecting state (`SSMConnectWorkflow/ConnectionStateMachine+Menu.swift:17-21`, `:38-43`). On macOS, `disconnect()` during a connect is reached only by a profile change (`ConnectionStateMachine.swift:158-161`). The macOS controls that do cancel work in progress are the ones Design:761-763 lists (Cancel Recovery, Cancel Replacement Recovery, Cancel Forwarding Recovery, Stop Remote Access, Restore Editor Setup), plus Turn Off Web Forwards while starting (`MenuContentView.swift:199-201`). The AC-18 row names no proof for any of them on macOS. Tests that could be named exist: `EditorWorkspaceRecoveryTests.swift:246` (stop and `cancelRecovery`) and `WebForwardsStateMachineTests.swift:320-343` (cancelling forwarding recovery). The row as written passes even if a macOS web forwards or editor cancel left its ssh or plugin running. Traces to f467d4f.
+PROPOSAL: Say which macOS cancellations AC-18 covers. Name the existing web forwards and editor cancel tests, or add failing-first cases that check that the ssh or plugin process ends. Describe the desktop case as the profile-change path that macOS actually reaches.
+
+FINDING: F-03
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Test Plan / AC-18:979; Tasks / T65:1270, T70:1256
+EVIDENCE: The row now says macOS sleep "rests on the existing wake cases there (a dead tunnel reconnects, a healthy one is left alone)". Windows sleep already rests on the matching helper tests. AC-18's end state is that sleep leaves "no unintended owned local processes". The dead-tunnel case, `wakeDeadTunnelReconnects` (`ConnectionStateMachineTests.swift:482-503`), asserts only `startCount == 2`, `launchCount == 2` and `.connected`. It never checks that the first handle was terminated, although the source says the zombie plugin "survives sleep" (`ConnectionStateMachine.swift:181-185`). The helper case `ParityCommandTests.swift:167-180` likewise asserts only two connects and the log line. A reconnect that left the old plugin running would pass both tests, and for macOS and Windows sleep these tests are the only proof. The macOS sentence traces to f467d4f; the Windows reliance predates it.
+PROPOSAL: In the AC-18 row and the tests it names, require the dead-tunnel wake case to show that the original tunnel's process was ended before or when the replacement started, for example the first handle's terminate count or a recorded `terminateChildProcess`, on macOS and in the helper.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Test Plan / AC-26:986; Context / Owner summary:164-167; Frontmatter / status_description:3
+EVIDENCE: The row now requires the preferences domain to equal the backup's `defaults export` "key by key and value by value ... after the restored current release relaunches". R-40 F-02 also asked "whether keys that a launch legitimately writes are allowed", and that part is still open. The same row requires a representative "editor recovery intent" in the backed-up state. On an explicit launch, the current release starts editor recovery from that intent when remote development is enabled (`git show eb4f0bc:SSMConnectKit/Sources/SSMConnectKit/StateMachine/RemoteDevelopmentStateMachine.swift:145-151`). On success it rewrites `ssmconnect.editorRecovery.v1` through `remember` (same file, line 337). With automatic connect on, it also connects at launch and writes instance IDs (`ConnectionStateMachine.swift:168-176`, `InstanceIdStore.swift:26`). The recovery document is a `Data` value that holds `[String: EditorRecoveryIntent]` encoded by `JSONEncoder` without sorted keys (eb4f0bc `EditorRecoveryStore.swift:39`, `:75`). With two or more intents, a rewrite can produce different bytes, and therefore a different exported value, even though it decodes the same. One executor relaunches as a login item or with remote development off and passes. Another opens the app explicitly and may fail a correct restore. The relaunch also makes live AWS calls in the owner's account, which the row does not mention. Traces to f467d4f.
+PROPOSAL: State how the restored release is relaunched (for example as a login item so editor recovery and auto-connect do not run, or with both off in the restored state). Alternatively, define which launch-written keys may differ and compare `Data` values holding JSON by their decoded content.
+
+FINDING: F-05
+KIND: factual
+SEVERITY: nit
+WHERE: Context / Owner summary:161-168; Frontmatter / status_description:3
+EVIDENCE: The summary still says AC-26 runs "with full backups, a scratch Zen profile and a byte-identical restore" (lines 165-166). After f467d4f, the AC-26 row makes only the copied-back files byte-identical and compares the preferences domain as `defaults export` key by key. The summary still ends at "A normal Quit and Disconnect on macOS stay inside AC-18's native proof (owner decision after review R-39)". It does not record the decisions after R-40: cancel and logout rest on new T81 tests, macOS sleep rests on the existing wake cases, and preferences are compared decoded. f467d4f updated status_description with these decisions but not the summary. R-40 F-01 and F-02 both named the Owner summary in their WHERE.
+PROPOSAL: Reword lines 164-168 to say the files are restored byte-identical and the preferences domain is compared through `defaults export`, and add one sentence on how macOS cancel, logout and sleep are proved (owner decision after review R-40).
 
 ## Sources
 
