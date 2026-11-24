@@ -53,8 +53,16 @@ struct HelperCommandTests {
         func start(session: SSMSessionResponse, region: String, instanceId: String, user: String, keyPath: String,
                    configuration: WebForwardsConfiguration) async throws -> TunnelHandle { MockTunnelHandle() }
     }
-    struct Ready: WorkstationReadinessProbing {
-        func waitUntilReady(port: Int, timeout: Duration, interval: Duration) async -> Bool { true }
+    /// The desktop tunnel's readiness, which a test can switch off to simulate a tunnel that stopped
+    /// answering, such as after a sleep.
+    final class Ready: WorkstationReadinessProbing, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _answering = true
+        var answering: Bool {
+            get { lock.withLock { _answering } }
+            set { lock.withLock { _answering = newValue } }
+        }
+        func waitUntilReady(port: Int, timeout: Duration, interval: Duration) async -> Bool { answering }
     }
     struct Listening: TunnelListenerProbing {
         func isListening(host: String, port: Int, timeout: Duration) async -> Bool { true }
@@ -104,6 +112,8 @@ struct HelperCommandTests {
         let root: URL
         /// The runtime's own quit work, so a test can end this helper without running other fixtures' work.
         let quit: AppQuitHandler
+        /// The desktop tunnel's readiness.
+        let readiness: Ready
     }
 
     static func fixture(auth: MockAuthProvider = MockAuthProvider(), browserSupported: Bool = true,
@@ -113,6 +123,7 @@ struct HelperCommandTests {
                         profileFiles: (any ProfileFileAccessing)? = nil) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("helper-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let readiness = Ready()
         let ec2 = MockEC2Service()
         ec2.resolveResult = .success(EC2Instance(id: "i-0123456789abcdef0", state: .running, privateIpAddress: "10.0.0.1"))
         let requests = ShellRequests()
@@ -136,7 +147,7 @@ struct HelperCommandTests {
             dcv: ShellDCVLauncher(requests: requests, directory: root, viewerInstalled: { true },
                                   writePrivate: { data, url in try data.write(to: url) }, cleanupDelay: dcvCleanupDelay,
                                   now: dcvNow),
-            readiness: Ready(), tunnelListener: Listening(), instanceIds: InstanceIds(), keyValues: InMemoryKeyValueStore(),
+            readiness: readiness, tunnelListener: Listening(), instanceIds: InstanceIds(), keyValues: InMemoryKeyValueStore(),
             profileFiles: profileFiles ?? Files(snapshot: files), pasteboard: Board(), notifier: SilentNotificationService(),
             writePAC: { _, _ in root.appendingPathComponent("proxy.pac") },
             editor: .init(root: root.appendingPathComponent("access"), sshConfig: root.appendingPathComponent("ssh/config"),
@@ -150,7 +161,8 @@ struct HelperCommandTests {
         let session = HelperSession(build: "b", commands: runtime.commands(), send: { outbox.send($0) })
         await session.receive(.hello(build: "b", protocolVersion: 1))
         requests.attach(session.events)
-        return Fixture(runtime: runtime, session: session, outbox: outbox, auth: auth, ec2: ec2, root: root, quit: quit)
+        return Fixture(runtime: runtime, session: session, outbox: outbox, auth: auth, ec2: ec2, root: root, quit: quit,
+                       readiness: readiness)
     }
 
     static func run(_ fixture: Fixture, _ id: String, _ name: String, _ arguments: [String: String] = [:]) async {
