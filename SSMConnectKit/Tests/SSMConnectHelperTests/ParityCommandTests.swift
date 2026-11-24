@@ -136,4 +136,21 @@ struct ParityCommandTests {
         #expect(f.runtime.web.state == .off && f.runtime.web.pendingReplacement == nil)
         #expect(f.runtime.connection.state == .connected)
     }
+
+    @Test("Until Zen arrives on Windows and Linux, Apply Browser Setup and Restore Browser Settings refuse naming the browser and change nothing")
+    func zenActionsRefuse() async throws {
+        let f = try await HelperCommandTests.fixture()
+        var profile = HelperCommandTests.configured(webForwards: true)
+        profile.webForwards?.browserMode = .existing
+        try await HelperCommandTests.save(f, profile)
+        let before = try FileManager.default.subpathsOfDirectory(atPath: f.root.path).sorted()
+        for (id, command) in [("a", "applyBrowserSetup"), ("r", "restoreBrowserSettings")] {
+            await HelperCommandTests.run(f, id, command)
+            guard case let .failed(error) = f.outbox.result(id) else { Issue.record("\(command): \(Self.outcome(f, id))"); continue }
+            #expect(error.code == "browserUnavailable", "\(command) failed with \(error.code)")
+            #expect(error.message.contains("Zen"), "\(command): \(error.message)")
+        }
+        #expect(try FileManager.default.subpathsOfDirectory(atPath: f.root.path).sorted() == before)
+        #expect(f.outbox.launches("browser").isEmpty)
+    }
 }
