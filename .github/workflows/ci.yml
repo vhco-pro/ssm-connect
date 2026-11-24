@@ -1,142 +1,191 @@
 # Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
 #
-# The one release workflow and the only version authority. On a push to main, GitVersion computes
-# the next version from conventional commits; the release job tags it and creates the GitHub Release
-# first, without GitHub's latest mark. Each platform job then builds and uploads only its own assets,
-# so a failed platform leaves its asset missing without blocking the others:
+# CI and release in one workflow: the same-workflow arrangement of the shared delivery standard,
+# for a repository without a release GitHub App (vhco-pro/go-release-workflow has the example).
 #
-#   macos    the ad-hoc-signed .app ZIP, as before; macos-latest then marks the newest release with
-#            a macOS ZIP as latest, in the queued release-latest group, so Homebrew's sync (which
-#            reads the latest release) always finds a ZIP and a late older build never displaces it
+# Every branch push runs the checks: the AWS client and helper tests on Linux, Windows and macOS,
+# and the release script tests. vhco-pro/version-workflow then calculates the version with
+# gitversion-tag-action and its bundled GitVersion configuration, and pushes the exact tag with
+# this run's GITHUB_TOKEN, only on main or on a branch whose open PR has the release:preview label
+# at this commit (a prerelease); every other run only calculates the version. A GITHUB_TOKEN push
+# starts no workflow, so the jobs below publish the tag in this run. The release job creates the
+# GitHub Release first, without GitHub's latest mark. Each platform job then builds and uploads
+# only its own assets, so a failed platform leaves its asset missing without blocking the others:
+#
+#   macos    the ad-hoc-signed .app ZIP; macos-latest then marks the newest release with a macOS
+#            ZIP as latest, in the queued release-latest group, so Homebrew's sync (which reads
+#            the latest release) always finds a ZIP and a late older build never displaces it
 #   windows  the per-user MSI, its checksum and the WinGet manifest hashed from that MSI
 #   linux    the Fedora 43 .rpm and the Ubuntu 24.04 .deb, each with its checksum
 #
 # Published assets never change: a rerun uploads only assets still missing, and a bad asset is
-# fixed by releasing a new version, so Homebrew and WinGet checksums stay valid. Rerunning a whole
-# run on an already-released commit reuses its tag and release.
+# fixed by releasing a new version, so Homebrew and WinGet checksums stay valid. Retry a failed
+# release with "Re-run failed jobs", which keeps this run's tag; "Re-run all jobs" finds the tag
+# already pushed and releases nothing, and a tag pushed by hand publishes nothing.
 #
-# A manual run with test_tag (such as v0.0.0-test.1) builds the selected commit as a prerelease
-# under that tag, without GitVersion and without the latest mark, to exercise the release path;
-# fail_job then makes one platform job fail at its start, to show the others publish regardless.
+# Runs on branch pushes, not pull_request: GitVersion needs the real branch, and a PR shows these
+# push checks on its head commit. preview.yml reruns this workflow when the label is added.
 
-name: Release
+name: CI
 
 on:
   push:
-    branches:
-      - main
-    paths-ignore:
-      - '.gitignore'
-      - 'README.md'
-      - 'LICENSE'
-      - 'docs/**'
+    branches: ['**']
   workflow_dispatch:
     inputs:
-      test_tag:
-        description: A prerelease test tag such as v0.0.0-test.1; empty releases the version GitVersion computes.
-        required: false
-        type: string
       fail_job:
-        description: With a test tag only, fail one platform job at its start to show the others still publish.
+        description: On a prerelease, fail one platform job at its start on the first attempt, to show the others still publish.
         required: false
         type: choice
         options: [none, macos, windows, linux]
         default: none
 
-permissions: {}
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  release:
-    name: Create the release
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write # tag + create the GitHub Release
-    outputs:
-      tag: ${{ steps.resolve.outputs.tag }}
-      version: ${{ steps.resolve.outputs.version }}
-      prerelease: ${{ steps.resolve.outputs.prerelease }}
-      skip: ${{ steps.resolve.outputs.skip }}
+  aws-client:
+    name: aws-client (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
-      - name: Checkout (full history for GitVersion)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Test the AWS client package
+        shell: bash
+        run: |
+          # Swift 6.4.2 bundles Clang 21; the windows-2025-vs2026 image from 20261116 ships an
+          # MSVC STL (14.52) that rejects Clang older than 22 when swift-crypto's C++ builds.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            swift test --package-path SSMConnectKit/AWSClient -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+          else
+            swift test --package-path SSMConnectKit/AWSClient
+          fi
 
+  helper:
+    name: helper (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Test the helper and the portable workflow rules
+        shell: bash
+        run: |
+          # The manifest holds only the shared layers and the helper on Windows and Linux.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests|SSMConnectWindowsTests' -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+          else
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests|SSMConnectLinuxTests'
+          fi
+
+  # The full macOS package suite, app targets and helper included, so a failing macOS test blocks
+  # the tag.
+  macos-package:
+    name: macOS package suite
+    # As CodeQL runs it: macOS 26 with the newest installed Xcode.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the newest installed Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+      - name: Test the macOS package
+        run: |
+          swift test --package-path SSMConnectKit
+
+  release-scripts:
+    name: release scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Test the release steps
         run: bash scripts/release/test-release-assets.sh
 
-      # The same GitVersion the reusable gitversion-tag-action pins; tagging is done below so a
-      # rerun of an already-tagged commit reuses its tag instead of failing.
-      - name: Install GitVersion
-        if: inputs.test_tag == ''
-        uses: gittools/actions/gitversion/setup@03e8e0922292bf0491859846a823b253d8dd06ce # v4.6.0
-        with:
-          versionSpec: '6.8.0'
+  # Tags main, and a branch whose open PR has the release:preview label at this commit, with the
+  # bundled GitVersion configuration. Every other run only calculates the version.
+  version:
+    needs: [aws-client, helper, macos-package, release-scripts]
+    permissions:
+      contents: write # push the tag
+      pull-requests: read # find the preview label
+    uses: vhco-pro/version-workflow/.github/workflows/version.yml@46a1ac93fdbd3abaa3a7d17259c5565edd2053c0 # v0.1.2
 
-      - name: Compute the version
-        id: gitversion
-        if: inputs.test_tag == ''
-        uses: gittools/actions/gitversion/execute@03e8e0922292bf0491859846a823b253d8dd06ce # v4.6.0
+  release:
+    name: Create the release
+    needs: version
+    if: needs.version.outputs.tagged == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          configFilePath: gitversion.yml
-
-      - name: Resolve and tag the version
-        id: resolve
-        env:
-          TEST_TAG: ${{ inputs.test_tag }}
-          SEMVER: ${{ steps.gitversion.outputs.semVer }}
-        run: |
-          if [ -n "$TEST_TAG" ]; then
-            [[ "$TEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]] \
-              || { echo "::error::A test tag is a prerelease version such as v0.0.0-test.1, got '$TEST_TAG'."; exit 1; }
-            tag="$TEST_TAG"; prerelease=true
-          else
-            tag="v$SEMVER"; prerelease=false
-          fi
-          skip=false
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            if [ "$(git rev-list -n 1 "$tag")" != "$GITHUB_SHA" ]; then
-              # A commit that bumps nothing resolves to the version an earlier commit released.
-              echo "::notice::$tag already belongs to an earlier commit; nothing to release."
-              skip=true
-            else
-              echo "Reusing $tag on this commit."
-            fi
-          else
-            git config user.name "GitHub Actions"
-            git config user.email "actions@github.com"
-            git tag "$tag" -m "$(git log -1 --pretty=%s)"
-            git push origin "$tag"
-          fi
-          {
-            echo "tag=$tag"
-            echo "version=${tag#v}"
-            echo "prerelease=$prerelease"
-            echo "skip=$skip"
-          } >> "$GITHUB_OUTPUT"
+          persist-credentials: false
 
       - name: Create the GitHub Release without the latest mark
-        if: steps.resolve.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.resolve.outputs.tag }}
-          VERSION: ${{ steps.resolve.outputs.version }}
-          PRERELEASE: ${{ steps.resolve.outputs.prerelease }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ github.ref_name != github.event.repository.default_branch }}
         run: |
           bash scripts/release/release-assets.sh ensure-release "$TAG" "SSM Connect $VERSION" \
             "$([ "$PRERELEASE" = true ] && echo --prerelease)"
 
   macos:
     name: macOS app
-    needs: release
-    if: needs.release.outputs.skip == 'false'
+    needs: [version, release]
+    if: needs.version.outputs.tagged == 'true'
     # macOS 26 (Tahoe) runner: ships Xcode 26, which compiles the Icon Composer AppIcon.icon.
     runs-on: macos-26
     permissions:
       contents: write # upload the ZIP
     steps:
       - name: Fail on request (test run)
-        if: inputs.fail_job == 'macos' && needs.release.outputs.prerelease == 'true'
+        if: inputs.fail_job == 'macos' && github.ref_name != github.event.repository.default_branch && github.run_attempt == 1
         shell: bash
         run: |
           echo "::error::Failing the macos job on request for this test run."
@@ -171,7 +220,7 @@ jobs:
 
       - name: Stamp version
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" SSMConnect/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" SSMConnect/Info.plist
@@ -191,14 +240,14 @@ jobs:
       - name: Upload the ZIP
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release.outputs.tag }}
-          VERSION: ${{ needs.release.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: bash scripts/release/release-assets.sh upload-missing "$TAG" "dist/SSMConnect-${VERSION}.zip"
 
   macos-latest:
     name: Mark the latest release
-    needs: [release, macos]
-    if: needs.release.outputs.skip == 'false'
+    needs: [version, release, macos]
+    if: needs.version.outputs.tagged == 'true'
     runs-on: ubuntu-24.04
     # Queued, never cancelled in progress: an older run decides only after a newer one has finished.
     # mark-latest converges on the newest release with a ZIP, so a pending run GitHub replaces with
@@ -225,15 +274,15 @@ jobs:
 
   windows:
     name: Windows MSI
-    needs: release
-    if: needs.release.outputs.skip == 'false'
+    needs: [version, release]
+    if: needs.version.outputs.tagged == 'true'
     runs-on: windows-2025
     timeout-minutes: 90
     permissions:
       contents: write # upload the MSI
     steps:
       - name: Fail on request (test run)
-        if: inputs.fail_job == 'windows' && needs.release.outputs.prerelease == 'true'
+        if: inputs.fail_job == 'windows' && github.ref_name != github.event.repository.default_branch && github.run_attempt == 1
         shell: bash
         run: |
           echo "::error::Failing the windows job on request for this test run."
@@ -263,7 +312,7 @@ jobs:
         id: package
         shell: pwsh
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           $build = "$env:VERSION+$($env:GITHUB_SHA.Substring(0, 12))"
           ./packaging/windows/Build-Release.ps1 -Version $env:VERSION -Build $build
@@ -277,7 +326,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release.outputs.tag }}
+          TAG: ${{ needs.version.outputs.tag }}
           MSI: ${{ steps.package.outputs.msi }}
         run: |
           result="$(bash scripts/release/release-assets.sh reuse-published "$TAG" "${MSI//\\//}")"
@@ -288,7 +337,7 @@ jobs:
         if: steps.reuse.outputs.reused == 'true'
         shell: pwsh
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
           MSI: ${{ steps.package.outputs.msi }}
         run: ./packaging/windows/Write-ReleaseMetadata.ps1 -Msi $env:MSI -Version $env:VERSION -Output dist
 
@@ -304,14 +353,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release.outputs.tag }}
+          TAG: ${{ needs.version.outputs.tag }}
           MSI: ${{ steps.package.outputs.msi }}
         run: bash scripts/release/release-assets.sh upload-missing "$TAG" "$MSI" "$MSI.sha256"
 
       - name: Keep the WinGet manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: winget-manifest-${{ needs.release.outputs.version }}
+          name: winget-manifest-${{ needs.version.outputs.version }}
           path: ${{ steps.package.outputs.manifest }}
 
   # WinGet takes manifests as pull requests to microsoft/winget-pkgs. This job holds the token
@@ -320,8 +369,8 @@ jobs:
   # build code ever runs beside the token. Without the secret it notes the manual path and passes.
   winget:
     name: Submit to WinGet
-    needs: [release, windows]
-    if: needs.release.outputs.skip == 'false' && needs.release.outputs.prerelease == 'false'
+    needs: [version, release, windows]
+    if: needs.version.outputs.tagged == 'true' && github.ref_name == github.event.repository.default_branch
     runs-on: windows-2025
     timeout-minutes: 15
     environment: winget
@@ -330,7 +379,7 @@ jobs:
       - name: Download the validated manifest
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: winget-manifest-${{ needs.release.outputs.version }}
+          name: winget-manifest-${{ needs.version.outputs.version }}
           path: manifest
 
       - name: Submit the manifest
@@ -352,15 +401,15 @@ jobs:
 
   linux:
     name: Linux packages
-    needs: release
-    if: needs.release.outputs.skip == 'false'
+    needs: [version, release]
+    if: needs.version.outputs.tagged == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: write # upload the packages
     steps:
       - name: Fail on request (test run)
-        if: inputs.fail_job == 'linux' && needs.release.outputs.prerelease == 'true'
+        if: inputs.fail_job == 'linux' && github.ref_name != github.event.repository.default_branch && github.run_attempt == 1
         shell: bash
         run: |
           echo "::error::Failing the linux job on request for this test run."
@@ -375,7 +424,7 @@ jobs:
       - name: Build the packages
         id: package
         env:
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           packaging/linux/build-packages.sh "$VERSION" "$VERSION+${GITHUB_SHA:0:12}"
           cat dist/release-outputs-linux.txt >> "$GITHUB_OUTPUT"
@@ -385,7 +434,7 @@ jobs:
       - name: Use the published packages on a rerun
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release.outputs.tag }}
+          TAG: ${{ needs.version.outputs.tag }}
           RPM: ${{ steps.package.outputs.rpm }}
           DEB: ${{ steps.package.outputs.deb }}
         run: |
@@ -411,7 +460,7 @@ jobs:
       - name: Upload the packages and their checksums
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release.outputs.tag }}
+          TAG: ${{ needs.version.outputs.tag }}
           RPM: ${{ steps.package.outputs.rpm }}
           DEB: ${{ steps.package.outputs.deb }}
         run: bash scripts/release/release-assets.sh upload-missing "$TAG" "$RPM" "$RPM.sha256" "$DEB" "$DEB.sha256"

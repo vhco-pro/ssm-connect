@@ -12,7 +12,7 @@
 # replacing it, so a rerun job fills only what is missing and Homebrew and WinGet checksums stay
 # valid. mark-latest is idempotent and converges on the newest release with a macOS ZIP, so a late
 # older macOS build never displaces a newer one, and Homebrew's sync, which reads the latest
-# release, always finds a ZIP. The release workflow runs it in the release-latest concurrency group.
+# release, always finds a ZIP. ci.yml runs it in the release-latest concurrency group.
 # reuse-published exists because builds are not byte-reproducible: when a rerun job's artifact is
 # already published, everything derived from it (checksums, manifests, package checks) must come
 # from the published file. It prints reused=true or reused=false.
