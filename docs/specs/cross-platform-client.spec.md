@@ -1291,6 +1291,7 @@ None.
 | 2026-11-24 | R-35 | spec | `549cbc2` | n/a | n/a | accepted by owner |
 | 2026-11-24 | R-36 | spec | `5cdd5c1` | gpt-6.1-sol | procedural | No blocking findings; one should-fix (an earlier pass at `a370ace` stayed pending because the owning worktree changed during it; its two findings went to the owner, whose answers `5cdd5c1` applies) |
 | 2026-11-24 | R-37 | spec | `69da261` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
+| 2026-11-24 | R-38 | spec | `9f19db0` | gpt-6.1-sol | procedural | No blocking or should-fix findings; one nit |
 
 ### R-1
 
@@ -2027,6 +2028,15 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:141-144; Design / Migration, performance and release boundaries:902-919; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T80; Sources / Microsoft troubleshooter
 EVIDENCE: The revision responding to R-36 selects Microsoft's troubleshooter as recovery for stale product registration. Design says it removes the entry and permits installation again. Sources explicitly says this recovery has not been exercised. The [Microsoft page](https://support.microsoft.com/en-us/windows/deployment/install-upgrade/fix-problems-that-block-programs-from-being-installed-or-removed) places that downloadable troubleshooter under Windows 10 and gives different guidance for Windows 11. Presence of msdt.exe does not establish that the tool repairs this failure on the supported Windows 11 matrix. The AC-21 proof and T80 check only that the guide names the tool, so both can pass while recovery remains unusable.
 PROPOSAL: Add a native scenario starting with the known stale-registration state, apply the documented recovery, and verify the prior installation remains usable, a subsequent upgrade succeeds, and final uninstall leaves no program files or product registration. Describe the troubleshooter as proposed recovery until that check establishes it works.
+
+### R-38
+
+FINDING: F-01
+KIND: factual
+SEVERITY: nit
+WHERE: Frontmatter / status_description:3; Context / Owner summary:138-144; Design / Migration, performance and release boundaries:914-922; Test Plan / AC-21:966; Tasks / T78:1224
+EVIDENCE: The status description says the check "proves recovery from a failed late removal". The summary and Design explicitly accept leftover files with no recovery claimed, while AC-21's proof and T78 verify the new installation works and report the prior installation's remaining registration and files. The revision responding to R-37 removes the recovery claim from the detailed design but leaves it in the status description. The detailed requirements establish the intended behavior, so this mismatch changes neither implementation nor proof.
+PROPOSAL: Describe the late-removal check as verifying the new installation remains usable and recording the known residue, without claiming recovery.
 
 ## Sources
 
