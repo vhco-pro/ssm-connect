@@ -1414,6 +1414,7 @@ None.
 | 2026-11-24 | R-48 | spec | `0e2e2ab` | claude-opus-5-5 | procedural | One blocking (`fail_job` reruns fail again), six should-fix and four nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-49 | spec | `0310307` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and three nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-50 | spec | `4ffc162` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and three nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-51 | spec | `ef4840b` | claude-opus-5-5 | procedural | No blocking findings; one should-fix (a judgement for the owner) and two nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2809,6 +2810,29 @@ SEVERITY: nit
 WHERE: Design, Migration, performance and release boundaries (line 926 to 929, "otherwise the newer run releases the current head and the older release keeps its missing asset")
 EVIDENCE: 4ffc162 added this sentence, applying R-49 F-05. The bundled configuration of gitversion-tag-action at the pin version-workflow v0.1.2 uses (8cf5869, gitversion.yml) sets main to `increment: None` with commit-message incrementing, so a newer main run whose commits since the tag are only `docs`, `style`, `test` or `ci` computes the existing version, finds its tag and releases nothing. The sentence also reads as if the older release's asset is lost for good. But the same paragraph allows Re-run failed jobs once no other run of the ref is queued or running, so the older release can still be completed after the newer run ends.
 PROPOSAL: Reword to say that while another run of the ref is queued or running, the older run waits, and is re-run with Re-run failed jobs once that run has finished.
+
+### R-51
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Design, Migration, performance and release boundaries ("The macOS job builds and verifies the signed app and runs no tests; the macOS package suite runs in CodeQL on PRs to main and weekly"); Design, Integration and feasibility ("the region and config parser tests run only in the macOS package suite, which CodeQL runs on PRs to main and weekly"); Context, Owner summary ("the macOS job builds and verifies the signed app without running tests, and the macOS package suite runs in CodeQL on PRs to main and weekly"); Tasks T83; Open Questions ("None.")
+EVIDENCE: ef4840b applied R-50 F-01 by correcting the text rather than adding the suite, so the document now settles that the macOS ZIP, which Homebrew installs, is tagged and published with no run of the macOS package suite (SSMConnectKitTests) before or after the tag. At this commit the macOS job runs only `./scripts/release.sh` (.github/workflows/release.yml:129-196), which does `xcodebuild build` and `codesign --verify` (scripts/release.sh:33, 52). The macOS check job filters to `SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests` (swift-portability.yml:142). The full suite runs only in codeql.yml:77-79, triggered on pull_request to main, weekly and dispatch (codeql.yml:12-17). `gh api repos/vhco-pro/ssm-connect/branches/main` returns `"protected":false` with no required checks, so CodeQL's suite gates no merge and no direct push to main. The pinned delivery convention says "Test before publication" (conventions/delivery.md, Workflows and permissions). knowledge/tag-driven-go-releases.md says a version needs "All caller checks to pass". The owner decided to keep the platform tests after the tag on R-48 F-06's evidence, which wrongly listed the macOS suite among the tests inside the platform jobs (R-50 F-01). So the owner never chose to publish macOS with no test in the run. Fixing this is cheap: the macOS leg of the existing helper check job can drop its filter and run `swift test --package-path SSMConnectKit` before the version job, and it stays a check job under AC-31. The standard says every trade-off the document settles is an open question.
+PROPOSAL: Raise an Open Question. Option A: run the full macOS package suite in the macOS check job before the version job (T83, Design, Owner summary). Option B: keep the macOS ZIP published with no test in its run until #43. Fold the owner's answer into Design, T83 and the summary.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Test Plan AC-24 row ("Pausing an older run's macOS job just before its latest step, completing a newer release's publication, and then resuming the older run leaves the newer release latest")
+EVIDENCE: Applying R-50 F-03, ef4840b made the latest mark a separate latest-mark job that needs the macOS job (Design: "A separate latest-mark job, needing the macOS job, sets it once the ZIP is uploaded"). AC-31 also lists it as its own publishing job. The AC-24 row still describes a latest step inside the macOS job, which the Design no longer has. R-50 F-03's WHERE did not name this row, so it was left out of the fix.
+PROPOSAL: Reword the step: "Holding an older run's latest-mark job before it starts, completing a newer release's publication, and then letting the older latest-mark job run leaves the newer release latest".
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Design, Integration and feasibility ("the AWS client and helper jobs of ci.yml build the code it probed on every platform and run the helper protocol tests, the region and config parser tests run only in the macOS package suite, which CodeQL runs on PRs to main and weekly, and its SDK half builds dependencies the app no longer uses (AC-28)")
+EVIDENCE: ef4840b put the CodeQL clause into this sentence. The sentence now joins three independent clauses with commas. "its SDK half" refers back to the spike, but it now directly follows "the macOS package suite, which CodeQL runs", so it reads as the suite's or CodeQL's SDK half.
+PROPOSAL: Split the sentence: "... and run the helper protocol tests. The region and config parser tests run only in the macOS package suite, which CodeQL runs on PRs to main and weekly. The spike's SDK half builds dependencies the app no longer uses (AC-28)."
 
 ## Sources
 
