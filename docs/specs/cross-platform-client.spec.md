@@ -1204,6 +1204,7 @@ None.
 | 2026-11-23 | R-30 | spec | `3c84f9a` | n/a | n/a | accepted by owner |
 | 2026-11-23 | R-31 | spec | `dd210d5` | gpt-6.1-sol | procedural | One blocking (GetSecretValue exemption missing from the AC-28 proof), three should-fix and two nits |
 | 2026-11-23 | R-32 | spec | `a911131` | gpt-6.1-sol | procedural | One blocking (single-user desktop proof needs a workstation) and three should-fix |
+| 2026-11-24 | R-33 | spec | `4aefc9d` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 
 ### R-1
 
@@ -1886,6 +1887,22 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:131-135; Acceptance Criteria / AC-29; Test Plan / AC-29:894; Tasks / T58-T59, T62 and T66
 EVIDENCE: The revision following R-31 removes native Linux text-entry and picker checks and relies on the parity and helper tests instead. Those tests do not establish the omitted interaction: linux/tests/parity_test.cpp:178-196 checks that QML contains each control ID, and lines 200-225 call the controller directly and check command names. The editor check in shell_test.cpp:180-224 loads the window and checks accessible names. None edits a text field or activates a picker and verifies its saved value. Removing an Editor.qml onEditingFinished or onActivated handler would preserve these checks while making the setting unusable.
 PROPOSAL: Add Qt interaction tests for the fields and pickers whose native coverage is waived. Exercise the actual QML controls and verify their values reach the saveProfile payload and survive reload, with the missing-handler cases observed failing first.
+
+### R-33
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Frontmatter / status_description; Context / Owner summary:128-129; Acceptance Criteria / AC-18; Test Plan / AC-18:900; Tasks / T28 remaining work:1084, T29 remaining work:1119, T65:1158
+EVIDENCE: The 2026-11-23 revision permits helper and state machine tests to replace native sleep acceptance when a VM cannot suspend. The helper and portable workflow suites contain no system sleep/resume scenario. The existing wake tests at ConnectionStateMachineTests.swift:482-518 directly call handleSystemWake and belong to the macOS-only test target (Package.swift:110-145). Its only application caller is SSMConnectApp.swift:41-44; neither Windows nor Linux connects a resume event to it. The fallback can therefore pass while those clients never handle resume.
+PROPOSAL: Name replacement tests and their expected outcomes for desktop, web and editor transports after simulated sleep and resume. Add unfinished tasks covering the relevant helper and platform event paths, with tests observed failing when that handling is absent.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Context / Owner summary:66-68; Scope / supported matrix:276-278 and exclusions:291-292; Acceptance Criteria / AC-21, AC-23; Test Plan / AC-21:903; Tasks / T28:1064; Sources / owner matrix decision:1894-1896
+EVIDENCE: The document declares Windows 11 x64 without a minimum release. Package.wxs:47-52 refuses installations before Windows 11 24H2, Write-ReleaseMetadata.ps1:73 gives WinGet the same build-26100 minimum, and SSMConnect.App.csproj:5-6 declares that platform minimum. README.md:89 also promises only 24H2 or later. Acceptance on the newer sandbox can pass while earlier Windows 11 versions within the document's stated matrix are refused.
+PROPOSAL: Raise an owner question deciding whether Windows support starts at 24H2 or includes earlier Windows 11 releases. Carry the answer into the matrix, summary and acceptance checks; retaining earlier releases also needs unfinished implementation and validation tasks.
 ## Sources
 
 - Owner direction on 2026-11-12: preserve working Swift, share its core across
