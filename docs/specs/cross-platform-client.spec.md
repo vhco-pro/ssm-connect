@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Implementing the 2026-11-24 revision on feat/shared-swift-core: T63 and T66 to T76, then the Ubuntu suspend (T65), macOS acceptance (T27), the macOS part of T31, criterion evidence and the implementation review."
+status: draft
+status_description: "Revising the failed-upgrade design: the MSI removes the prior version after InstallFinalize, so no failure can follow the removal; the AC-21 check fails an upgrade before it registers itself."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
