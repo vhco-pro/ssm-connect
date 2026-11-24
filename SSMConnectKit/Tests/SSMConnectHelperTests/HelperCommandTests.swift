@@ -124,6 +124,8 @@ struct HelperCommandTests {
         let readiness: Ready
         /// The web forwards' SSH processes.
         let ssh: SSH
+        /// The desktop tunnel's provider, so a test can choose the handles it returns.
+        let tunnel: MockTunnelProvider
     }
 
     static func fixture(auth: MockAuthProvider = MockAuthProvider(), browserSupported: Bool = true,
@@ -135,6 +137,7 @@ struct HelperCommandTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let readiness = Ready()
         let ssh = SSH()
+        let tunnel = MockTunnelProvider()
         let ec2 = MockEC2Service()
         ec2.resolveResult = .success(EC2Instance(id: "i-0123456789abcdef0", state: .running, privateIpAddress: "10.0.0.1"))
         let requests = ShellRequests()
@@ -154,7 +157,7 @@ struct HelperCommandTests {
         #endif
         let services = HelperServices(
             platform: platform, auth: auth, ec2: ec2, ssm: MockSSMService(), secrets: MockSecretsService(),
-            instanceConnect: Connect(), tunnel: MockTunnelProvider(), sshTunnel: ssh, keyGenerator: Keys(),
+            instanceConnect: Connect(), tunnel: tunnel, sshTunnel: ssh, keyGenerator: Keys(),
             dcv: ShellDCVLauncher(requests: requests, directory: root, viewerInstalled: { true },
                                   writePrivate: { data, url in try data.write(to: url) }, cleanupDelay: dcvCleanupDelay,
                                   now: dcvNow),
@@ -173,7 +176,7 @@ struct HelperCommandTests {
         await session.receive(.hello(build: "b", protocolVersion: 1))
         requests.attach(session.events)
         return Fixture(runtime: runtime, session: session, outbox: outbox, auth: auth, ec2: ec2, root: root, quit: quit,
-                       readiness: readiness, ssh: ssh)
+                       readiness: readiness, ssh: ssh, tunnel: tunnel)
     }
 
     static func run(_ fixture: Fixture, _ id: String, _ name: String, _ arguments: [String: String] = [:]) async {

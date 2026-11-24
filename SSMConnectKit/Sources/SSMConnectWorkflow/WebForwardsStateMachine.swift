@@ -44,7 +44,8 @@ public final class WebForwardsStateMachine {
          writePAC: @escaping @Sendable (WebForwardsConfiguration, UUID) throws -> URL,
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          reconnectBackoff: Duration = .seconds(5), maxReconnectAttempts: Int = 3,
-         timeouts: ConnectionTimeouts = .default, recoveryBudget: Duration = .seconds(30 * 60)) {
+         timeouts: ConnectionTimeouts = .default, recoveryBudget: Duration = .seconds(30 * 60),
+         quit: AppQuitHandler = .shared) {
         self.platform = platform
         self.profile = profile
         self.settings = settings
@@ -62,7 +63,7 @@ public final class WebForwardsStateMachine {
         self.maxReconnectAttempts = maxReconnectAttempts
         self.timeouts = timeouts
         self.recoveryBudget = recoveryBudget
-        AppQuitHandler.shared.register { [weak self] in self?.terminateForQuit() }
+        quit.register { [weak self] in self?.terminateForQuit() }
     }
 
     package var isActive: Bool { handle?.isActive == true }

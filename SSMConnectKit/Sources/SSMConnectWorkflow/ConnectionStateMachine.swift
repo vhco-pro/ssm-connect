@@ -105,7 +105,8 @@ public final class ConnectionStateMachine {
         timeouts: ConnectionTimeouts = .default,
         maxReconnectAttempts: Int = 3,
         reconnectBackoff: Duration = .seconds(5),
-        reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        quit: AppQuitHandler = .shared
     ) {
         self.platform = platform
         self.authProvider = authProvider
@@ -128,7 +129,7 @@ public final class ConnectionStateMachine {
         self.reconnectSleep = reconnectSleep
         clipboard.setAutoClear(seconds: settings.clipboardAutoClearSeconds)
         // Kill the plugin child on app quit so it isn't orphaned holding the local port (F-13).
-        AppQuitHandler.shared.register { [weak self] in self?.terminateTunnelForQuit() }
+        quit.register { [weak self] in self?.terminateTunnelForQuit() }
     }
 
     /// Synchronous best-effort plugin teardown for app termination (F-13). `applicationWillTerminate`

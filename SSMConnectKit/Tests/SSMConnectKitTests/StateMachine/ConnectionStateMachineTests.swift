@@ -479,8 +479,8 @@ struct ConnectionStateMachineTests {
 
     // MARK: System wake (zombie-tunnel recovery, F-13)
 
-    @Test("wake from sleep with a dead tunnel reconnects and re-launches DCV")
-    func wakeDeadTunnelReconnects() async {
+    @Test("wake from sleep with a dead tunnel ends it, reconnects and re-launches DCV")
+    func wakeDeadTunnelReconnects() async throws {
         // Gate-ready on the initial connect, dead at the wake health-check (triggers reconnect),
         // ready again on the reconnect's launch gate. (The readiness gate is now fatal — #9 RVL-1.)
         let probe = StubReadinessProbe(sequence: [true, false, true])
@@ -494,10 +494,12 @@ struct ConnectionStateMachineTests {
         #expect(tunnel.startCount == 1)
         #expect(dcv.launchCount == 1)
 
+        let original = try #require(tunnel.issuedHandles.first)
         await machine.handleSystemWake()
         await machine.awaitInFlightTask()
         await waitUntil { tunnel.startCount == 2 }
 
+        #expect(original.terminateCount == 1) // the dead tunnel's plugin ended (T81)
         #expect(tunnel.startCount == 2)       // re-established the tunnel
         #expect(dcv.launchCount == 2)         // re-staged DCV automatically
         #expect(machine.state == .connected)
@@ -516,6 +518,59 @@ struct ConnectionStateMachineTests {
         await machine.handleSystemWake()
         #expect(tunnel.startCount == 1)
         #expect(machine.state == .connected)
+    }
+
+    // MARK: macOS teardown paths (T81, AC-18)
+
+    /// Built through the designated init with a recording platform, never `WorkflowPlatform.macOS`,
+    /// whose real SIGTERM would reach whatever process holds the mock's PID.
+    private func recordingMachine(_ termination: RecordingTermination, quit: AppQuitHandler? = nil,
+                                  auth: AuthProviding = MockAuthProvider(), tunnel: TunnelProvider,
+                                  readiness: WorkstationReadinessProbing = StubReadinessProbe(),
+                                  profile: ConnectionProfile = .example) -> ConnectionStateMachine {
+        ConnectionStateMachine(platform: termination.platform, authProvider: auth, ec2: runningEC2(),
+            ssm: MockSSMService(), tunnel: tunnel, secrets: MockSecretsService(), dcv: MockDCVLauncher(),
+            readiness: readiness, tunnelListener: StubTunnelListenerProbe(), instanceIds: MockInstanceIdStore(),
+            clipboard: ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil), log: ConnectionLog(),
+            notifier: MockNotifier(), profile: profile, reconnectBackoff: .zero, reconnectSleep: { _ in }, quit: quit ?? AppQuitHandler())
+    }
+
+    @Test("Quitting the app ends the connected desktop's plugin process")
+    func quitEndsDesktopPlugin() async throws {
+        let termination = RecordingTermination()
+        let quit = AppQuitHandler()
+        let tunnel = RecordingTunnelProvider(handles: [MockTunnelHandle()])
+        let machine = recordingMachine(termination, quit: quit, tunnel: tunnel)
+        machine.connect()
+        await machine.awaitInFlightTask()
+        #expect(machine.state == .connected)
+        let pid = try #require(tunnel.issuedHandles.first?.processIdentifier)
+        quit.runShutdown()
+        #expect(termination.pids == [pid])
+    }
+
+    @Test("A profile change during a connect, macOS's only desktop cancel, ends the tunnel that connect started")
+    func profileChangeDuringConnectEndsTunnel() async throws {
+        let held = HeldReadinessProbe()
+        let tunnel = RecordingTunnelProvider(handles: [MockTunnelHandle()])
+        let termination = RecordingTermination()
+        // One profile value for both: the session cancels work for any other profile.
+        let profile = ConnectionProfile.example
+        let session = AuthorizationSession(platform: termination.platform, profile: profile, provider: SignedInAuthProvider())
+        let machine = recordingMachine(termination, auth: session, tunnel: tunnel, readiness: held, profile: profile)
+        machine.connect()
+        await waitUntil { tunnel.startCount == 1 }
+        let started = try #require(tunnel.issuedHandles.first)
+        #expect(machine.state != .connected)
+        var other = profile
+        other.id = UUID()
+        other.name = "Other"
+        machine.apply(profile: other, settings: .default)
+        await machine.awaitInFlightTask()
+        await waitUntil { machine.state == .disconnected }
+        held.release()
+        #expect(machine.state == .disconnected)
+        #expect(started.terminateCount == 1)
     }
 
     // MARK: Disconnect / stop

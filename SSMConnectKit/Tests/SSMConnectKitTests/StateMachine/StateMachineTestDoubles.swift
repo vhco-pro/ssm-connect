@@ -157,3 +157,41 @@ final class MockNotifier: Notifying, @unchecked Sendable {
     }
 }
 
+
+/// Records the process IDs a workflow asks the platform to end, in place of the macOS platform's
+/// real SIGTERM and SIGKILL (T81).
+final class RecordingTermination: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ended: [Int32] = []
+    var pids: [Int32] { lock.withLock { ended } }
+    func record(_ pid: Int32) { lock.withLock { ended.append(pid) } }
+
+    var platform: WorkflowPlatform {
+        WorkflowPlatform(terminateChildProcess: { [self] in record($0) }, describeError: { _ in nil },
+                         isRejectedAuthorization: { _ in false }, isPermissionDenied: { _ in false },
+                         isExpiredCredentials: { _ in false }, resolveUsername: { _, _ in "alice" },
+                         identityToken: { _, _ in "token" },
+                         ownerOnlyFiles: OwnerOnlyFiles(isOwnerOnly: { _, _ in true }, withExclusiveLock: { _, body in try body() }))
+    }
+}
+
+/// A readiness probe that holds the connect in its readiness wait until released (T81).
+final class HeldReadinessProbe: WorkstationReadinessProbing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var released = false
+    func release() { lock.withLock { released = true } }
+    func waitUntilReady(port: Int, timeout: Duration, interval: Duration) async -> Bool {
+        while !lock.withLock({ released }) {
+            if Task.isCancelled { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
+}
+
+/// An already signed-in provider behind an `AuthorizationSession`, as macOS composes it (T81).
+final class SignedInAuthProvider: AuthProviding, @unchecked Sendable {
+    func authenticate(profile: ConnectionProfile) async throws -> AWSCredentials { .stub }
+    func refreshIfNeeded(profile: ConnectionProfile) async throws -> AWSCredentials { .stub }
+    func signIn(profile: ConnectionProfile) async throws -> AWSCredentials { .stub }
+}

@@ -164,18 +164,22 @@ struct ParityCommandTests {
         for _ in 0..<400 where !condition() { try? await Task.sleep(for: .milliseconds(10)) }
     }
 
-    @Test("systemWake reconnects a connected desktop whose tunnel no longer answers, as macOS does on wake")
+    @Test("systemWake ends and reconnects a connected desktop whose tunnel no longer answers, as macOS does on wake")
     func wakeReconnectsADeadTunnel() async throws {
         let f = try await HelperCommandTests.fixture()
         try await HelperCommandTests.save(f, HelperCommandTests.configured())
+        let original = MockTunnelHandle()
+        f.tunnel.startResult = .success(original)
         await HelperCommandTests.run(f, "c", "connect")
         #expect(f.runtime.connection.state == .connected)
+        f.tunnel.startResult = .success(MockTunnelHandle())
         f.readiness.answering = false
         await HelperCommandTests.run(f, "w", "systemWake")
         #expect(Self.outcome(f, "w") == "completed")
         f.readiness.answering = true
         await Self.waitUntil { Self.connects(f) == 2 && f.runtime.connection.state == .connected }
         #expect(Self.connects(f) == 2, "the desktop was not reconnected")
+        #expect(original.terminateCount == 1, "the dead tunnel's plugin was left running")
         #expect(f.runtime.connection.state == .connected)
         #expect(f.runtime.log.entries.contains { $0.message.contains("after wake from sleep") })
     }

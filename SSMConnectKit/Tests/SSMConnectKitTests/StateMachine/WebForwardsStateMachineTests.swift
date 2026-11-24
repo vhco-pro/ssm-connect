@@ -51,9 +51,12 @@ final class FakeSSHTunnel: SSHTunnelProviding, @unchecked Sendable {
     func unavailableCapabilities() -> [Capability] { unavailable }
     private(set) var handles: [MockTunnelHandle] = []
     private(set) var keyPaths: [String] = []
+    /// Holds each start this long before returning its handle, so a test can act while starting.
+    var startDelay: Duration?
     init(_ recorder: WebEventRecorder) { self.recorder = recorder }
     func start(session: SSMSessionResponse, region: String, instanceId: String, user: String,
                keyPath: String, configuration: WebForwardsConfiguration) async throws -> TunnelHandle {
+        if let startDelay { try? await Task.sleep(for: startDelay) }
         recorder.append("ssh")
         let handle = MockTunnelHandle()
         handles.append(handle)
@@ -429,5 +432,50 @@ struct WebForwardsStateMachineTests {
         #expect(ec2.startCount == 1)
         web.stop()
         await web.awaitStopped()
+    }
+
+    // MARK: macOS teardown paths (T81, AC-18)
+
+    func recordingMachine(_ termination: RecordingTermination, quit: AppQuitHandler, tunnel: FakeSSHTunnel,
+                          recorder: WebEventRecorder) -> WebForwardsStateMachine {
+        var profile = ConnectionProfile.example
+        profile.webForwards = .init(enabled: true, sshUser: "alice")
+        let ec2 = MockEC2Service()
+        ec2.resolveResult = .success(.stub(state: .running))
+        return WebForwardsStateMachine(platform: termination.platform, profile: profile, log: ConnectionLog(),
+            auth: MockAuthProvider(), ec2: ec2, ssm: MockSSMService(), instanceConnect: FakeInstanceConnect(recorder),
+            keyGenerator: FakeSSHKeyGenerator(recorder: recorder), tunnel: tunnel,
+            writePAC: { _, _ in URL(fileURLWithPath: "/tmp/test.pac") }, sleep: { _ in }, quit: quit)
+    }
+
+    @Test("Quitting the app ends the web forwards' ssh process")
+    func quitEndsSSH() async throws {
+        let recorder = WebEventRecorder()
+        let tunnel = FakeSSHTunnel(recorder)
+        let termination = RecordingTermination()
+        let quit = AppQuitHandler()
+        let web = recordingMachine(termination, quit: quit, tunnel: tunnel, recorder: recorder)
+        web.connect()
+        try await wait { web.state == .on }
+        let pid = try #require(tunnel.handles.first?.processIdentifier)
+        quit.runShutdown()
+        #expect(termination.pids == [pid])
+    }
+
+    @Test("Turning web forwards off while they start ends the ssh that start opens")
+    func stopWhileStartingEndsSSH() async throws {
+        let recorder = WebEventRecorder()
+        let tunnel = FakeSSHTunnel(recorder)
+        tunnel.startDelay = .milliseconds(300)
+        let web = recordingMachine(RecordingTermination(), quit: AppQuitHandler(), tunnel: tunnel, recorder: recorder)
+        web.connect()
+        #expect(web.state == .starting)
+        try await Task.sleep(for: .milliseconds(100))
+        web.stop()
+        await web.awaitStopped()
+        #expect(web.state == .off)
+        let handle = try #require(tunnel.handles.first)
+        #expect(handle.terminateCount == 1)
+        #expect(!handle.isActive)
     }
 }
