@@ -1,6 +1,6 @@
 ---
-status: planned
-status_description: "Accepted revision: the MSI removes the prior version after InstallFinalize, the AC-21 check fails an upgrade before it registers itself and records what a failed late removal leaves, two Windows Installer failures are a known limit, and the Linux browser version probe precedes an AC-25 refusal."
+status: in-progress
+status_description: "Implementing the accepted failed-upgrade revision on feat/shared-swift-core: T72 to T80, then the Ubuntu suspend (T65), T66, macOS acceptance (T27), the macOS part of T31, criterion evidence and the implementation review."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
