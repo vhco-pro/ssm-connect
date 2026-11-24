@@ -1,6 +1,6 @@
 ---
-status: draft
-status_description: "Revising after the macOS native acceptance (T27): a force-quit macOS app's leftovers move to #39, macOS Disconnect and Quit stay natively proved in AC-18 with cancellation, logout and sleep resting on new tests (T81), and AC-26 runs in the owner's account with backups, a scratch Zen profile and a decoded preferences comparison before and after a normal relaunch."
+status: planned
+status_description: "Accepted revision: a force-quit macOS app's leftovers move to #39; macOS Disconnect and Quit are proved natively, and macOS cancellation, logout and sleep rest on the new T81 tests and the existing editor tests; AC-26 runs in the owner's account with backups, a scratch Zen profile and a decoded preferences comparison."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
@@ -1330,6 +1330,7 @@ None.
 | 2026-11-24 | R-41 | spec | `f467d4f` | claude-opus-5-5 | procedural | No blocking findings; four should-fix and one nit (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-42 | spec | `81341b5` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and one nit (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-43 | spec | `5aa1048` | claude-opus-5-5 | procedural | No blocking or should-fix findings; two nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-43 | spec | `5aa1048` | n/a | n/a | accepted by owner |
 
 ### R-1
 
