@@ -534,10 +534,12 @@ package struct HelperServices {
                           message: "Use My Browser needs Zen at a supported version, which is not available on this platform yet.")
     }
 
+    /// Restore Browser Settings undoes Apply Browser Setup in an existing Zen profile. No Windows or
+    /// Linux Zen is supported yet (#38), so there is nothing it may change: it refuses by the missing
+    /// capability, as Apply Browser Setup does.
     private func restoreBrowserSettings() throws -> [String: String] {
-        do { try browser.restore(profile: web.profile) }
-        catch { throw HelperError(code: "restoreFailed", message: error.localizedDescription) }
-        return [:]
+        throw HelperError(code: "browserUnavailable",
+                          message: "Use My Browser needs Zen at a supported version, which is not available on this platform yet.")
     }
 
     /// The connection log, oldest first, as the Log window shows it.
