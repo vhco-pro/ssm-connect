@@ -1358,6 +1358,7 @@ None.
 | 2026-11-24 | R-42 | spec | `81341b5` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and one nit (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-43 | spec | `5aa1048` | claude-opus-5-5 | procedural | No blocking or should-fix findings; two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-43 | spec | `5aa1048` | n/a | n/a | accepted by owner |
+| 2026-11-24 | R-44 | implementation | `3ed75d1` | claude-opus-5-5 | procedural | One blocking (unexecuted Test Plan steps with no task or residual), one should-fix and two nits; no criterion met (Claude reviewer on a Linux-only host, owner's routing) |
 
 ### R-1
 
@@ -2232,6 +2233,112 @@ SEVERITY: nit
 WHERE: Frontmatter / status_description:3; Context / Owner summary:169-173; Test Plan / AC-18:984
 EVIDENCE: status_description still says that cancellation, logout and sleep rest "on new tests (T81)". After 91039cf, the AC-18 row rests the macOS editor controls (Stop Remote Access, Restore Editor Setup, Cancel Recovery, Cancel Replacement Recovery) on existing tests, and the Owner summary now adds "and on the existing editor stop, restore and cancel tests". 91039cf updated the summary but not status_description. R-41 F-02 and F-05 both named status_description in their WHERE. The Test Plan row is authoritative, so no proof changes.
 PROPOSAL: Reword status_description to say that macOS cancellation, logout and sleep rest on the new T81 tests and on the existing editor tests.
+
+### R-44
+
+CRITERION: AC-11 Each supported desktop client performs its connection workflows through the same shared Swift core, without a second language implementation of those rules.
+VERDICT: not verified
+EVIDENCE: Ran in a scratch export of 3ed75d1: `scripts/check-boundaries.sh` printed "SSMConnectDomain ok" and "SSMConnectWorkflow ok" (exit 0); `scripts/linux/test-in-containers.sh noble` passed 123 tests in 15 suites (helper, protocol, AWS ports, Linux adapters) in swift:6.4.2-noble; a grep of the 4,457 non-test lines of C#, C++ and header source under windows/ and linux/ found no AWS endpoint, signing or AWS operation call, only help and project URLs; HelperComposition.swift and MacOSWorkflow.swift both compose the same SSMConnectWorkflow state machines and SSMConnectAWS services. Limitations: the native drive-throughs (T20, T25, T27, T61) and the macOS package suite (381 tests) are recorded but were not observed in this review. The T31 shell inspection cited in the evidence line (2,327 lines) predates 12 later shell commits (see F-03).
+
+CRITERION: AC-12 Single-user and multi-user desktop connections retain the current authentication, readiness, viewer-launch and no-shared-user-fallback behavior on each supported DCV target.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line and T27, T28, T29 records at 3ed75d1. The Test Plan row requires readiness failure and retry, agent rejection without shared-identity fallback, and authenticated Viewer access on each native DCV target; the evidence line records that readiness failure and agent rejection were exercised natively on no platform and that Fedora 43 has no Viewer launch. No check covers those parts. Multi-user Connect results on macOS, Windows 11 and Ubuntu 24.04 are recorded but not observed here. Single-user rests on ConnectionStateMachineTests by owner decision; those are in the macOS-only package suite, not run here.
+
+CRITERION: AC-13 Tunnel-only, web and editor actions operate independently without unintended DCV password fetch, desktop provisioning or Viewer launch, including against a target with no DCV server or desktop environment and on a client without DCV Viewer.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line and task records at 3ed75d1. The row requires runs against a target with no DCV server or desktop environment, a recorded count of zero password, provisioning and Viewer operations, and a concurrent-capability repeat; the evidence line states none of these was run (every native run used the owner's DCV workstation). The helper tests that drive web forwards and the editor with fake services passed in my swift:6.4.2-noble run, which is only a subset.
+
+CRITERION: AC-14 Existing profiles remain readable and retain identity, portable fields, checked attached-file saves, conflict recovery and explicit consent across the migration.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line at 3ed75d1; my swift:6.4.2-noble run passed the "Attached profile file writer" and "Helper commands" suites. The row requires v1 and v2 cross-import, a Save race and unknown-field retention; the evidence line states no test or native result records them (T11's fixtures are v1 keys). PersistedStateCompatibilityTests and the ProfileStore tests are macOS-only and were not run here. Windows has no native conflict run.
+
+CRITERION: AC-15 One shared authorization workflow preserves silent refresh, explicit sign-in recovery, pending-action context and cancellation without redirecting established connections.
+VERDICT: untested
+EVIDENCE: My swift:6.4.2-noble run passed the "Client SSO provider" suite (ClientAuthProviderTests). The row requires native pending-action resume, profile change and Stop during authorization, and a check that healthy established transports keep their target and auth context; the evidence line states none of these is recorded natively, and a rejected refresh is native only on Windows. Native renewals and sign-ins are recorded but not observed here.
+
+CRITERION: AC-16 Supported browser integrations retain consent, ownership, restore and fail-closed private-domain routing without modifying unrelated browser or system settings.
+VERDICT: untested
+EVIDENCE: My swift:6.4.2-noble run passed "Linux browser preflight" and the parity test that Zen's Apply Browser Setup and Restore Browser Settings refuse naming the browser. The row requires policy and ownership refusal and transport-loss scenarios in which the private suffixes fail closed; the evidence line states none is recorded on any platform, and the Fedora 43 row did not run (no supported browser installed). Chrome and Zen native runs are recorded but not observed here.
+
+CRITERION: AC-17 Native editor access preserves stable workspace authority, owned leases, unsaved windows and explicit replacement/recovery behavior without weakening host trust.
+VERDICT: untested
+EVIDENCE: My swift:6.4.2-noble run passed "Lease owner and build" and "Editor proxy". The row's Windows and Linux scenario (VS Code launched by SSM Connect, unsaved content, helper killed, recovery through the replacement helper), concurrent windows, dirty buffers, confirmed replacement, reopening the original workspace authority and the host-key check are recorded natively on no platform, as the evidence line states.
+
+CRITERION: AC-18 Disconnect, cancellation, app exit, crash and supported sleep/logoff transitions leave no unintended owned local processes or reusable unauthorized access; on macOS, the plugin and ssh processes and the temporary SSH key folder that a force-quit or crash of the app leaves behind are outside this feature (#39).
+VERDICT: untested
+EVIDENCE: My swift:6.4.2-noble run passed the helper parts: "systemWake ends and reconnects a connected desktop whose tunnel no longer answers" (T81's assertion original.terminateCount == 1, added in b3d635c), "systemWake leaves a connected desktop whose tunnel still answers alone", and "Ending the helper cancels its commands and runs the workflows' quit work". T65 is unchecked, so the row's native Ubuntu suspend with an RTC wake alarm has no execution. T81's macOS state-machine tests, the WPF and Qt resume tests and the native kill, quit and logoff runs are recorded but not observed here. On Windows the cancel was not shown with the plugin already running.
+
+CRITERION: AC-19 Profiles, ordinary state/events, diagnostics and temporary artifacts do not expose credentials or tokens; local caches and integration artifacts enforce the target OS's ownership and permission rules.
+VERDICT: not verified
+EVIDENCE: My swift:6.4.2-noble run passed "Linux adapters", "SSO cache writer" and "Attached profile file writer", which exercise owner-only writes and refusal of a symbolic link or another user's file under real file permissions. The native token searches and the Windows second-user denial (T27, T28, T29) are recorded but not observed here. Limitations: the native searches used the real cached tokens instead of seeded synthetic secrets; cross-user access is native only on Windows; file substitution and stale-owner or stale-generation cases rest on the adapter and lease tests, as the row allows by reporting unexecuted native cases separately.
+
+CRITERION: AC-20 The macOS application retains its current native interaction and documented desktop, browser, editor and recovery behavior while using the extracted core, except that AWS retry settings and configured AWS endpoints no longer affect it, its STS identity request uses the correct China endpoint, and an action missing a hard requirement is refused before any AWS call.
+VERDICT: untested
+EVIDENCE: Linux-only review host; the macOS package suite and release build could not be run. The row requires the current documented native flows; the evidence line states readiness failure, agent rejection, concurrent editor windows, dirty buffers, replacement, attached profile files, and macOS cancellation and logout were not exercised natively. The named exceptions are covered by the AWSClient parity tests, which passed here (34 tests in 8 suites in swift:6.4.2-noble).
+
+CRITERION: AC-21 Every declared Windows/Linux artifact installs, starts with its required dependencies, upgrades and uninstalls correctly on its declared native OS/CPU/desktop matrix, including while a prior version is running, without interrupting it unless the user agrees.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line and T28, T29, T63, T77, T78 and T80 records at 3ed75d1. The row's Linux steps with a running prior version (established connection kept, "updated; restart it" and "removed; quit it" refusals, the byte-identical plugin case, the replaced proxy, paused upgrades with only the helper or only the plugin replaced, a helper swapped between check and start, the forced failed .rpm and .deb install with reinstall repair), a winget install of the final MSI and the recorded artifact hashes have no execution. The Windows MSI runs are recorded but not observed here.
+
+CRITERION: AC-23 Supported Windows and Linux clients complete real SSO/refresh, AWS/SSM/plugin and native-integration scenarios; cross-compilation is not their sole support evidence.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line and T4, T5, T44, T28 and T29 records. The full native acceptance has no Viewer launch or managed browser on Fedora 43 and no default VS Code window on Ubuntu (headless sessions), and T65's Ubuntu suspend has not run. The recorded feasibility and native runs were not observed here.
+
+CRITERION: AC-24 macOS, Windows and Linux artifacts remain independently buildable and releasable, with all selected core/helper assets and required notices present in their final packages.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line and the T21, T26 and T31 records. The row's Homebrew sync and installs, WinGet installs after a rerun, platform jobs finishing at the same time, and the paused older macOS run have no execution; marking a release latest ran only in the fake-gh checks. Workflow runs 44963791951 and 44973381483 are cited but were not observed here.
+
+CRITERION: AC-25 An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode; the one process allowed first is the Linux browser discovery's `--version` probe.
+VERDICT: not verified
+EVIDENCE: My swift:6.4.2-noble run passed "Linux browser preflight" (unsupported Chrome refused naming the browser, only `--version` started), "Installation check" and "Installation check before launch" ("A missing executable or plugin is refused as removed"). CapabilityPreflightTests is macOS-only and was not run. The native refusals (Windows firewall audit with a positive-control build; Linux strace; macOS app log) are recorded but not observed here. Limitations: on Linux the native proof used strace and a plugin-in-place trace instead of the row's network namespace with a logging proxy and the STS positive-control build (see F-04).
+
+CRITERION: AC-26 Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
+VERDICT: untested
+EVIDENCE: Inspected the evidence line and T27 records. The row requires a byte comparison of the restored app and Application Support folders, a preferences comparison right after `defaults import`, and 0.7.1 reading the build's browser routing and ownership records with its consent, conflict and restore behavior after the rollback; the evidence line states none of these is recorded. The macOS fixture tests (T11) could not be run on this host.
+
+CRITERION: AC-27 On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
+VERDICT: untested
+EVIDENCE: My swift:6.4.2-noble run passed "Helper protocol". Code inspection at 3ed75d1: the helper opens only loopback TCP probe sockets in ProcessTunnel.swift and ProcessAdapters.swift and no listener; the Linux shell's single instance uses a D-Bus name in single_instance.cpp. The row's native Linux checks (no pipe or socket, a second launch focusing the first, a helper-only kill), a native helper kill during an established transport with the shell running, and a native count of exactly one StartSession are recorded on neither platform. Windows HelperHostTests and the Linux host and containment tests were not observed here.
+
+CRITERION: AC-28 Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures, corrects a skewed clock the same way and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path, except that in China regions it goes to the resolver's `amazonaws.com.cn` host, and keeps its single attempt.
+VERDICT: not verified
+EVIDENCE: Ran `swift test` on SSMConnectKit/AWSClient in swift:6.4.2-noble: 34 tests in 8 suites passed (SigV4, endpoint, request, retry and error parity, clock skew, retry quota, transport). The Package.resolved files of SSMConnectKit, AWSClient and the helper spike list only swift-asn1, swift-crypto and yams; aws-sdk-swift, aws-crt-swift and smithy-swift appear only in Tools/FixtureRecorder. project.yml links only the local package. Limitations: the built-artifact inspections and the native requests were not observed here. GetCallerIdentity is not recorded natively on Fedora 43 or Ubuntu 24.04, although the multi-user connect path that ran there calls it (ConnectionStateMachine.swift ensureSessionAndLaunchMultiUser through platform.resolveUsername). GetSecretValue rests on fixtures by owner decision.
+
+CRITERION: AC-29 On Windows and Linux, every user action and setting of the macOS menu, settings window and profile editor is offered by the shell, runs the shared workflow through a helper command (the Zen-only controls refusing naming the browser capability until #38), and keeps macOS's confirmations and availability rules; controls that interrupt work in progress cancel the running command of their workflow; and the parity inventory lists none as missing.
+VERDICT: not verified
+EVIDENCE: Ran `node scripts/check-macos-parity.mjs`: "macOS parity: 107 controls, all in the inventory" (exit 0). My swift:6.4.2-noble run passed "macOS parity commands", including the cancelEditorRecovery cases with no command running and the Zen refusal. The WPF xUnit parity tests (28 of 28), the Qt parity_test and interaction tests and the T62 and T66 native passes are recorded but were not observed here. Limitations: the recorded parity_test runs are on Fedora's Qt only; on w11-sandbox launched URLs opened no browser window, so those controls' visible outcome is not established.
+
+CRITERION: AC-30 On Windows and Linux the DCV connection file stays readable for 120 seconds after the Viewer is asked to open it, without delaying Connected, and is removed at the end of that window, at Quit, or after a crash by the sweep of a later connect once its window has passed; a Viewer that takes up to that long to start opens the desktop; the missing-Viewer message names the platform's own install; and macOS keeps its current window and message.
+VERDICT: not verified
+EVIDENCE: My swift:6.4.2-noble run passed "On Windows and Linux the Viewer gets 120 seconds to read the connection file, and Connect does not wait for them", "Ending the helper removes a connection file still waiting for its window", "A connect removes connection files a killed helper left once their window has passed, and keeps younger ones", "A reconnect keeps the earlier connection file until its own window ends, even after the clock moves forward" and "The missing-Viewer message names this platform's own install". Limitations: the unchanged macOS launcher and message tests (39 tests, T51) and the native Ubuntu cold-start Connect (T52) are recorded but were not observed here. In T52 the Viewer started within seconds, so a Viewer that takes close to 120 s rests on the helper test.
+
+FINDING: F-01
+KIND: factual
+SEVERITY: blocking
+WHERE: Tasks; Acceptance Criteria (evidence lines of AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-20, AC-21, AC-23, AC-24, AC-26, AC-27, AC-28); Test Plan rows of the same criteria
+EVIDENCE: At 3ed75d1, 74 tasks are ticked and only T65 is open (`grep "^- \[ \]"` in the Tasks section). The evidence lines name Test Plan steps that were never executed. No open task covers them and no criterion has a Residual line: AC-12 native readiness failure and agent rejection; AC-13 no-DCV target and zero-operation counts; AC-14 v2 cross-import, Save race and unknown fields; AC-15 native pending-action resume, profile change and Stop during authorization; AC-16 policy and ownership refusal and transport-loss fail-closed; AC-17 the Windows and Linux kill-helper editor scenario and host-key check; AC-20 the documented flows listed as not exercised; AC-21 the Linux running-prior-version, paused-upgrade and forced-failure steps, the final-MSI winget install and the hashes; AC-23 Fedora Viewer and browser; AC-24 Homebrew and WinGet installs, concurrent finish and the paused macOS run; AC-26 the byte and post-import comparisons and 0.7.1 reading the browser records; AC-27 the native Linux checks and the StartSession count; AC-28 GetCallerIdentity on Fedora and Ubuntu. T28 and T29 were ticked in 3ed75d1 although T29's scope names "each of the 12 AWS requests but GetSecretValue once against AWS on Fedora 43 and Ubuntu 24.04". After T65 these criteria have no path to met, so all_met cannot hold.
+PROPOSAL: Add a task for each unexecuted Test Plan step, or have the owner decide each as a residual with its tracker or as a revised row through spec review. Then rerun the implementation review.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Acceptance Criteria evidence lines of AC-11, AC-21, AC-23, AC-24, AC-28; Tasks T28 (Remaining line), T29, T31
+EVIDENCE: Commit 3ed75d1 ticks T28, T29 and T31. In the same commit the AC-11, AC-24 and AC-28 lines say "T31 is still open", AC-21 says "T28 and T29 remain open", and AC-23 says "T28 and T29 are still open". T28's Remaining line still lists the open finding T63 and sleep (T65).
+PROPOSAL: Reword those evidence lines so they match the task state. Drop or update T28's Remaining line.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Acceptance Criteria evidence line of AC-11; Tasks T31 progress line
+EVIDENCE: The AC-11 line cites T31's inspection of "the 2,327 lines of C# and C++ shell source". That inspection is in a44b14c (2026-11-22). Twelve later commits changed windows/src and linux/src, and at 3ed75d1 the non-test shell source is 4,457 lines (C# 2,572, .cpp 1,304, headers 581). My grep at 3ed75d1 found no AWS call or endpoint in the shells, so the conclusion still holds.
+PROPOSAL: Restate the inspection against the shell source at the evidence commit, with its current size.
+
+FINDING: F-04
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Acceptance Criteria evidence line of AC-25; Test Plan row AC-25
+EVIDENCE: The AC-25 row requires, natively on Linux, "a network namespace whose only route is a logging proxy" and "A positive control build that sends the direct STS identity request (`STSIdentityResolver`) before refusing must make this check fail". The evidence line records strace of connect and execve instead, with a positive control that was "the trace with the plugin in place, not a build that sends the STS request before refusing". The accepted proof was therefore not executed on Linux as written.
+PROPOSAL: Run the row as written on Fedora 43 and Ubuntu 24.04. Otherwise take the strace method to the owner as a spec change through spec review before relying on it.
 
 ## Sources
 
