@@ -518,7 +518,7 @@ configures one profile; multiple accounts/workstations use the same model with m
 
 ### ADR-9: Automated Versioning & Release via GitVersion + Homebrew Cask Bump
 
-**Status:** Accepted (2026-06-06)
+**Status:** Accepted (2026-06-06). Superseded on 2026-11-24 for versioning and release by the [cross-platform client's release design](cross-platform-client.spec.md): `ci.yml` versions through `vhco-pro/version-workflow` with the bundled GitVersion configuration, and `gitversion.yml` and `release.yml` are gone. The Homebrew cask sync below still applies.
 
 **Context:** v1 shipped its first artifact by hand (build → zip → GitHub release → cask edit). That is error-prone and doesn't scale to repeated releases. The author already runs a standard release pipeline across the `stackweaver` repos (GitVersion + a release bot).
 

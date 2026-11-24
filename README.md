@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/vhco-pro/ssm-connect/releases/latest"><img src="https://img.shields.io/github/v/release/vhco-pro/ssm-connect?display_name=tag&sort=semver" alt="Latest release"></a>
-  <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/release.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/release.yml/badge.svg" alt="Release build"></a>
+  <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/ci.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/codeql.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/vhco-pro/ssm-connect" alt="Apache 2.0 license"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple" alt="macOS 14 or later">
@@ -377,9 +377,12 @@ not a clean working-day result. Logs contain health data, not credentials or pri
 
 ### Releasing
 
-A push to `main` runs [release.yml](.github/workflows/release.yml). GitVersion computes the
-version from conventional commits, the workflow tags it and creates the GitHub Release, and then
-separate jobs build and upload each platform's assets:
+Every branch push runs [ci.yml](.github/workflows/ci.yml): the checks first, then
+[vhco-pro/version-workflow](https://github.com/vhco-pro/version-workflow), which calculates the
+version from conventional commits with the shared GitVersion configuration. On `main` it tags that
+version; on a branch whose open pull request has the `release:preview` label it tags a prerelease;
+any other run only calculates the version. When a run tags, the same run creates the GitHub Release
+and separate jobs build and upload each platform's assets:
 
 - **macOS:** `scripts/release.sh` builds `SSMConnect-<version>.zip` and its SHA-256. After the
   upload, the newest release that has a macOS ZIP is marked as the latest release.
@@ -392,11 +395,13 @@ separate jobs build and upload each platform's assets:
   inspects them and installs, upgrades and removes them on clean Fedora 43 and Ubuntu 24.04
   containers before upload.
 
-A failed platform job leaves only its own asset missing. Rerunning it uploads assets that are still
-missing and never replaces a published one; fix a bad asset by releasing a new version. To try the
-release path, run the workflow manually with `test_tag` set to a prerelease tag such as
-`v0.0.0-test.1`; `fail_job` then fails one platform job on purpose, to show the others still
-publish.
+A failed platform job leaves only its own asset missing. Retry it with **Re-run failed jobs**
+while no newer run of the branch is queued or running; the rerun keeps the run's tag and uploads
+only assets that are still missing. It never replaces a published one, so fix a bad asset by
+releasing a new version. **Re-run all jobs** finds the tag already pushed and releases nothing.
+Adding the `release:preview` label reruns the branch's CI through
+[preview.yml](.github/workflows/preview.yml). A manual run on a labelled branch may set `fail_job`
+to fail one platform job on its first attempt, to show the others still publish.
 
 The Homebrew cask (`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest
 release version + sha256 via a scheduled workflow in that tap (no manual cask edit needed). A separate

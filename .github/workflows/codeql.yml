@@ -1,7 +1,7 @@
 # CodeQL code scanning. Advanced setup (not the repo's default setup) because the
 # Swift sources only compile after `xcodegen generate` recreates the gitignored
-# .xcodeproj — CodeQL's autobuild has nothing to build otherwise. Mirrors the
-# release workflow's proven macOS build environment (newest Xcode for XcodeGen's
+# .xcodeproj, so CodeQL's autobuild has nothing to build otherwise. Mirrors the
+# macOS release job's proven build environment in ci.yml (newest Xcode for XcodeGen's
 # objectVersion 77). Actions workflows are scanned on a cheap Linux runner.
 name: CodeQL
 
