@@ -1329,6 +1329,7 @@ None.
 | 2026-11-24 | R-40 | spec | `dce39cb` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing; a pass started at `e86e26b` was stopped before it returned, as `dce39cb` corrected the macOS step) |
 | 2026-11-24 | R-41 | spec | `f467d4f` | claude-opus-5-5 | procedural | No blocking findings; four should-fix and one nit (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-42 | spec | `81341b5` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and one nit (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-43 | spec | `5aa1048` | claude-opus-5-5 | procedural | No blocking or should-fix findings; two nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2187,6 +2188,22 @@ SEVERITY: nit
 WHERE: Tasks / T81:1251; Test Plan / AC-18:983
 EVIDENCE: T81's helper case ("a wake with a dead tunnel ends the original tunnel before the replacement starts ... in the helper") names only `ParityCommandTests.swift`. The helper fixture builds its tunnel inline as `tunnel: MockTunnelProvider()` (`SSMConnectKit/Tests/SSMConnectHelperTests/HelperCommandTests.swift:153`) and does not keep it in `Fixture` (lines 114-126). `MockTunnelProvider.startTunnel` returns a fresh `MockTunnelHandle` without recording it (`SSMConnectWorkflow/TunnelMocks.swift:62-72`). So the helper test cannot see the first handle's `terminateCount` unless it changes `HelperCommandTests.swift` or `TunnelMocks.swift`, and T81 lists neither. The profile-change case has a similar gap. `ConnectionStateMachine.apply` cancels a connect only when the provider is an `AuthorizationSession` (`ConnectionStateMachine.swift:157-162`), and otherwise returns at `guard state == .disconnected`. `makeMachine` defaults to `MockAuthProvider` (`ConnectionStateMachineTests.swift:15`), so that case needs a real `AuthorizationSession`, as `AuthorizationSessionTests.swift:313` uses. macOS always passes one (`SSMConnect/App/SSMConnectApp.swift:23`). T81 also lists `ConnectionStateMachine.swift` as a source change, so an implementer must not "fix" `apply` to make the test pass. Careful implementers would still build the same thing.
 PROPOSAL: Add the helper fixture file (or `TunnelMocks.swift`) to T81's file list, and say that the profile-change case uses an `AuthorizationSession` provider and leaves `apply` unchanged.
+
+### R-43
+
+FINDING: F-01
+KIND: factual
+SEVERITY: nit
+WHERE: Test Plan / AC-18:984; Context / Owner summary:169-173
+EVIDENCE: The fixes for R-42 hold up. LEASE-05's stop case expects the lease file to be gone (`SSMConnectKit/Tests/SSMConnectKitTests/Tunnel/EditorLeaseContinuationTests.swift:308-347`). `restoreSetup()` calls `stopAll()` (`SSMConnectKit/Sources/SSMConnectWorkflow/RemoteDevelopmentStateMachine.swift:125-129`), and quit takes the same function (`:222`). The helper fixture keeps a `MockTunnelProvider` whose `startResult` can hand back handles the test holds (`SSMConnectWorkflow/TunnelMocks.swift:55-72`), so T81's file list is now enough. Two smaller mismatches remain, both added by 91039cf and 5aa1048. (1) The row rests Cancel Replacement Recovery on the test "REBUILD-09 and UPGRADE-05: Cancel and Stop cannot recreate access during a readiness wait" (`EditorWorkspaceRecoveryTests.swift:235-256`). That test cancels while a recovery task is waiting and never has a replacement pending. macOS shows Cancel Replacement Recovery only when `pendingReplacement` is set (`SSMConnectUI/MenuContentView.swift:124-134`). By then the recovery task has already thrown `replacementApprovalRequired` and ended (`RemoteDevelopmentStateMachine.swift:378-382`). So the cited test would still pass if `cancelRecovery()` stopped clearing the replacement. The test that does exercise the shared `cancelRecovery()` in that state is `ParityCommandTests.swift:95-109` ("With no command running, cancelEditorRecovery clears a replacement waiting for review"), through `HelperRuntime.swift:187-188`. (2) Restore calls `stopAll()` with `removingKeysNow: false`, while quit calls `stopAll(removingKeysNow: true)`. LEASE-05's quit case checks that the key is removed at once (`EditorLeaseContinuationTests.swift:345-346`), but Restore removes it after a one-second delay, as Stop does (`RemoteDevelopmentStateMachine.swift:242-243`). Only the lease-file part of the quit case carries over to Restore. Neither gap changes anything built: the function is shared, and while a replacement waits for review, no process or new grant exists for AC-18 to end.
+PROPOSAL: For Cancel Replacement Recovery, name `ParityCommandTests` ("cancelEditorRecovery clears a replacement waiting for review") alongside or instead of the readiness-wait test. Say that Restore shares quit's lease removal through `stopAll`, but removes the key after a delay, as Stop does.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Frontmatter / status_description:3; Context / Owner summary:169-173; Test Plan / AC-18:984
+EVIDENCE: status_description still says that cancellation, logout and sleep rest "on new tests (T81)". After 91039cf, the AC-18 row rests the macOS editor controls (Stop Remote Access, Restore Editor Setup, Cancel Recovery, Cancel Replacement Recovery) on existing tests, and the Owner summary now adds "and on the existing editor stop, restore and cancel tests". 91039cf updated the summary but not status_description. R-41 F-02 and F-05 both named status_description in their WHERE. The Test Plan row is authoritative, so no proof changes.
+PROPOSAL: Reword status_description to say that macOS cancellation, logout and sleep rest on the new T81 tests and on the existing editor tests.
 
 ## Sources
 
