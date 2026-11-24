@@ -1416,6 +1416,7 @@ None.
 | 2026-11-24 | R-49 | spec | `0310307` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and three nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-50 | spec | `4ffc162` | claude-opus-5-5 | procedural | No blocking findings; one should-fix and three nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-51 | spec | `ef4840b` | claude-opus-5-5 | procedural | No blocking findings; one should-fix (a judgement for the owner) and two nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-52 | spec | `350c27e` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2834,6 +2835,36 @@ SEVERITY: nit
 WHERE: Design, Integration and feasibility ("the AWS client and helper jobs of ci.yml build the code it probed on every platform and run the helper protocol tests, the region and config parser tests run only in the macOS package suite, which CodeQL runs on PRs to main and weekly, and its SDK half builds dependencies the app no longer uses (AC-28)")
 EVIDENCE: ef4840b put the CodeQL clause into this sentence. The sentence now joins three independent clauses with commas. "its SDK half" refers back to the spike, but it now directly follows "the macOS package suite, which CodeQL runs", so it reads as the suite's or CodeQL's SDK half.
 PROPOSAL: Split the sentence: "... and run the helper protocol tests. The region and config parser tests run only in the macOS package suite, which CodeQL runs on PRs to main and weekly. The spike's SDK half builds dependencies the app no longer uses (AC-28)."
+
+### R-52
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Frontmatter `covers`; Tasks T83 (file list "`scripts/release/`, `spikes/`" and done condition "`spikes/` no longer exists"); Design, First increment ("Both are deleted, with the `spikes/` folders")
+EVIDENCE: 350c27e removed `spikes/swift-portability/` and `spikes/helper-feasibility/` from `covers`. But at this commit both folders are still in the tree (`ls spikes` lists helper-feasibility and swift-portability), and deleting them is an unfinished part of T83, which names `spikes/` among its files and requires it gone. The standard says `covers` lists every path whose change can affect the feature, and `feature_tree_clean` reads it. R-48 F-07 added `gitversion.yml` "while it exists" for this reason, and that entry stays. I checked this in a scratch clone at 350c27e on a branch named feat/shared-swift-core. With `spikes/` deleted and not committed, `vh-adlc gate complete` did not list `feature_tree_clean` among its failing conditions. After `gitversion.yml` was also deleted, it did. So the uncommitted T83 deletion would not hold the gate, and the document handles two paths T83 removes in two different ways.
+PROPOSAL: Put `spikes/` back in `covers` until T83 has deleted it, the same way `gitversion.yml` is kept.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: should-fix
+WHERE: Tasks T83 (done condition); Test Plan AC-31 row; the rule is also stated in Context, Owner summary ("the full macOS package suite runs before the tag, so a failing macOS test blocks it"), Design, First increment ("The region and config parser tests run in the full macOS package suite, which the macOS check job runs before the tag"), Design, Migration, performance and release boundaries ("the full macOS package suite on macOS" and "The full macOS package suite runs in the macOS check job before the tag, so a failing macOS test blocks the tag"), T83 ("the macOS helper leg running the full macOS package suite") and Sources (owner decisions, review R-51)
+EVIDENCE: 350c27e folds in the owner's answer to R-51 F-01: the full macOS package suite runs in the macOS check job before the tag. No check enforces it. T83's done condition lists actionlint, `scripts/release/test-release-assets.sh` with its graph check, no direct GitVersion call, no workflow referencing `spikes/`, and `spikes/` being gone. The AC-31 row checks the version-workflow call, the `needs` graph and the label behavior. AC-20's row is a native run, not the CI job. The macOS leg runs today with a filter (`swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests'`, .github/workflows/swift-portability.yml:142). An implementation that moves that job into ci.yml unchanged passes every listed check, and the macOS ZIP still ships without the suite running in its run. R-49 F-02 found the same gap for the spike job, and the fix there was the "no workflow references `spikes/`" done condition.
+PROPOSAL: Add to T83's done condition, and to the committed check in the AC-31 row, that the macOS check job runs `swift test --package-path SSMConnectKit` with no `--filter`. Have the check fail on a copy of `ci.yml` that restores the filter.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Design, First increment ("stdin redirected from a request file and stdout/stderr redirected to files (`spikes/swift-portability/run.sh:29-31` at `b1c433f`)")
+EVIDENCE: 350c27e pinned this citation to `b1c433f`. In `git show b1c433f:spikes/swift-portability/run.sh`, line 29 is the `swiftc` output and build-log redirect, line 30 starts the probe, line 31 redirects stdin from `requests.jsonl`, and line 32 redirects stdout and stderr to `core-responses.jsonl` and `core-runtime.log`. The cited range leaves out the stdout and stderr redirect. The range has been off since b48b9b5 (`git diff b1c433f HEAD -- spikes/` is empty), but this revision fixed it to a commit.
+PROPOSAL: Cite `spikes/swift-portability/run.sh:30-32` at `b1c433f`.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Design, First increment ("The spike's SDK half built dependencies the app no longer uses (AC-28). It used native `ubuntu-24.04` and `windows-2025` hosted runners ... It compiled the existing region validator and AWS config parser unchanged")
+EVIDENCE: This revision split the sentence as R-51 F-03 proposed. The two "It" sentences now follow "The spike's SDK half", so they read as being about the SDK half. But compiling the region validator and config parser and running the helper probe was the other half of the spike (run.sh:24-32 at b1c433f). The SDK probe comes later (run.sh:53).
+PROPOSAL: Start the next sentence with "The spike used native ..." so both "It" sentences refer to the whole spike.
 
 ## Sources
 
