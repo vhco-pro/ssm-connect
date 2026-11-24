@@ -1231,6 +1231,7 @@ None.
 | 2026-11-23 | R-31 | spec | `dd210d5` | gpt-6.1-sol | procedural | One blocking (GetSecretValue exemption missing from the AC-28 proof), three should-fix and two nits |
 | 2026-11-23 | R-32 | spec | `a911131` | gpt-6.1-sol | procedural | One blocking (single-user desktop proof needs a workstation) and three should-fix |
 | 2026-11-24 | R-33 | spec | `4aefc9d` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
+| 2026-11-24 | R-34 | spec | `906e714` | gpt-6.1-sol | procedural | No blocking findings; one should-fix and one nit |
 
 ### R-1
 
@@ -1929,6 +1930,22 @@ SEVERITY: should-fix
 WHERE: Context / Owner summary:66-68; Scope / supported matrix:276-278 and exclusions:291-292; Acceptance Criteria / AC-21, AC-23; Test Plan / AC-21:903; Tasks / T28:1064; Sources / owner matrix decision:1894-1896
 EVIDENCE: The document declares Windows 11 x64 without a minimum release. Package.wxs:47-52 refuses installations before Windows 11 24H2, Write-ReleaseMetadata.ps1:73 gives WinGet the same build-26100 minimum, and SSMConnect.App.csproj:5-6 declares that platform minimum. README.md:89 also promises only 24H2 or later. Acceptance on the newer sandbox can pass while earlier Windows 11 versions within the document's stated matrix are refused.
 PROPOSAL: Raise an owner question deciding whether Windows support starts at 24H2 or includes earlier Windows 11 releases. Carry the answer into the matrix, summary and acceptance checks; retaining earlier releases also needs unfinished implementation and validation tasks.
+
+### R-34
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:128-129,143-145; Design / Behavior, identity and local state:596-608; Acceptance Criteria / AC-18; Test Plan / AC-18; Tasks / T28 and T29 remaining sleep work, T65, T70-T75
+EVIDENCE: The revision addressing R-33 F-01 adds desktop health-check tests and shell resume-event tests, but Windows sleep acceptance rests entirely on those tests. None exercises web transport loss or editor lease expiry and recovery across simulated sleep. These use separate paths: WebForwardsStateMachine.swift:230-240 reacts to transport exit, and RemoteDevelopmentStateMachine.swift:412-439 processes lease-bound recovery requests. Their existing recovery suites remain in the macOS-only SSMConnectKitTests target (Package.swift:142-158). The proposed desktop and event tests could all pass while Windows web or editor sleep handling is broken.
+PROPOSAL: Define the expected web and editor outcomes after simulated sleep and name portable or helper checks establishing them. Add unfinished tasks for any missing checks, covering transport loss and elapsed lease validity without requiring additional native sleep support.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Design / Windows and Linux parity with the macOS interface:720-739; Tasks / T58 correction
+EVIDENCE: Design calls Disconnect during a connect a macOS control that interrupts work in progress. MenuContentView.swift:94-103 offers Disconnect only while connected. T58's correction explicitly acknowledges this and says the Windows and Linux trays now follow that availability rule. The inventory and detailed availability requirements establish the intended behavior, so the stale description changes neither implementation nor proof.
+PROPOSAL: Remove the claim that macOS offers Disconnect during a connect. Describe the shell's cancellation handling as a defensive protocol path while retaining macOS's connected-only control availability.
 ## Sources
 
 - Owner direction on 2026-11-12: preserve working Swift, share its core across
