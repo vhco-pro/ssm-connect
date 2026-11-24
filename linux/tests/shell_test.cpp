@@ -11,6 +11,8 @@
 #include "tray.h"
 
 #include <QAccessible>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <algorithm>
 #include <functional>
 #include <QAction>
@@ -174,6 +176,129 @@ private slots:
             if (frame.value("name") == "duplicateProfile")
                 QCOMPARE(frame.value("arguments").toObject().value("id").toString(), QStringLiteral("55555555-5555-4555-8555-555555555555"));
 
+        }
+    }
+
+    // The profile editor's fields, pickers and toggles, operated as a user does with the keyboard,
+    // reach the saved profile, and a reopened editor shows them (T69, AC-29).
+    void editorFieldsPickersAndTogglesReachTheSavedProfile() {
+        ManualClock clock;
+        FakeSpawner spawner;
+        spawner.configure = [](FakeHelper &helper) { helper.onCommand = [](const QString &name) { return respond(name); }; };
+        HelperHost host(spawner, Build, limits(), clock);
+        host.start();
+        QTRY_COMPARE(host.status(), HelperHostStatus::Ready);
+        RecordingPlatform platform;
+        ShellController controller(host, platform);
+        const QVariantMap draft{
+            {"id", "55555555-5555-4555-8555-555555555555"}, {"name", "Workstation"}, {"connectMode", "multiUser"},
+            {"localPort", 8443}, {"remotePort", 8443}, {"agentRemotePort", 8444}, {"connectAction", QVariantMap{{"dcvViewer", QVariantMap{}}}},
+            {"remoteDevelopment", QVariantMap{{"enabled", true}}},
+            {"webForwards", QVariantMap{{"enabled", true}, {"socksPort", 1080}, {"browser", "automatic"}, {"browserMode", "separate"},
+                                        {"proxySuffixes", QVariantList{".internal"}},
+                                        {"localForwards", QVariantList{QVariantMap{{"name", "Dashboard"}, {"localPort", 8080},
+                                                                                   {"remoteHost", "127.0.0.1"}, {"remotePort", 80}}}}}}};
+        auto open = [&](QQmlApplicationEngine &engine, const QVariantMap &profile) -> QQuickWindow * {
+            engine.rootContext()->setContextProperty("shell", &controller);
+            engine.setInitialProperties({{"draft", profile}});
+            engine.load(QUrl(QStringLiteral("qrc:/qml/Editor.qml")));
+            auto *window = engine.rootObjects().isEmpty() ? nullptr : qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+            if (window) {
+                window->requestActivate();
+                (void)QTest::qWaitForWindowExposed(window);
+            }
+            return window;
+        };
+        const QList<QPair<QString, QString>> typed{
+            {"profileeditor-textfield-display-name", "Edited"}, {"profileeditor-textfield-sso-start-url", "https://d-1.awsapps.com/start"},
+            {"profileeditor-textfield-sso-region", "eu-north-1"}, {"profileeditor-textfield-account-id", "999988887777"},
+            {"profileeditor-textfield-role-name", "Ops"}, {"profileeditor-textfield-resource-region", "eu-west-3"},
+            {"profileeditor-textfield-instance-tag-key", "Team"}, {"profileeditor-textfield-instance-tag-value", "dev"},
+            {"profileeditor-textfield-dcv-password-secret-id-optional", "sec/x"}, {"profileeditor-textfield-local-port", "18444"},
+            {"profileeditor-textfield-remote-port", "8445"}, {"profileeditor-textfield-agent-port", "8446"},
+            {"profileeditor-textfield-remote-folder-optional", "/home/u/p"}, {"profileeditor-textfield-ssh-user-optional", "dev"},
+            {"profileeditor-textfield-socks-port", "11090"}, {"profileeditor-textfield-domain-suffix", ".corp"},
+            {"profileeditor-textfield-name", "Grafana"}, {"profileeditor-textfield-local-port-2", "3001"},
+            {"profileeditor-textfield-remote-port-2", "3000"}, {"profileeditor-textfield-remote-host", "10.0.0.5"},
+            {"profileeditor-textfield-open-path-optional", "/d"}};
+        QJsonObject saved;
+        {
+            QQmlApplicationEngine engine;
+            QQuickWindow *window = open(engine, draft);
+            QVERIFY(window);
+            auto press = [&](const char *name, Qt::Key key) {
+                QQuickItem *item = findItem(window, QString::fromLatin1(name));
+                QVERIFY2(item, name);
+                item->forceActiveFocus();
+                QTest::keyClick(window, key);
+                QTest::qWait(20);
+            };
+            for (const auto &[name, value] : typed) {
+                QQuickItem *field = findItem(window, name);
+                QVERIFY2(field, qPrintable(name));
+                field->forceActiveFocus();
+                QMetaObject::invokeMethod(field, "selectAll");
+                for (const QChar c : value) QTest::keyClick(window, c.toLatin1()); // typed one key at a time
+                QTest::keyClick(window, Qt::Key_Return); // finishes the edit, as leaving the field does
+                QTest::qWait(10);
+            }
+            press("profileeditor-picker-browser", Qt::Key_Down);      // automatic -> chrome
+            press("profileeditor-picker-browser-mode", Qt::Key_Down); // separate -> existing
+            press("profileeditor-picker-mode", Qt::Key_Up);           // multi-user -> single-user
+            press("profileeditor-toggle-open-dcv-viewer-automatically", Qt::Key_Space);
+            press("profileeditor-toggle-enable-native-vs-code-access", Qt::Key_Space);
+            const qsizetype before = qsizetype(spawner.started[0]->receivedFrames.size());
+            QAccessible::setActive(true);
+            QAccessible::queryAccessibleInterface(findItem(window, "profileeditor-button-save"))
+                ->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+            QTRY_VERIFY(std::any_of(spawner.started[0]->receivedFrames.begin() + before, spawner.started[0]->receivedFrames.end(),
+                                    [](const QJsonObject &f) { return f.value("name") == "saveProfile"; }));
+            for (auto it = spawner.started[0]->receivedFrames.rbegin(); it != spawner.started[0]->receivedFrames.rend(); ++it)
+                if (it->value("name") == "saveProfile") {
+                    saved = QJsonDocument::fromJson(it->value("arguments").toObject().value("profile").toString().toUtf8()).object();
+                    break;
+                }
+        }
+        const QJsonObject web = saved.value("webForwards").toObject();
+        const QJsonObject forward = web.value("localForwards").toArray().at(0).toObject();
+        QCOMPARE(saved.value("name").toString(), QStringLiteral("Edited"));
+        QCOMPARE(saved.value("ssoStartUrl").toString(), QStringLiteral("https://d-1.awsapps.com/start"));
+        QCOMPARE(saved.value("ssoRegion").toString(), QStringLiteral("eu-north-1"));
+        QCOMPARE(saved.value("accountId").toString(), QStringLiteral("999988887777"));
+        QCOMPARE(saved.value("roleName").toString(), QStringLiteral("Ops"));
+        QCOMPARE(saved.value("resourceRegion").toString(), QStringLiteral("eu-west-3"));
+        QCOMPARE(saved.value("instanceTagKey").toString(), QStringLiteral("Team"));
+        QCOMPARE(saved.value("instanceTagValue").toString(), QStringLiteral("dev"));
+        QCOMPARE(saved.value("secretId").toString(), QStringLiteral("sec/x"));
+        QCOMPARE(saved.value("localPort").toInt(), 18444);
+        QCOMPARE(saved.value("remotePort").toInt(), 8445);
+        QCOMPARE(saved.value("agentRemotePort").toInt(), 8446);
+        QCOMPARE(saved.value("connectMode").toString(), QStringLiteral("singleUser"));
+        QVERIFY(saved.value("connectAction").toObject().contains("tunnelOnly"));
+        QCOMPARE(saved.value("remoteDevelopment").toObject().value("enabled").toBool(), false);
+        QCOMPARE(saved.value("remoteDevelopment").toObject().value("folder").toString(), QStringLiteral("/home/u/p"));
+        QCOMPARE(web.value("sshUser").toString(), QStringLiteral("dev"));
+        QCOMPARE(web.value("socksPort").toInt(), 11090);
+        QCOMPARE(web.value("browser").toString(), QStringLiteral("chrome"));
+        QCOMPARE(web.value("browserMode").toString(), QStringLiteral("existing"));
+        QCOMPARE(web.value("proxySuffixes").toArray().at(0).toString(), QStringLiteral(".corp"));
+        QCOMPARE(forward.value("name").toString(), QStringLiteral("Grafana"));
+        QCOMPARE(forward.value("localPort").toInt(), 3001);
+        QCOMPARE(forward.value("remotePort").toInt(), 3000);
+        QCOMPARE(forward.value("remoteHost").toString(), QStringLiteral("10.0.0.5"));
+        QCOMPARE(forward.value("openPath").toString(), QStringLiteral("/d"));
+        // Reopened with the saved profile, the editor shows every value.
+        QQmlApplicationEngine engine;
+        QVariantMap reloaded = saved.toVariantMap();
+        reloaded.insert("connectMode", "multiUser"); // shows the agent port again
+        QVariantMap development = reloaded.value("remoteDevelopment").toMap();
+        development.insert("enabled", true);         // enables the remote folder again
+        reloaded.insert("remoteDevelopment", development);
+        QQuickWindow *window = open(engine, reloaded);
+        QVERIFY(window);
+        for (const auto &[name, value] : typed) {
+            QQuickItem *field = findItem(window, name);
+            QVERIFY2(field && field->property("text").toString() == value, qPrintable(name + " shows " + (field ? field->property("text").toString() : QString())));
         }
     }
 
