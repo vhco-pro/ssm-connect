@@ -103,7 +103,8 @@ targets += [
     // The core-side Linux adapters: XDG paths, the key-value store, tool discovery and browser
     // discovery. User-only files live in SSMConnectWorkflow beside the Windows writer.
     .target(name: "SSMConnectLinux", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow"]),
-    .testTarget(name: "SSMConnectLinuxTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectLinux"]),
+    .testTarget(name: "SSMConnectLinuxTests", dependencies: ["SSMConnectDomain", "SSMConnectWorkflow", "SSMConnectLinux",
+                                                             "SSMConnectHelperCore"]),
 ]
 #endif
 
