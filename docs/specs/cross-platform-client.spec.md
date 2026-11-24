@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Every task is done; each criterion carries its evidence and, by owner decision, a residual on #40 for the native checks that did not run or could not be observed; the implementation review is rerun before shipping."
+status: complete
+status_description: "Shipped for review: the shared Swift core with Windows and Linux clients; every criterion carries its evidence and, by owner decision, a residual on #40 for the native checks still open, with #37, #38 and #39 as follow-ups."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
