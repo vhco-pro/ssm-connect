@@ -108,10 +108,10 @@ goes through `vhco-pro/version-workflow` with the bundled configuration, after t
 checks, in one workflow that also publishes (AC-31, T83 to T86). For releases this
 means: `chore` commits, dependency updates among them, now bump the patch and cut a
 release; the `release:preview` label on a PR replaces the `test_tag` dispatch; the
-checks run on every branch push; a failed release is retried with Re-run failed
+checks run on every branch push, without the feasibility spikes; a failed release is retried with Re-run failed
 jobs; and a tag pushed by hand publishes nothing. The shell, Qt and macOS app tests
 still run after the tag, so a platform test that always fails leaves that release
-without its asset; building every artifact once before the tag is #42. The
+without its asset; building every artifact once before the tag is #43. The
 criterion evidence and the residuals on #40 return in T86 once the owner
 reconfirms the residuals.
 
@@ -577,14 +577,16 @@ and owned-child cleanup. A blocker there stops the increment for an owner
 decision; it never silently authorizes another core language, a duplicated
 workflow or a CLI-based authentication fallback.
 
-The authorized, credential-free spike is reproducible through the portability
-job of [ci.yml](../../.github/workflows/ci.yml) (first `swift-portability.yml`) and
-[its runner](../../spikes/swift-portability/run.sh). It uses native
+The authorized, credential-free spike ran through the former
+`swift-portability.yml` workflow and [its runner](../../spikes/swift-portability/run.sh),
+which stay as history and are not a CI check: the AWS client and helper jobs of
+[ci.yml](../../.github/workflows/ci.yml) test the code it probed, and its SDK half
+builds dependencies the app no longer uses (AC-28). It used native
 `ubuntu-24.04` and `windows-2025` hosted runners as test environments, not a
-promised desktop support matrix. It compiles the existing region validator and
-AWS config parser unchanged, runs a small Swift helper with stdin redirected
+promised desktop support matrix. It compiled the existing region validator and
+AWS config parser unchanged, ran a small Swift helper with stdin redirected
 from a request file and stdout/stderr redirected to files
-(`spikes/swift-portability/run.sh:29-31`), then builds/loads the currently locked AWS SDK modules and
+(`spikes/swift-portability/run.sh:29-31`), then built and loaded the then-locked AWS SDK modules and
 YAML dependency in an isolated package.
 
 This is not a GUI, complete extracted workflow or production IPC protocol.
@@ -883,8 +885,8 @@ Versioning and publication follow the delivery standard
 (`conventions/delivery.md` and `knowledge/shared-delivery.md` at the pinned docs
 revision), in the same-workflow arrangement for a repository without a release
 GitHub App. One workflow, `ci.yml`, runs on every branch push and on manual
-dispatch. Its checks (the portability, AWS client and helper jobs and the release
-script tests) run first; `vhco-pro/version-workflow` then calculates the version
+dispatch. Its checks (the AWS client and helper tests on Linux, Windows and macOS,
+and the release script tests) run first; no feasibility spike runs in CI; `vhco-pro/version-workflow` then calculates the version
 with `michielvha/gitversion-tag-action` and the action's bundled GitVersion
 configuration, and pushes the exact `v` tag with the run's `GITHUB_TOKEN`. It tags
 only `main`, and a branch whose open PR carries the `release:preview` label, which
@@ -894,7 +896,7 @@ only on its `tagged` output, so a commit whose checks fail is never tagged. The
 shell, Qt and macOS app tests run inside the platform jobs after the tag, as the
 release's own checks: a platform test that fails every time leaves that release
 without the platform's asset, and the fix releases as the next version. Building
-and testing every artifact once, before the tag, is #42. The
+and testing every artifact once, before the tag, is #43. The
 repository's own `gitversion.yml` is removed, so `chore` commits bump the patch as
 the standard intends. Because a `GITHUB_TOKEN` push starts no other workflow, the
 jobs that publish depend on the version job in the same run and act only when it
@@ -1309,7 +1311,7 @@ The parity revision (accepted 2026-11-23) adds T50 to T62. AC-30 comes first bec
   - Evidence: 2026-11-24. `ConnectionStateMachine` and `WebForwardsStateMachine` take an injected `AppQuitHandler` (default `.shared`). The new tests build both through their designated inits with `RecordingTermination`'s platform, never `WorkflowPlatform.macOS`. A private quit handler's `runShutdown` with the desktop connected records the plugin's PID, and with web forwards on records the ssh's PID. A profile change while the connect waits for readiness, with an `AuthorizationSession` over a signed-in provider and one shared profile value, as on macOS, ends the tunnel the connect started and returns to disconnected. Turn Off Web Forwards while the ssh start is in flight ends the handle that start returns. The dead-tunnel wake case now checks that the original tunnel was terminated, in `ConnectionStateMachineTests` and in the helper's `ParityCommandTests` (the fixture keeps its desktop tunnel provider). On MacBook-Pro, `swift test --package-path SSMConnectKit --filter 'ConnectionStateMachineTests|WebForwardsStateMachineTests'` passes 52 tests in 3 suites. With the teardowns removed (no `terminateChildProcess` in either quit path, no `terminate()` in either teardown), all five cases fail. In swift:6.4.2-noble the helper suite passes 56 tests, and the helper wake case fails with the teardown removed ("the dead tunnel's plugin was left running").
 - [x] T82 `SSMConnectKit/Tests/SSMConnectHelperTests/HelperCommandTests.swift` - remove the race in `connectionFileRemoved`, whose 200 ms window starts at the Viewer launch request, before connect returns (R-46 F-02); done: the helper suite passes in swift:6.4.2-noble, alone and with another suite loading the host (AC-30)
   - Evidence: 2026-11-24, the test's window is now 2 s, which outlasts connect's return on a loaded host, and removal is awaited for up to 10 s; a comment says why. In swift:6.4.2-noble the helper suite passes 56 tests alone, and HelperCommandTests (19 tests) passes while the Fedora 43 image runs the full suite beside it; the test took 2.184 s.
-- [ ] T83 `.github/workflows/ci.yml`, `.github/workflows/preview.yml`, `.github/workflows/release.yml`, `.github/workflows/swift-portability.yml`, `gitversion.yml`, `scripts/release/` - one `ci.yml` on every branch push and manual dispatch, one run at a time per ref as the shared example sets: the checks, then `vhco-pro/version-workflow` pinned to a released commit with the bundled GitVersion configuration, needing every check job, then the release, platform and latest-mark jobs needing it and gated on its `tagged` output with its `tag` and `version`; `fail_job` fails its platform job on a prerelease's first attempt only; `preview.yml` copied from the shared example; `release.yml` and `swift-portability.yml` folded into it and `gitversion.yml` removed; a check run by `scripts/release/test-release-assets.sh` verifies those `needs` and the gate; done: actionlint passes, `scripts/release/test-release-assets.sh` passes and its graph check fails on copies of `ci.yml` with a `needs` or the gate removed, and no workflow calls GitVersion or `gittools/actions` directly (AC-24, AC-31)
+- [ ] T83 `.github/workflows/ci.yml`, `.github/workflows/preview.yml`, `.github/workflows/release.yml`, `.github/workflows/swift-portability.yml`, `gitversion.yml`, `scripts/release/` - one `ci.yml` on every branch push and manual dispatch, one run at a time per ref as the shared example sets: the checks, then `vhco-pro/version-workflow` pinned to a released commit with the bundled GitVersion configuration, needing every check job, then the release, platform and latest-mark jobs needing it and gated on its `tagged` output with its `tag` and `version`; `fail_job` fails its platform job on a prerelease's first attempt only; `preview.yml` copied from the shared example; `release.yml` folded into it, `swift-portability.yml`'s AWS client and helper jobs moved into it without its spike job, and `gitversion.yml` removed; a check run by `scripts/release/test-release-assets.sh` verifies those `needs` and the gate; done: actionlint passes, `scripts/release/test-release-assets.sh` passes and its graph check fails on copies of `ci.yml` with a `needs` or the gate removed, and no workflow calls GitVersion or `gittools/actions` directly (AC-24, AC-31)
 - [ ] T84 `README.md`, `.github/workflows/codeql.yml`, `docs/specs/macos-trusted-distribution.spec.md`, `docs/specs/ssm-connect.spec.md` - the Releasing section and the build badge describe the same-workflow release, the `release:preview` label and Re-run failed jobs instead of `test_tag`; the CodeQL header and the trusted-distribution spec name `ci.yml`; the earlier GitVersion decision notes that this release design replaced it; done: no line outside this document and Git history names `test_tag`, `release.yml` or `gitversion.yml` as current (AC-24, AC-31)
 - [ ] T85 `docs/specs/cross-platform-client.spec.md` - create the `release:preview` label and prove the release on PR #41's branch: a run without the label pushes no tag; with the label one run tags a prerelease after its checks and publishes every platform's assets to a release that is not latest, and a later run at that head tags nothing; a `[skip ci]` commit on the labelled branch, then a dispatch with `fail_job=macos` at it, leaves the macOS asset missing while Windows and Linux publish, and Re-run failed jobs publishes the ZIP; done: AC-24 and AC-31 evidence lines naming the runs, commits, tags and assets (AC-24, AC-31)
 - [ ] T86 `docs/specs/cross-platform-client.spec.md` - once the owner reconfirms the residuals on #40, restore each criterion's evidence line and `Residual: #40` from before this revision (they stay in Git), updating AC-24's and adding AC-31's from T83 to T85; done: every criterion carries its evidence again, each residual the owner reconfirmed, and lint passes (AC-11 to AC-31)
@@ -2796,7 +2798,8 @@ install repaired by reinstalling with dnf or apt (Q20).
 - Owner question and decisions on 2026-11-24: why the release stopped using the
   shared tag action; follow the delivery standard with the recommended same-workflow
   design; add AC-31; keep the shared example's concurrency; ship this design and
-  rework building artifacts once before the tag later (#42).
+  rework building artifacts once before the tag later (#43); run no feasibility
+  spike in CI.
 - [Delivery conventions](https://github.com/vhco-pro/docs/blob/0c983f6793bfe35eb96ae95ad0c361c6200af44f/conventions/delivery.md) and
   [shared delivery](https://github.com/vhco-pro/docs/blob/0c983f6793bfe35eb96ae95ad0c361c6200af44f/knowledge/shared-delivery.md): the bundled GitVersion
   configuration, one component deciding the version, `version-workflow` tagging after
