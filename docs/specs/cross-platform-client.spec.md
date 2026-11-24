@@ -1315,6 +1315,7 @@ None.
 | 2026-11-24 | R-37 | spec | `69da261` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 | 2026-11-24 | R-38 | spec | `9f19db0` | gpt-6.1-sol | procedural | No blocking or should-fix findings; one nit |
 | 2026-11-24 | R-38 | spec | `9f19db0` | n/a | n/a | accepted by owner |
+| 2026-11-24 | R-39 | spec | `f3874b8` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (the owner routed this review to a Claude reviewer while the Codex route is out of usage; two Codex passes at this commit failed on the usage limit and returned nothing) |
 
 ### R-1
 
@@ -2060,6 +2061,36 @@ SEVERITY: nit
 WHERE: Frontmatter / status_description:3; Context / Owner summary:138-144; Design / Migration, performance and release boundaries:914-922; Test Plan / AC-21:966; Tasks / T78:1224
 EVIDENCE: The status description says the check "proves recovery from a failed late removal". The summary and Design explicitly accept leftover files with no recovery claimed, while AC-21's proof and T78 verify the new installation works and report the prior installation's remaining registration and files. The revision responding to R-37 removes the recovery claim from the detailed design but leaves it in the status description. The detailed requirements establish the intended behavior, so this mismatch changes neither implementation nor proof.
 PROPOSAL: Describe the late-removal check as verifying the new installation remains usable and recording the known residue, without claiming recovery.
+
+### R-39
+
+FINDING: F-01
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Acceptance Criteria / AC-18:952; Test Plan / AC-18:976; Scope / Not included:331-336; Context / Owner summary:161-164; Frontmatter / status_description:3; Tasks / T27:1134
+EVIDENCE: The revision has two effects that go beyond the owner decision. First, it adds "On Windows and Linux," to the first sentence of the AC-18 row. That sentence was the only native check that also ran on macOS. The rest of the row is Linux-only ("On Linux, also ...; repeat disconnect/cancel, restart, sleep and logoff scenarios") or Windows/Linux-only (systemWake, resume events, ubuntu-sandbox and w11-sandbox). AC-18 still requires macOS Disconnect, cancellation, normal app exit and sleep/logoff to leave no owned processes or reusable access, and the summary and Scope state that "a normal Quit ends them". The AC-18 proof now has no macOS step. T27 still promises "the macOS parts of the AC-12 to AC-19 ... rows" with an AC-18 evidence line, and the row defines none. A regression of the macOS quit handler (`AppQuitHandler` registration and `terminateTunnelForQuit`, `git show eb4f0bc:SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:141-154`) would pass this row. Second, Scope excludes only "Ending the macOS app's plugin and ssh processes" after a force-quit or crash. AC-18's new clause excludes the whole transition: "a force-quit or crash of the macOS app is outside this feature". That also drops the "reusable unauthorized access" half for macOS, such as the temporary SSH key folder that issue #39's body says stays behind (`gh issue view 39`). Two reviewers would judge the macOS part of AC-18 differently. Both effects trace to the revision 9f19db0..f3874b8.
+PROPOSAL: Keep a macOS step in the AC-18 row: Disconnect, cancel, normal Quit and logout with the desktop, web forwards and the editor active leave no plugin, ssh or proxy process. Reword AC-18's exclusion to match Scope exactly, naming each leftover the owner accepted (plugin, ssh and, if intended, the temporary key folder). Alternatively, widen Scope to match AC-18.
+
+FINDING: F-02
+KIND: judgement
+SEVERITY: should-fix
+WHERE: Test Plan / AC-26:983; Context / Owner summary:164-167; Frontmatter / status_description:3; Design / Behavior, identity and local state:576-583
+EVIDENCE: The new AC-26 row runs in the owner's account and backs up "SSM Connect's preferences, Application Support folders, `~/.ssh/config` and the current app" to restore them byte-identical. The same row must exercise "browser routing and ownership records (`BrowserBootstrap`)", and macOS keeps Zen in Use My Browser mode (Design:576-579). In that mode the writers modify the user's own Zen profile, outside SSM Connect's folders: `FirefoxProxySetup.restoreUnlocked` rewrites `prefs.js` and `user.js` at `routing.profilePath` (SSMConnectKit/Sources/SSMConnectMacOS/FirefoxProxySetup.swift:236-260), and `BrowserBootstrap` reads `ssm-connect-routing.json` inside that profile (SSMConnectKit/Sources/SSMConnectMacOS/BrowserBootstrap.swift:174-176). None of this is on the backup list. If the restore behavior under test misbehaves, the owner's real browser proxy settings stay changed. Restoring the preferences by copying the plist is also unreliable while cfprefsd caches the domain and flushes it asynchronously, as the repository itself notes (SSMConnectKit/Sources/SSMConnectWorkflow/KeyValueStoring.swift:5-9). A byte comparison can pass and the next launch can still see the test values. Two executors would back up and restore different sets. This traces to the revision that replaced the isolated account.
+PROPOSAL: Add the routed Zen profile's `prefs.js`, `user.js` and `ssm-connect-routing.json` to the backup and restore list, or state that AC-26 uses a scratch Zen profile. Require the preferences domain to be restored with the app quit and through `defaults import` (or after cfprefsd has released the domain), then compared again after a relaunch.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Context / Owner summary:95-98, 161-164; Scope / Not included:332-333; Tasks / T27:1135-1140
+EVIDENCE: The summary says "After the macOS native acceptance (T27)" and "a force-quit macOS app leaves its plugin and ssh running, exactly as the current release does". Scope says that, like the current release, the app "leaves those children running after a `kill -9`". T27 is unticked, and its progress (1135-1140) still lists "the macOS parts of the AC-12 to AC-19 and AC-25 rows" as remaining. It records no `kill -9` observation on either 0.7.1 or the refactored build. The progress paragraph at 95-98 also mentions native acceptance only on Windows and Linux. The baseline code is consistent with the claim, because children are signalled only from the quit handler (`git show eb4f0bc:SSMConnectKit/Sources/SSMConnectKit/StateMachine/ConnectionStateMachine.swift:141-154`). Still, Context gives the claim no citation, and the summary presents T27 as finished. Issue #39 describes the observation, so this mismatch changes nothing built.
+PROPOSAL: Record the kill -9 observation for both builds as a T27 progress line, cite it or the quit-handler lines from the summary and Scope, and describe T27 as in progress.
+
+FINDING: F-04
+KIND: factual
+SEVERITY: nit
+WHERE: Tasks / T80:1250-1251; README.md:96-98
+EVIDENCE: T80's evidence, added in this revision, records that the README now says "If an upgrade fails, the version you had keeps working". Design:930-932 states that a failure while the prior version is being removed "leaves the new version installed and working". T78's evidence observed exactly this: the upgrade exited 1603 with the new version installed and registered. In that case it is not the previous version that keeps working. The AC-21 row checks only that the guide asks users to report a refused upgrade, so the proof is unaffected.
+PROPOSAL: Reword the README sentence to "If an upgrade fails, SSM Connect stays usable", or name both outcomes, and align T80's wording.
 
 ## Sources
 
