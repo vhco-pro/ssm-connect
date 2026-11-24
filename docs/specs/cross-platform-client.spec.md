@@ -1292,6 +1292,7 @@ None.
 | 2026-11-24 | R-35 | spec | `549cbc2` | gpt-6.1-sol | procedural | NO FINDINGS (a first pass at this commit could not run commands to read the conventions and was discarded) |
 | 2026-11-24 | R-35 | spec | `549cbc2` | n/a | n/a | accepted by owner |
 | 2026-11-24 | R-36 | spec | `5cdd5c1` | gpt-6.1-sol | procedural | No blocking findings; one should-fix (an earlier pass at `a370ace` stayed pending because the owning worktree changed during it; its two findings went to the owner, whose answers `5cdd5c1` applies) |
+| 2026-11-24 | R-37 | spec | `69da261` | gpt-6.1-sol | procedural | No blocking findings; one should-fix |
 
 ### R-1
 
@@ -2019,6 +2020,16 @@ SEVERITY: should-fix
 WHERE: Frontmatter / status_description; Context / Owner summary:129-140; Design / Migration, performance and release boundaries:899-915; Acceptance Criteria / AC-21; Test Plan / AC-21:959; Tasks / T77:1216
 EVIDENCE: This revision moves the injected upgrade failure before RegisterUser. The summary explicitly identifies failure after the new version registers as leaving its registration behind, but neither the revised proof nor T77 exercises that case. Moving RemoveExistingProducts after InstallFinalize protects the prior product from early removal; it does not establish recovery if the new product registers and the transaction subsequently fails. Microsoft's [suggested sequence](https://learn.microsoft.com/en-us/windows/win32/msi/suggested-installexecutesequence) places registration and publishing before transaction completion, and its [error reference](https://learn.microsoft.com/en-us/windows/win32/msi/windows-installer-error-messages) includes publishing failures. Having no custom action in that interval does not establish that it cannot fail. The proposed checks can therefore pass while leaving the document's admitted registration problem unresolved.
 PROPOSAL: Add a failure check after the new product registers and before transaction completion, verifying registration, the next upgrade and final uninstall from the signed-in session. If that case cannot be recovered automatically, raise an owner question defining its supported recovery and reconcile the summary, design, proof and task with that decision.
+
+### R-37
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: Context / Owner summary:141-144; Design / Migration, performance and release boundaries:902-919; Acceptance Criteria / AC-21; Test Plan / AC-21; Tasks / T80; Sources / Microsoft troubleshooter
+EVIDENCE: The revision responding to R-36 selects Microsoft's troubleshooter as recovery for stale product registration. Design says it removes the entry and permits installation again. Sources explicitly says this recovery has not been exercised. The [Microsoft page](https://support.microsoft.com/en-us/windows/deployment/install-upgrade/fix-problems-that-block-programs-from-being-installed-or-removed) places that downloadable troubleshooter under Windows 10 and gives different guidance for Windows 11. Presence of msdt.exe does not establish that the tool repairs this failure on the supported Windows 11 matrix. The AC-21 proof and T80 check only that the guide names the tool, so both can pass while recovery remains unusable.
+PROPOSAL: Add a native scenario starting with the known stale-registration state, apply the documented recovery, and verify the prior installation remains usable, a subsequent upgrade succeeds, and final uninstall leaves no program files or product registration. Describe the troubleshooter as proposed recovery until that check establishes it works.
+
 ## Sources
 
 - Owner direction on 2026-11-12: preserve working Swift, share its core across
