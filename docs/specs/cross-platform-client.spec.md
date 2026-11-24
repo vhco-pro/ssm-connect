@@ -1244,6 +1244,7 @@ None.
 | 2026-11-23 | R-32 | spec | `a911131` | gpt-6.1-sol | procedural | One blocking (single-user desktop proof needs a workstation) and three should-fix |
 | 2026-11-24 | R-33 | spec | `4aefc9d` | gpt-6.1-sol | procedural | No blocking findings; two should-fix |
 | 2026-11-24 | R-34 | spec | `906e714` | gpt-6.1-sol | procedural | No blocking findings; one should-fix and one nit |
+| 2026-11-24 | R-35 | spec | `549cbc2` | gpt-6.1-sol | procedural | NO FINDINGS (a first pass at this commit could not run commands to read the conventions and was discarded) |
 
 ### R-1
 
@@ -1958,6 +1959,10 @@ SEVERITY: nit
 WHERE: Design / Windows and Linux parity with the macOS interface:720-739; Tasks / T58 correction
 EVIDENCE: Design calls Disconnect during a connect a macOS control that interrupts work in progress. MenuContentView.swift:94-103 offers Disconnect only while connected. T58's correction explicitly acknowledges this and says the Windows and Linux trays now follow that availability rule. The inventory and detailed availability requirements establish the intended behavior, so the stale description changes neither implementation nor proof.
 PROPOSAL: Remove the claim that macOS offers Disconnect during a connect. Describe the shell's cancellation handling as a defensive protocol path while retaining macOS's connected-only control availability.
+
+### R-35
+
+NO FINDINGS
 ## Sources
 
 - Owner direction on 2026-11-12: preserve working Swift, share its core across
