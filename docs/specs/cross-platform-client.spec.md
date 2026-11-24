@@ -1425,6 +1425,7 @@ None.
 | 2026-11-24 | R-52 | spec | `350c27e` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-53 | spec | `4fcef8b` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-54 | spec | `bfd7b03` | claude-opus-5-5 | procedural | No blocking findings; two should-fix and two nits (Claude reviewer, owner's routing) |
+| 2026-11-24 | R-55 | spec | `6000fc2` | claude-opus-5-5 | procedural | No blocking or should-fix findings; one nit (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -2937,6 +2938,17 @@ EVIDENCE: This revision rests T87 on the log of GitHub Actions run 45459504042 (
 PROPOSAL: Add a Sources entry linking run 45459504042: the full macOS package suite failed on a hosted macOS runner in `stopWhileStartingEndsSSH` (WebForwardsStateMachineTests.swift:477).
 
 All four R-53 findings are addressed at bfd7b03. F-01: T87 now comes before T85 and requires the unfiltered suite to pass in the `macos-package` job on the hosted runner, though its wording has the defect in F-01 above. F-02: the held latest-mark step is gone from the AC-24 row, and the Design says per-ref serialization on main leaves a Re-run failed jobs attempt as the only late older run. F-03: the macOS package suite has its own `macos-package` check job on a macOS runner in T83, the AC-31 row and the Design, and the helper job runs on Linux and Windows. F-04: Sources and the Design credit the same-workflow arrangement to `knowledge/tag-driven-go-releases.md`, and I confirmed that page's "Same workflow or separate workflows" table defines it. `vh-adlc lint` passes. `vh-adlc gate planned` fails only on spec_review_fresh, accepted and on_feature_branch_if_set, which is expected for a revised draft reviewed in a detached worktree.
+
+### R-55
+
+FINDING: F-01
+KIND: factual
+SEVERITY: nit
+WHERE: Frontmatter `covers`; Tasks T84 (file list "`docs/specs/macos-trusted-distribution.spec.md`, `docs/specs/ssm-connect.spec.md`" and done condition "no line outside this document and Git history names `test_tag`, `release.yml` or `gitversion.yml` as current")
+EVIDENCE: T84 edits two other feature documents, and its done condition depends on what they say (docs/specs/macos-trusted-distribution.spec.md:167 links `../../.github/workflows/release.yml`; docs/specs/ssm-connect.spec.md:525-530 describes `gitversion.yml` and `release.yml` as current). Neither path is in `covers`, which lists SSMConnectKit/, SSMConnect/, windows/, linux/, contracts/, packaging/, project.yml, README.md, gitversion.yml, spikes/, scripts/ and .github/workflows/. R-48 F-07 added `README.md` for the same reason: T84 edits it, and `feature_tree_clean` reads `covers`. cd15a7d, applying R-48 F-10, added these two files to T84 but not to `covers`. As a result, an uncommitted T84 edit to either spec would not hold the gate, while the same edit to README.md would. This predates 6000fc2 and no earlier pass named it.
+PROPOSAL: Add `docs/specs/macos-trusted-distribution.spec.md` and `docs/specs/ssm-connect.spec.md` to `covers`, or drop them from T84 and say the historical specs stay as they are.
+
+All four R-54 findings are resolved at 6000fc2. F-01: T87 now has the fake tunnel record when its start is entered, before its delay, and the test waits for that before `stop()`. The done condition delays the public key push past 100 ms. I checked WebForwardsStateMachine.swift: `sendPublicKey` runs before the `try Task.checkCancellation()` that guards `tunnel.start`. So with the push delayed, the old fixed wait stops the task before start is entered, and no handle is recorded. With the new wait, `stop()` cancels the fake's swallowed sleep during start, and the handle is still recorded and terminated, which keeps the AC-18 property T81 added. F-02: the AC-31 row's must-fail list and T83's done condition both now include the `macos-package` job on a non-macOS runner. F-03: the Owner summary says "T83 to T87", and T86 takes AC-31's evidence from T83, T85 and T87 and notes T87's hosted pass with AC-18's evidence. F-04: Sources links CodeQL run 45459504042 with the claim it supports. I also checked version-workflow at 46a1ac93 (inputs, `tagged`/`tag`/`version` outputs, the label gate on headRefOid, the bundled-config default) and the action's bundled gitversion.yml at 8cf5869 (`chore` bumps the patch; main uses increment None). Both agree with the Design. vhco-pro/ssm-connect is public, so checks on push match conventions/delivery.md. `vh-adlc lint` passes. `vh-adlc gate planned` fails only on spec_review_fresh, accepted and on_feature_branch_if_set, as expected for a revised draft reviewed in a detached worktree. Reviewed document: /tmp/ssm-review-r55/docs/specs/cross-platform-client.spec.md.
 
 ## Sources
 
