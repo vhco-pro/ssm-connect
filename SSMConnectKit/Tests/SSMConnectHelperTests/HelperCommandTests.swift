@@ -515,8 +515,9 @@ struct HelperCommandTests {
         let base: Set<String> = ["listProfiles", "saveProfile", "setActiveProfile", "importProfile", "applyFileChanges", "signIn",
                                  "connect", "disconnect", "stopWorkstation", "installEditorSetup", "openEditor",
                                  "startWebForwards", "stopWebForwards", "openBrowser"]
-        // The parity inventory's commands, and the preview Open Profile File shows before attaching.
-        let parity = try ParityCommandTests.inventoryCommands().union(["previewProfileFile"])
+        // The parity inventory's commands, the preview Open Profile File shows before attaching, and the
+        // shells' report of a system resume, which is not a user control.
+        let parity = try ParityCommandTests.inventoryCommands().union(["previewProfileFile", "systemWake"])
         #expect(Set(f.runtime.commands().keys) == base.union(parity))
     }
 }

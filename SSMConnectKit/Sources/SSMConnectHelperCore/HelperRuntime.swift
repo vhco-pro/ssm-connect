@@ -202,6 +202,9 @@ package struct HelperServices {
             },
             "connect": spec("desktop", admit: { _ in try self.requireConfigured() }) { _, events in try await self.connect(events) },
             "disconnect": spec("desktop") { _, events in try await self.disconnect(events) },
+            // The shell reports the system's resume, as the macOS app does on NSWorkspace's wake
+            // notification: a connected desktop whose tunnel no longer answers reconnects.
+            "systemWake": spec("desktop") { _, _ in await self.connection.handleSystemWake(); return [:] },
             "stopWorkstation": spec("desktop", admit: { _ in try self.requireConnected() }) { _, events in
                 try await self.stopWorkstation(events)
             },
