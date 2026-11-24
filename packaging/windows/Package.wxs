@@ -29,11 +29,13 @@
       Description="Connect to EC2 workstations through AWS Systems Manager. From vhco-pro."
       Manufacturer="VHCo" />
 
-    <!-- Removing the old product right after InstallInitialize: the default late removal deletes
-         files the upgrade just laid down when components keep their derived GUIDs. -->
+    <!-- The old product is removed after InstallFinalize, once this version is fully installed: an
+         upgrade that fails then rolls back only its own changes, and the old product stays installed
+         and registered. Removing it earlier, inside the upgrade's transaction, leaves the rolled-back
+         copy unregistered when the upgrade runs from an unelevated session. -->
     <MajorUpgrade
       AllowSameVersionUpgrades="yes"
-      Schedule="afterInstallInitialize"
+      Schedule="afterInstallFinalize"
       DowngradeErrorMessage="A newer version of SSM Connect is already installed." />
 
     <!-- Every file is laid down whatever version the installed one carries. Costing runs before the

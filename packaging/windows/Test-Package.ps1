@@ -7,7 +7,9 @@
     Unpacks the MSI with an administrative install and checks that it holds the shell, the helper,
     the editor proxy, the Swift runtime they import, the Session Manager plugin and every required
     notice; that the helper starts from the unpacked folder with only System32 on PATH and reports
-    the expected build; and that the WinGet manifest pins the MSI's SHA-256.
+    the expected build; that the WinGet manifest pins the MSI's SHA-256; that the MSI removes the
+    prior version only after InstallFinalize; and that no custom action runs between RegisterUser and
+    InstallFinalize.
 
     With -Install (a disposable machine such as a CI runner), it also installs the MSI silently,
     starts SSM Connect, checks that a silent reinstall refuses while it runs and leaves it running,
@@ -15,9 +17,10 @@
     it upgrades a prior copy whose Swift runtime carries a higher file version than this package's,
     as a build from a newer toolchain leaves it, and checks that every file of this package is laid
     down and the helper starts. It then fails an upgrade of a prior copy with a copy of this MSI whose
-    deferred custom action fails right after RemoveExistingProducts, and checks that the rollback
+    deferred custom action fails once its files are laid down, and checks that the rollback
     leaves the prior copy installed and registered, so this MSI then replaces it and uninstalls with
-    nothing left.
+    nothing left. Last, it upgrades a prior copy whose own removal fails under an upgrade, checks
+    that the new version works and uninstalls, and reports what the failed removal left.
 
     With -Interactive as well (run from the signed-in user's session, which shows the installer), it
     cancels an upgrade of a running prior copy at Restart Manager's files-in-use prompt and checks
@@ -110,6 +113,34 @@ function Invoke-Com($target, [string] $member, [string] $kind = 'InvokeMethod', 
     $target.GetType().InvokeMember($member, $kind, $null, $target, $arguments)
 }
 
+# The prior version is removed only once this one is installed and registered: a rollback from the
+# user's unelevated session cannot rewrite per-user registration, so nothing may fail after the removal.
+$schedule = @{}
+$sequenceApi = New-Object -ComObject WindowsInstaller.Installer
+$sequenceDatabase = Invoke-Com $sequenceApi 'OpenDatabase' -arguments @([string] $Msi, 0)
+$sequenceView = Invoke-Com $sequenceDatabase 'OpenView' -arguments @("SELECT ``Action``, ``Sequence`` FROM ``InstallExecuteSequence``")
+Invoke-Com $sequenceView 'Execute' | Out-Null
+while ($sequenceRecord = Invoke-Com $sequenceView 'Fetch') {
+    $schedule[(Invoke-Com $sequenceRecord 'StringData' 'GetProperty' @(1))] = Invoke-Com $sequenceRecord 'IntegerData' 'GetProperty' @(2)
+    [Runtime.InteropServices.Marshal]::ReleaseComObject($sequenceRecord) | Out-Null
+}
+Invoke-Com $sequenceView 'Close' | Out-Null
+$customActions = @()
+$actionView = Invoke-Com $sequenceDatabase 'OpenView' -arguments @("SELECT ``Action`` FROM ``CustomAction``")
+Invoke-Com $actionView 'Execute' | Out-Null
+while ($actionRecord = Invoke-Com $actionView 'Fetch') {
+    $customActions += Invoke-Com $actionRecord 'StringData' 'GetProperty' @(1)
+    [Runtime.InteropServices.Marshal]::ReleaseComObject($actionRecord) | Out-Null
+}
+Invoke-Com $actionView 'Close' | Out-Null
+foreach ($handle in $actionView, $sequenceView, $sequenceDatabase) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+# Between registering itself and InstallFinalize only Windows Installer's own publishing steps may run:
+# a failure there leaves this version's registration behind.
+$late = @($schedule.Keys | Where-Object { $customActions -contains $_ -and $schedule[$_] -gt $schedule['RegisterUser'] -and $schedule[$_] -lt $schedule['InstallFinalize'] })
+Check ($late.Count -eq 0) "no custom action runs between RegisterUser and InstallFinalize$(if ($late) { ' (found ' + ($late -join ', ') + ')' })"
+Check ($schedule['RemoveExistingProducts'] -gt $schedule['InstallFinalize']) "the MSI removes the prior version after InstallFinalize (RemoveExistingProducts $($schedule['RemoveExistingProducts']), InstallFinalize $($schedule['InstallFinalize']))"
+[GC]::Collect(); [GC]::WaitForPendingFinalizers()
+
 if ($Install) {
     $folder = Join-Path $env:LOCALAPPDATA 'Programs\SSM Connect'
     Check ((Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'a silent install succeeds'
@@ -183,9 +214,10 @@ if ($Install) {
     $upgradeCode = (Select-String -Path (Join-Path $PSScriptRoot 'Package.wxs') -Pattern 'UpgradeCode="([^"]+)"').Matches[0].Groups[1].Value
     function Related { @(try { $api.RelatedProducts("{$upgradeCode}") } catch { @() }) }
 
-    # A copy of this MSI under new package (and, for a prior copy, product) codes; -FailAfterRemoval adds
-    # a deferred custom action that fails right after RemoveExistingProducts.
-    function New-MsiCopy([switch] $NewProduct, [switch] $FailAfterRemoval) {
+    # A copy of this MSI under new package (and, for a prior copy, product) codes. -FailBefore and
+    # -FailAfter add a deferred custom action that fails at the free sequence number closest before or
+    # after the named action, under the condition -FailWhen.
+    function New-MsiCopy([switch] $NewProduct, [string] $FailBefore, [string] $FailAfter, [string] $FailWhen = '') {
         $path = Join-Path ([IO.Path]::GetTempPath()) ('ssm-copy-' + [guid]::NewGuid().ToString('N') + '.msi')
         Copy-Item $Msi $path
         $database = Invoke-Com $api 'OpenDatabase' -arguments @([string] $path, 1)
@@ -195,18 +227,24 @@ if ($Install) {
             $productCode = '{' + [guid]::NewGuid().ToString().ToUpper() + '}'
             $queries += "UPDATE ``Property`` SET ``Value`` = '$productCode' WHERE ``Property`` = 'ProductCode'"
         }
-        if ($FailAfterRemoval) {
-            $view = Invoke-Com $database 'OpenView' -arguments @("SELECT ``Sequence`` FROM ``InstallExecuteSequence`` WHERE ``Action`` = 'RemoveExistingProducts'")
+        if ($FailBefore -or $FailAfter) {
+            $sequences = @{}
+            $view = Invoke-Com $database 'OpenView' -arguments @("SELECT ``Action``, ``Sequence`` FROM ``InstallExecuteSequence``")
             Invoke-Com $view 'Execute' | Out-Null
-            $record = Invoke-Com $view 'Fetch'
-            $sequence = (Invoke-Com $record 'IntegerData' 'GetProperty' @(1)) + 1
+            while ($record = Invoke-Com $view 'Fetch') {
+                $sequences[(Invoke-Com $record 'StringData' 'GetProperty' @(1))] = Invoke-Com $record 'IntegerData' 'GetProperty' @(2)
+                [Runtime.InteropServices.Marshal]::ReleaseComObject($record) | Out-Null
+            }
             Invoke-Com $view 'Close' | Out-Null
-            foreach ($handle in $record, $view) { [Runtime.InteropServices.Marshal]::ReleaseComObject($handle) | Out-Null }
+            [Runtime.InteropServices.Marshal]::ReleaseComObject($view) | Out-Null
+            $step = if ($FailBefore) { -1 } else { 1 }
+            $sequence = $sequences[$(if ($FailBefore) { $FailBefore } else { $FailAfter })] + $step
+            while ($sequences.Values -contains $sequence) { $sequence += $step }
             $cmd = Join-Path $env:SystemRoot 'System32\cmd.exe'
             $queries += "INSERT INTO ``Property`` (``Property``, ``Value``) VALUES ('TESTFAILCMD', '$cmd')"
             # 50 (an executable named by a property) + 1024 (deferred): runs inside the transaction.
-            $queries += "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('FailAfterRemovingPrior', 1074, 'TESTFAILCMD', '/c exit 1')"
-            $queries += "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('FailAfterRemovingPrior', '', $sequence)"
+            $queries += "INSERT INTO ``CustomAction`` (``Action``, ``Type``, ``Source``, ``Target``) VALUES ('FailForTest', 1074, 'TESTFAILCMD', '/c exit 1')"
+            $queries += "INSERT INTO ``InstallExecuteSequence`` (``Action``, ``Condition``, ``Sequence``) VALUES ('FailForTest', '$FailWhen', $sequence)"
         }
         foreach ($query in $queries) {
             $view = Invoke-Com $database 'OpenView' -arguments @($query)
@@ -225,18 +263,22 @@ if ($Install) {
         [pscustomobject]@{ Path = $path; ProductCode = $productCode }
     }
 
-    # A failed upgrade that has already removed the prior version rolls back to it.
+    # An upgrade that fails once its files are laid down, just before it registers itself, leaves the
+    # prior version installed and registered, whether the prior version's removal was scheduled before
+    # the failure or after InstallFinalize. Rolling back a registration from an unelevated session fails:
+    # Windows Installer secures the product key to Administrators, so nothing of this package may fail
+    # after RegisterUser.
     $prior = New-MsiCopy -NewProduct
     $code = Invoke-Msi @('/i', "`"$($prior.Path)`"", '/qn', '/norestart')
     Check ($code -eq 0) "a prior copy installs for the failed upgrade (exit $code, $($prior.Path))"
-    $failing = New-MsiCopy -FailAfterRemoval
+    $failing = New-MsiCopy -FailBefore RegisterUser
     $log = Join-Path ([IO.Path]::GetTempPath()) 'ssm-failed-upgrade.log'
     $code = Invoke-Msi @('/i', "`"$($failing.Path)`"", '/qn', '/norestart', '/l*v', "`"$log`"")
-    Check ($code -eq 1603) "an upgrade failing after the prior version's removal fails (exit $code)"
+    Check ($code -eq 1603) "an upgrade failing once its files are laid down fails (exit $code)"
     $text = Get-Content $log -Raw
-    $removed = $text.IndexOf('Doing action: RemoveExistingProducts')
-    $failed = $text.IndexOf('FailAfterRemovingPrior')
-    Check ($removed -ge 0 -and $failed -gt $removed) 'the log shows the prior version removed before the failure'
+    $laidDown = $text.IndexOf('Doing action: InstallFiles')
+    $failed = $text.IndexOf('Doing action: FailForTest')
+    Check ($laidDown -ge 0 -and $failed -gt $laidDown) "the log shows the failure after this version's files were laid down"
     Check ($text.Contains('Rollback')) 'the log shows the rollback'
     Check ((Related) -contains $prior.ProductCode) 'the rolled-back prior copy is still registered for the next upgrade'
     Check (Test-Path (Join-Path $folder 'SSMConnectHelper.exe')) "the rolled-back prior copy's files are back"
@@ -320,6 +362,28 @@ if ($Install) {
         Check (-not (Test-Path $folder)) 'that uninstall leaves no program folder'
         Remove-Item $prior.Path -Force -ErrorAction SilentlyContinue
     }
+
+    # The prior version is removed after InstallFinalize, in a transaction of its own. When that removal
+    # fails, only the removal rolls back and the new version stays installed. Run from the user's session,
+    # that rollback cannot restore the prior version's registration, a known limit: what is left is
+    # reported, not checked. The prior copy's removal fails only under an upgrade.
+    $prior = New-MsiCopy -NewProduct -FailAfter InstallInitialize -FailWhen 'REMOVE~="ALL" AND UPGRADINGPRODUCTCODE'
+    $code = Invoke-Msi @('/i', "`"$($prior.Path)`"", '/qn', '/norestart')
+    Check ($code -eq 0) "a prior copy whose removal fails under an upgrade installs (exit $code)"
+    $code = Invoke-Msi @('/i', "`"$Msi`"", '/qn', '/norestart')
+    Write-Host "     the upgrade over it exits $code"
+    $own = @(Related | Where-Object { $_ -ne $prior.ProductCode })
+    Check ($own.Count -eq 1) 'the new version is installed and registered'
+    & (Join-Path $folder 'SSMConnectHelper.exe') --build | Out-Null
+    Check ($LASTEXITCODE -eq 0) "the new version's helper starts (exit $LASTEXITCODE)"
+    $listed = (Related) -contains $prior.ProductCode
+    Write-Host "     the prior copy is $(if ($listed) { 'still' } else { 'no longer' }) listed"
+    if ($listed) { Write-Host "     uninstalling the prior copy exits $(Invoke-Msi @('/x', $prior.ProductCode, '/qn', '/norestart'))" }
+    Check ((Invoke-Msi @('/x', "`"$Msi`"", '/qn', '/norestart')) -eq 0) 'the new version uninstalls'
+    Write-Host "     the program folder $(if (Test-Path $folder) { 'is left behind' } else { 'is gone' }); products of the upgrade code left: $(@(Related).Count)"
+    # The known limit can leave files behind: clear them so the next run starts without them.
+    if (Test-Path $folder) { Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue }
+    Remove-Item $prior.Path -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) { throw "$($failures.Count) package check(s) failed." }

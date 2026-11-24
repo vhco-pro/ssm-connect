@@ -93,6 +93,10 @@ protected your PC". Choose **More info**, then **Run anyway**. To upgrade, run t
 same way. If SSM Connect is running, setup offers to close it first, or to cancel and leave it
 running.
 
+If an upgrade fails, the version you had keeps working. If the next attempt is then refused,
+please [report it](https://github.com/vhco-pro/ssm-connect/issues) with the version you had and the
+one you were installing.
+
 ### Linux
 
 Download the package for your distribution from the
