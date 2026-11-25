@@ -9,7 +9,8 @@
 # unfiltered `swift test --package-path SSMConnectKit`, on a macOS runner. Exits 1 naming each violation.
 import json, re, sys
 
-jobs = json.load(sys.stdin)["jobs"]
+workflow = json.load(sys.stdin)
+jobs = workflow["jobs"]
 PUBLISHING = {"release", "macos", "macos-latest", "windows", "winget", "linux"}
 def needs(name):
     value = jobs[name].get("needs", [])
@@ -18,6 +19,10 @@ def depends_on_version(name, seen=()):
     return any(n == "version" or (n not in seen and depends_on_version(n, seen + (name,))) for n in needs(name))
 
 errors = []
+# Nothing before the tag may publish: the workflow grants only contents: read, and a check job
+# never asks for more, an environment or a secret. What each test command does is left to review.
+if workflow.get("permissions") != {"contents": "read"}:
+    errors.append("the workflow's permissions are not exactly contents: read")
 if "version" not in jobs:
     errors.append("no version job")
 else:
@@ -35,6 +40,13 @@ else:
     for n in checks:
         if n not in needs("version"):
             errors.append(f"version does not need the check job {n}")
+        permissions = jobs[n].get("permissions", {})
+        if permissions == "write-all" or (isinstance(permissions, dict) and "write" in permissions.values()):
+            errors.append(f"the check job {n} asks for a write permission")
+        if "environment" in jobs[n]:
+            errors.append(f"the check job {n} uses an environment")
+        if "secrets." in json.dumps(jobs[n]):
+            errors.append(f"the check job {n} reads a secret")
         # A check that may fail without failing would let version tag a commit it did not pass.
         if str(jobs[n].get("continue-on-error", "false")).lower() != "false":
             errors.append(f"the check job {n} sets continue-on-error")

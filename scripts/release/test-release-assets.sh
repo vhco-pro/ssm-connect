@@ -139,6 +139,14 @@ yq '(.jobs.macos-package.steps[] | select(.name == "Test the macOS package")).if
 check "a skipped macOS suite step fails the graph check" '! cmp -s "$ci" "$work/skip-suite.yml" && ! graph "$work/skip-suite.yml"'
 yq '(.jobs.aws-client.steps[] | select(.name == "Test the AWS client package")).if = "false"' "$ci" > "$work/skip-aws.yml"
 check "a skipped AWS client test step fails the graph check" '! cmp -s "$ci" "$work/skip-aws.yml" && ! graph "$work/skip-aws.yml"'
+yq '.permissions.contents = "write"' "$ci" > "$work/wf-write.yml"
+check "write permission for the whole workflow fails the graph check" '! graph "$work/wf-write.yml"'
+yq '.jobs.release-scripts.permissions.contents = "write"' "$ci" > "$work/job-write.yml"
+check "a check job with write permission fails the graph check" '! graph "$work/job-write.yml"'
+yq '.jobs.release-scripts.environment = "winget"' "$ci" > "$work/job-env.yml"
+check "a check job with an environment fails the graph check" '! graph "$work/job-env.yml"'
+yq '.jobs.release-scripts.steps[0].env.TOKEN = "${{ secrets.WINGET_TOKEN }}"' "$ci" > "$work/job-secret.yml"
+check "a check job reading a secret fails the graph check" '! graph "$work/job-secret.yml"'
 
 # The Linux package version: a tilde before the prerelease so it sorts below its release, and only
 # characters rpmbuild accepts in Version (letters, digits, . _ + ~ ^).
