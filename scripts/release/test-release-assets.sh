@@ -147,6 +147,10 @@ yq '.jobs.release-scripts.environment = "winget"' "$ci" > "$work/job-env.yml"
 check "a check job with an environment fails the graph check" '! graph "$work/job-env.yml"'
 yq '.jobs.release-scripts.steps[0].env.TOKEN = "${{ secrets.WINGET_TOKEN }}"' "$ci" > "$work/job-secret.yml"
 check "a check job reading a secret fails the graph check" '! graph "$work/job-secret.yml"'
+TOKEN_EXPR="\${{ secrets['WINGET_TOKEN'] }}" yq '.jobs.release-scripts.steps[0].env.TOKEN = strenv(TOKEN_EXPR)' "$ci" > "$work/job-secret-bracket.yml"
+check "a check job reading a secret by index fails the graph check" '! cmp -s "$ci" "$work/job-secret-bracket.yml" && ! graph "$work/job-secret-bracket.yml"'
+yq '.jobs.inherit-check = {"uses": "./.github/workflows/preview.yml", "secrets": "inherit"} | .jobs.version.needs += ["inherit-check"]' "$ci" > "$work/job-inherit.yml"
+check "a check job inheriting every secret fails the graph check" '! graph "$work/job-inherit.yml"'
 
 # The Linux package version: a tilde before the prerelease so it sorts below its release, and only
 # characters rpmbuild accepts in Version (letters, digits, . _ + ~ ^).

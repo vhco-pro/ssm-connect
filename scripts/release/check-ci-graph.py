@@ -45,7 +45,8 @@ else:
             errors.append(f"the check job {n} asks for a write permission")
         if "environment" in jobs[n]:
             errors.append(f"the check job {n} uses an environment")
-        if "secrets." in json.dumps(jobs[n]):
+        # The word, not "secrets.": also secrets['X'], toJSON(secrets) and secrets: inherit.
+        if re.search(r"\bsecrets\b", json.dumps(jobs[n])):
             errors.append(f"the check job {n} reads a secret")
         # A check that may fail without failing would let version tag a commit it did not pass.
         if str(jobs[n].get("continue-on-error", "false")).lower() != "false":
