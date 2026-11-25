@@ -3044,6 +3044,12 @@ install repaired by reinstalling with dnf or apt (Q20).
 - [vhco-pro/version-workflow v0.1.2](https://github.com/vhco-pro/version-workflow/blob/46a1ac93fdbd3abaa3a7d17259c5565edd2053c0/.github/workflows/version.yml):
   its inputs and outputs, the preview-label gate, tagging only when the tag is new,
   and that it declares no permissions.
+- [vhco-pro/version-workflow v0.1.3](https://github.com/vhco-pro/version-workflow/releases/tag/v0.1.3)
+  ([PR #6](https://github.com/vhco-pro/version-workflow/pull/6)) and
+  [michielvha/gitversion-tag-action v7.0.5](https://github.com/michielvha/gitversion-tag-action/releases/tag/v7.0.5)
+  ([PR #14](https://github.com/michielvha/gitversion-tag-action/pull/14)): the bundled
+  configuration keeps a tagged branch head's prerelease version, so a second run at
+  an already tagged labelled head tags nothing (T89).
 - [go-release-workflow same-workflow example](https://github.com/vhco-pro/go-release-workflow/tree/311467ed4ba150944298460af16497abad8b7a69/examples/same-workflow):
   the `ci.yml` and `preview.yml` this design follows, its concurrency and its
   rerun note.
