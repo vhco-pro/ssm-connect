@@ -1,0 +1,466 @@
+# Copyright (c) 2026 VH & Co BV. Licensed under the Apache License 2.0. See LICENSE for details.
+#
+# CI and release in one workflow: the same-workflow arrangement of the shared delivery standard,
+# for a repository without a release GitHub App (vhco-pro/go-release-workflow has the example).
+#
+# Every branch push runs the checks: the AWS client and helper tests on Linux, Windows and macOS,
+# and the release script tests. vhco-pro/version-workflow then calculates the version with
+# gitversion-tag-action and its bundled GitVersion configuration, and pushes the exact tag with
+# this run's GITHUB_TOKEN, only on main or on a branch whose open PR has the release:preview label
+# at this commit (a prerelease); every other run only calculates the version. A GITHUB_TOKEN push
+# starts no workflow, so the jobs below publish the tag in this run. The release job creates the
+# GitHub Release first, without GitHub's latest mark. Each platform job then builds and uploads
+# only its own assets, so a failed platform leaves its asset missing without blocking the others:
+#
+#   macos    the ad-hoc-signed .app ZIP; macos-latest then marks the newest release with a macOS
+#            ZIP as latest, in the queued release-latest group, so Homebrew's sync (which reads
+#            the latest release) always finds a ZIP and a late older build never displaces it
+#   windows  the per-user MSI, its checksum and the WinGet manifest hashed from that MSI
+#   linux    the Fedora 43 .rpm and the Ubuntu 24.04 .deb, each with its checksum
+#
+# Published assets never change: a rerun uploads only assets still missing, and a bad asset is
+# fixed by releasing a new version, so Homebrew and WinGet checksums stay valid. Retry a failed
+# release with "Re-run failed jobs", which keeps this run's tag; "Re-run all jobs" finds the tag
+# already pushed and releases nothing, and a tag pushed by hand publishes nothing.
+#
+# Runs on branch pushes, not pull_request: GitVersion needs the real branch, and a PR shows these
+# push checks on its head commit. preview.yml reruns this workflow when the label is added.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+    inputs:
+      fail_job:
+        description: On a prerelease, fail one platform job at its start on the first attempt, to show the others still publish.
+        required: false
+        type: choice
+        options: [none, macos, windows, linux]
+        default: none
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  aws-client:
+    name: aws-client (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Test the AWS client package
+        shell: bash
+        run: |
+          # Swift 6.4.2 bundles Clang 21; the windows-2025-vs2026 image from 20261116 ships an
+          # MSVC STL (14.52) that rejects Clang older than 22 when swift-crypto's C++ builds.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            swift test --package-path SSMConnectKit/AWSClient -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+          else
+            swift test --package-path SSMConnectKit/AWSClient
+          fi
+
+  helper:
+    name: helper (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Swift on Linux
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@7e293214cba9e9225c93ce3267f17f6efdb656a8 # reviewed v3 development commit
+        with:
+          swift-version: "6.4.2"
+      - name: Set up Swift on Windows
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+      - name: Test the helper and the portable workflow rules
+        shell: bash
+        run: |
+          # The manifest holds only the shared layers and the helper on Windows and Linux.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests|SSMConnectWindowsTests' -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+          else
+            swift test --package-path SSMConnectKit --filter 'SSMConnectHelperTests|SSMConnectWorkflowTests|SSMConnectAWSTests|SSMConnectLinuxTests'
+          fi
+
+  # The full macOS package suite, app targets and helper included, so a failing macOS test blocks
+  # the tag.
+  macos-package:
+    name: macOS package suite
+    # As CodeQL runs it: macOS 26 with the newest installed Xcode.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select the newest installed Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+      - name: Test the macOS package
+        run: |
+          swift test --package-path SSMConnectKit
+
+  release-scripts:
+    name: release scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the release steps
+        run: bash scripts/release/test-release-assets.sh
+
+  # Tags main, and a branch whose open PR has the release:preview label at this commit, with the
+  # bundled GitVersion configuration. Every other run only calculates the version.
+  version:
+    needs: [aws-client, helper, macos-package, release-scripts]
+    permissions:
+      contents: write # push the tag
+      pull-requests: read # find the preview label
+    uses: vhco-pro/version-workflow/.github/workflows/version.yml@c30d3b5bf3e902a0043f6eb916f968f06378e38c # v0.1.3
+
+  release:
+    name: Create the release
+    needs: version
+    if: needs.version.outputs.tagged == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create the GitHub Release without the latest mark
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ github.ref_name != github.event.repository.default_branch }}
+        run: |
+          bash scripts/release/release-assets.sh ensure-release "$TAG" "SSM Connect $VERSION" \
+            "$([ "$PRERELEASE" = true ] && echo --prerelease)"
+
+  macos:
+    name: macOS app
+    needs: [version, release]
+    if: needs.version.outputs.tagged == 'true'
+    # macOS 26 (Tahoe) runner: ships Xcode 26, which compiles the Icon Composer AppIcon.icon.
+    runs-on: macos-26
+    permissions:
+      contents: write # upload the ZIP
+    steps:
+      - name: Fail on request (test run)
+        if: inputs.fail_job == 'macos' && github.ref_name != github.event.repository.default_branch && github.run_attempt == 1
+        shell: bash
+        run: |
+          echo "::error::Failing the macos job on request for this test run."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Select the newest installed Xcode
+        id: xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          xcodebuild -version
+          echo "version=$(xcodebuild -version | head -1 | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM + build products
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/DerivedData/SourcePackages
+            .build/DerivedData/Build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-xc${{ steps.xcode.outputs.version }}-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-xc${{ steps.xcode.outputs.version }}-
+            spm-${{ runner.os }}-
+
+      - name: Stamp version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" SSMConnect/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" SSMConnect/Info.plist
+
+      - name: Build + package the signed .app
+        run: ./scripts/release.sh
+
+      - name: Verify the app icon compiled (fail loudly, never ship a blank icon)
+        run: |
+          APP=".build/DerivedData/Build/Products/Release/SSMConnect.app"
+          plutil -p "$APP/Contents/Info.plist" | grep -q CFBundleIconName \
+            || { echo "::error::AppIcon did not compile: runner Xcode is too old for AppIcon.icon"; exit 1; }
+          test -f "$APP/Contents/Resources/AppIcon.icns" \
+            || { echo "::error::no AppIcon.icns in the bundle"; exit 1; }
+          echo "AppIcon compiled"
+
+      - name: Upload the ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: bash scripts/release/release-assets.sh upload-missing "$TAG" "dist/SSMConnect-${VERSION}.zip"
+
+  macos-latest:
+    name: Mark the latest release
+    needs: [version, release, macos]
+    if: needs.version.outputs.tagged == 'true'
+    runs-on: ubuntu-24.04
+    # Queued, never cancelled in progress: an older run decides only after a newer one has finished.
+    # mark-latest converges on the newest release with a ZIP, so a pending run GitHub replaces with
+    # a later one loses nothing. It never considers a prerelease, so a test tag leaves the latest
+    # release as it is.
+    concurrency:
+      group: release-latest
+      cancel-in-progress: false
+    permissions:
+      contents: write # set the latest mark
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mark the newest release with a macOS ZIP as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release/release-assets.sh mark-latest
+
+      - name: Note cask sync
+        run: echo "::notice::homebrew-tap's sync-cask bumps the cask from the latest release."
+
+  windows:
+    name: Windows MSI
+    needs: [version, release]
+    if: needs.version.outputs.tagged == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    permissions:
+      contents: write # upload the MSI
+    steps:
+      - name: Fail on request (test run)
+        if: inputs.fail_job == 'windows' && github.ref_name != github.event.repository.default_branch && github.run_attempt == 1
+        shell: bash
+        run: |
+          echo "::error::Failing the windows job on request for this test run."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Swift
+        uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257 # reviewed main commit
+        with:
+          swift-version: swift-6.4.2-release
+          swift-build: 6.4.2-RELEASE
+
+      # A release must not ship a shell that would fail its own tests.
+      - name: Test the shell
+        run: dotnet test windows/SSMConnect.slnx --configuration Release
+
+      - name: Build the MSI and the WinGet manifest
+        id: package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $build = "$env:VERSION+$($env:GITHUB_SHA.Substring(0, 12))"
+          ./packaging/windows/Build-Release.ps1 -Version $env:VERSION -Build $build
+          Get-Content dist/release-outputs.txt | Add-Content $env:GITHUB_OUTPUT
+          "build=$build" | Add-Content $env:GITHUB_OUTPUT
+
+      # A rerun job continues with the MSI already published: MSI builds are not byte-reproducible,
+      # so the checksum, the manifest and the package checks must describe the published file.
+      - name: Use the published MSI on a rerun
+        id: reuse
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          MSI: ${{ steps.package.outputs.msi }}
+        run: |
+          result="$(bash scripts/release/release-assets.sh reuse-published "$TAG" "${MSI//\\//}")"
+          echo "$result"
+          tail -1 <<<"$result" >> "$GITHUB_OUTPUT"
+
+      - name: Describe the published MSI
+        if: steps.reuse.outputs.reused == 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          MSI: ${{ steps.package.outputs.msi }}
+        run: ./packaging/windows/Write-ReleaseMetadata.ps1 -Msi $env:MSI -Version $env:VERSION -Output dist
+
+      # The package holds the helper, runtime and notices, the helper starts from it, the manifest
+      # pins its hash, and on this disposable runner it installs, refuses while running, and removes.
+      - name: Inspect and install the MSI
+        shell: pwsh
+        run: >
+          ./packaging/windows/Test-Package.ps1 -Msi '${{ steps.package.outputs.msi }}'
+          -Build '${{ steps.package.outputs.build }}' -Manifest '${{ steps.package.outputs.manifest }}' -Install
+
+      - name: Upload the MSI and its checksum
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          MSI: ${{ steps.package.outputs.msi }}
+        run: bash scripts/release/release-assets.sh upload-missing "$TAG" "$MSI" "$MSI.sha256"
+
+      - name: Keep the WinGet manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: winget-manifest-${{ needs.version.outputs.version }}
+          path: ${{ steps.package.outputs.manifest }}
+
+  # WinGet takes manifests as pull requests to microsoft/winget-pkgs. This job holds the token
+  # that opens them (WINGET_TOKEN, in the winget environment, which only main can deploy to) and
+  # runs nothing but the hash-pinned wingetcreate on the manifest the Windows job validated, so no
+  # build code ever runs beside the token. Without the secret it notes the manual path and passes.
+  winget:
+    name: Submit to WinGet
+    needs: [version, release, windows]
+    if: needs.version.outputs.tagged == 'true' && github.ref_name == github.event.repository.default_branch
+    runs-on: windows-2025
+    timeout-minutes: 15
+    environment: winget
+    permissions: {}
+    steps:
+      - name: Download the validated manifest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: winget-manifest-${{ needs.version.outputs.version }}
+          path: manifest
+
+      - name: Submit the manifest
+        shell: pwsh
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if (-not $env:WINGET_TOKEN) {
+            Write-Host '::notice::WINGET_TOKEN is not set in the winget environment; submit the run artifact manifest by hand.'
+            exit 0
+          }
+          # Pinned and verified, like every other downloaded tool.
+          Invoke-WebRequest https://github.com/microsoft/winget-create/releases/download/v1.28.1.0/wingetcreate.exe -OutFile wingetcreate.exe
+          if ((Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash -ne '63D980BA79E97042395BD6EB5992C2DB9E01E9E7A8A22958A95C288F27310413') {
+            throw 'wingetcreate.exe failed verification.'
+          }
+          ./wingetcreate.exe submit --token $env:WINGET_TOKEN manifest
+          if ($LASTEXITCODE -ne 0) { throw "wingetcreate submit failed with $LASTEXITCODE." }
+
+  linux:
+    name: Linux packages
+    needs: [version, release]
+    if: needs.version.outputs.tagged == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write # upload the packages
+    steps:
+      - name: Fail on request (test run)
+        if: inputs.fail_job == 'linux' && github.ref_name != github.event.repository.default_branch && github.run_attempt == 1
+        shell: bash
+        run: |
+          echo "::error::Failing the linux job on request for this test run."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Swift helper and the Qt shell are built and tested on each distribution in containers.
+      - name: Build the packages
+        id: package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          packaging/linux/build-packages.sh "$VERSION" "$VERSION+${GITHUB_SHA:0:12}"
+          cat dist/release-outputs-linux.txt >> "$GITHUB_OUTPUT"
+
+      # A rerun job continues with the packages already published: they are not byte-reproducible,
+      # so the checksums and the package checks must describe the published files.
+      - name: Use the published packages on a rerun
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          RPM: ${{ steps.package.outputs.rpm }}
+          DEB: ${{ steps.package.outputs.deb }}
+        run: |
+          for file in "$RPM" "$DEB"; do
+            result="$(bash scripts/release/release-assets.sh reuse-published "$TAG" "$file")"
+            echo "$result"
+            if [ "$(tail -1 <<<"$result")" = reused=true ]; then
+              (cd "$(dirname "$file")" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
+            fi
+          done
+
+      # Inspected, then installed over an older package, started and removed on clean Fedora 43
+      # and Ubuntu 24.04 containers.
+      - name: Inspect and install the packages
+        env:
+          RPM: ${{ steps.package.outputs.rpm }}
+          DEB: ${{ steps.package.outputs.deb }}
+          BUILD: ${{ steps.package.outputs.build }}
+          PRIOR_RPM: ${{ steps.package.outputs.prior_rpm }}
+          PRIOR_DEB: ${{ steps.package.outputs.prior_deb }}
+        run: packaging/linux/test-packages.sh "$RPM" "$DEB" "$BUILD" "$PRIOR_RPM" "$PRIOR_DEB"
+
+      - name: Upload the packages and their checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          RPM: ${{ steps.package.outputs.rpm }}
+          DEB: ${{ steps.package.outputs.deb }}
+        run: bash scripts/release/release-assets.sh upload-missing "$TAG" "$RPM" "$RPM.sha256" "$DEB" "$DEB.sha256"

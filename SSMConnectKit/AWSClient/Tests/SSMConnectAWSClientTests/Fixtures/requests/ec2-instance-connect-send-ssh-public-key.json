@@ -1,0 +1,69 @@
+{
+  "decoded" : {
+    "success" : "true"
+  },
+  "name" : "ec2-instance-connect-send-ssh-public-key",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "{\"InstanceId\":\"i-0123456789abcdef0\",\"InstanceOSUser\":\"ec2-user\",\"SSHPublicKey\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample ssm-connect\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "7370e243-623c-4623-8ebf-7b09bda139fe"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ec2-instance-connect\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=811158c0d77b8ede55eec1e1b64aff47f7276edebf353e57642a3cf87d8fd725"
+      ],
+      [
+        "Content-Length",
+        "138"
+      ],
+      [
+        "X-Amz-Target",
+        "AWSEC2InstanceConnectService.SendSSHPublicKey"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ec2_instance_connect#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "{\"RequestId\":\"11111111-2222-3333-4444-555555555555\",\"Success\":true}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "11111111-2222-3333-4444-555555555555"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ec2-instance-connect"
+}

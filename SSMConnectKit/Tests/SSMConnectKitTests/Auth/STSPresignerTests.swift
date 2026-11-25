@@ -8,14 +8,14 @@ struct STSPresignerTests {
     /// independent Python SigV4 implementation; the signature must match exactly, so
     /// the token this client mints is one the agent's Go verifier will accept.
     @Test("Presigned GetCallerIdentity matches the known-answer reference")
-    func knownAnswer() {
+    func knownAnswer() throws {
         let creds = AWSCredentials(
             accessKeyId: "AKIDEXAMPLE",
             secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
             sessionToken: "SESSIONTOKEN123",
             expiration: Date(timeIntervalSince1970: 0)
         )
-        let url = STSPresigner(region: "eu-central-1").presignedGetCallerIdentityURL(
+        let url = try STSPresigner(region: "eu-central-1").presignedGetCallerIdentityURL(
             credentials: creds,
             now: Date(timeIntervalSince1970: 1_781_352_000), // 2026-06-13T12:00:00Z
             expiresSeconds: 120
@@ -31,12 +31,19 @@ struct STSPresignerTests {
     }
 
     @Test("Empty session token is omitted; shape is a valid STS GetCallerIdentity URL")
-    func shapeWithoutSessionToken() {
+    func shapeWithoutSessionToken() throws {
         let creds = AWSCredentials(accessKeyId: "AKID", secretAccessKey: "SEKRIT", sessionToken: "", expiration: Date())
-        let url = STSPresigner(region: "us-east-1").presignedGetCallerIdentityURL(credentials: creds, now: Date())
+        let url = try STSPresigner(region: "us-east-1").presignedGetCallerIdentityURL(credentials: creds, now: Date())
         #expect(url.hasPrefix("https://sts.us-east-1.amazonaws.com/?"))
         #expect(url.contains("Action=GetCallerIdentity"))
         #expect(url.contains("X-Amz-Signature="))
         #expect(!url.contains("X-Amz-Security-Token"))
+    }
+
+    @Test("A China region presigns for the amazonaws.com.cn host")
+    func chinaHost() throws {
+        let creds = AWSCredentials(accessKeyId: "AKID", secretAccessKey: "SEKRIT", sessionToken: "", expiration: Date())
+        let url = try STSPresigner(region: "cn-north-1").presignedGetCallerIdentityURL(credentials: creds, now: Date())
+        #expect(url.hasPrefix("https://sts.cn-north-1.amazonaws.com.cn/?"))
     }
 }

@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : true,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a InvalidClientException."
+  },
+  "name" : "sso-oidc-invalid-client",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"invalid_client\",\"error_description\":\"OIDC says invalid_client\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "InvalidClientException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 401
+  },
+  "sdk" : {
+    "httpStatus" : 401,
+    "swiftType" : "AWSSSOOIDC.InvalidClientException",
+    "typeName" : "InvalidClientException"
+  },
+  "service" : "sso-oidc"
+}

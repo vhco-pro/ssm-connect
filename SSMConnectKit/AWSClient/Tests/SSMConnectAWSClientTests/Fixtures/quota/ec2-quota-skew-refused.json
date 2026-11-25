@@ -1,0 +1,141 @@
+{
+  "name" : "ec2-quota-skew-refused",
+  "region" : "us-west-2",
+  "service" : "ec2",
+  "steps" : [
+    {
+      "attempts" : [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "calls" : 50,
+      "outcomes" : [
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError",
+        "error: UnknownAWSHTTPServiceError"
+      ],
+      "script" : [
+        {
+          "code" : "InternalError",
+          "dateOffsetSeconds" : 0,
+          "status" : 500
+        }
+      ]
+    },
+    {
+      "attempts" : [
+        1
+      ],
+      "calls" : 1,
+      "outcomes" : [
+        "error: UnknownAWSHTTPServiceError"
+      ],
+      "script" : [
+        {
+          "code" : "AuthFailure",
+          "dateOffsetSeconds" : 32400,
+          "status" : 401
+        },
+        {
+          "dateOffsetSeconds" : 0,
+          "status" : 200
+        }
+      ]
+    }
+  ]
+}

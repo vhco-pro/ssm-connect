@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : true,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a AccessDeniedException."
+  },
+  "name" : "sso-oidc-access-denied",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"access_denied\",\"error_description\":\"OIDC says access_denied\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "AccessDeniedException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSSSOOIDC.AccessDeniedException",
+    "typeName" : "AccessDeniedException"
+  },
+  "service" : "sso-oidc"
+}

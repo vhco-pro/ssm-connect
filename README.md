@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/vhco-pro/ssm-connect/releases/latest"><img src="https://img.shields.io/github/v/release/vhco-pro/ssm-connect?display_name=tag&sort=semver" alt="Latest release"></a>
-  <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/release.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/release.yml/badge.svg" alt="Release build"></a>
+  <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/ci.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/vhco-pro/ssm-connect/actions/workflows/codeql.yml"><img src="https://github.com/vhco-pro/ssm-connect/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/vhco-pro/ssm-connect" alt="Apache 2.0 license"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple" alt="macOS 14 or later">
@@ -67,6 +67,8 @@ so nothing changes unless you opt in.
 
 ## Install
 
+### macOS
+
 ```bash
 brew install --cask vhco-pro/tap/ssm-connect
 ```
@@ -79,6 +81,32 @@ xattr -dr com.apple.quarantine "/Applications/SSMConnect.app"
 ```
 
 …or right-click **SSMConnect.app** in Finder → **Open**. Updates ship through `brew upgrade`.
+
+### Windows 11
+
+Download `SSMConnect-<version>-x64.msi` from the
+[latest release](https://github.com/vhco-pro/ssm-connect/releases/latest) and run it. It installs
+for your user only and needs no administrator rights. It requires Windows 11 24H2 or later on x64.
+
+The MSI is not code-signed yet, so Microsoft Defender SmartScreen may stop it with "Windows
+protected your PC". Choose **More info**, then **Run anyway**. To upgrade, run the newer MSI the
+same way. If SSM Connect is running, setup offers to close it first, or to cancel and leave it
+running.
+
+If an upgrade fails, SSM Connect stays usable. If the next attempt is then refused,
+please [report it](https://github.com/vhco-pro/ssm-connect/issues) with the version you had and the
+one you were installing.
+
+### Linux
+
+Download the package for your distribution from the
+[latest release](https://github.com/vhco-pro/ssm-connect/releases/latest) and install it with your
+package manager:
+
+```bash
+sudo dnf install ./SSMConnect-<version>-fedora43-x86_64.rpm      # Fedora 43
+sudo apt install ./SSMConnect-<version>-ubuntu24.04-amd64.deb    # Ubuntu 24.04
+```
 
 ## First launch
 
@@ -205,7 +233,7 @@ profile folder, a closed browser and explicit proxy-setup confirmation. It keeps
 logins in place without reading or importing them. **Restore Browser Settings** restores only
 owned proxy values and refuses later user/extension/policy changes; close Zen first.
 
-The verified preview matrix is Chrome **156.0.8078.12** (Separate Browser) and Zen **1.23.1b**
+The verified preview matrix is Chrome **158.0.8127.37** (Separate Browser) and Zen **1.24.3b**
 (both modes). Other versions/products are unavailable until verified. Chrome existing-profile
 setup requires a separately approved extension and is not implemented. Shared Chromium/Firefox
 backends do not automatically enable Edge/Firefox or untested forks.
@@ -271,7 +299,7 @@ Both modes share the front half (auth → discover → tunnel), then branch:
 
 ```mermaid
 graph TD
-    A["SSO login<br/>(aws-sdk-swift, ~/.aws/sso cache)"] --> B[Resolve instance by tag]
+    A["SSO login<br/>(SSM Connect's AWS client, ~/.aws/sso cache)"] --> B[Resolve instance by tag]
     B --> C{Instance stopped?}
     C -->|yes| D["StartInstances + wait running"]
     C -->|no| E
@@ -300,11 +328,12 @@ In multi-user mode the agent tunnel is **transient** - it's only needed for the 
 so the agent tunnel is torn down before the viewer launches. The `.dcv` file is short-lived (`0600`)
 and deleted right after the viewer opens.
 
-- **Auth, EC2, SSM, Secrets Manager, STS** use the native
-  [`aws-sdk-swift`](https://github.com/awslabs/aws-sdk-swift). SSO tokens use the standard
+- **Auth, EC2, SSM, Secrets Manager, STS and EC2 Instance Connect** go through SSM Connect's own
+  AWS client (`SSMConnectKit/AWSClient`): Signature Version 4 signing and the few operations the app
+  uses, on macOS, Windows and Linux alike, with no AWS SDK linked. SSO tokens use the standard
   `~/.aws/sso/cache` (shared with the AWS CLI), so logins are reused and silently refreshed.
 - **The tunnel** reuses the official AWS `session-manager-plugin` binary, bundled in the app behind a
-  `TunnelProvider` protocol (the SDK only exposes `StartSession`; the port-forward data-channel
+  `TunnelProvider` protocol (AWS exposes only `StartSession`; the port-forward data-channel
   protocol lives only in the plugin). The plugin is fetched + checksum-verified at build time.
 - **The identity token** (multi-user) is a presigned `sts:GetCallerIdentity` request used as an
   opaque bearer token - the same credential the SSM tunnel already required. The agent proves your
@@ -348,13 +377,37 @@ not a clean working-day result. Logs contain health data, not credentials or pri
 
 ### Releasing
 
-```bash
-./scripts/release.sh   # Release build -> dist/SSMConnect-<version>.zip + sha256
-```
+Every branch push runs [ci.yml](.github/workflows/ci.yml): the checks first, then
+[vhco-pro/version-workflow](https://github.com/vhco-pro/version-workflow), which calculates the
+version from conventional commits with the shared GitVersion configuration. On `main` it tags that
+version; on a branch whose open pull request has the `release:preview` label it tags a prerelease;
+any other run only calculates the version. When a run tags, the same run creates the GitHub Release
+and separate jobs build and upload each platform's assets:
 
-Upload the zip as the GitHub release asset. The Homebrew cask
-(`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest release version +
-sha256 via a scheduled workflow in that tap (no manual cask edit needed).
+- **macOS:** `scripts/release.sh` builds `SSMConnect-<version>.zip` and its SHA-256. After the
+  upload, the newest release that has a macOS ZIP is marked as the latest release.
+- **Windows:** `packaging/windows/Build-Release.ps1` builds the per-user
+  `SSMConnect-<version>-x64.msi`, its SHA-256 and the WinGet manifest for `VHCo.SSMConnect`.
+  `packaging/windows/Test-Package.ps1` inspects and installs the MSI before upload.
+- **Linux:** `packaging/linux/build-packages.sh` builds `SSMConnect-<version>-fedora43-x86_64.rpm`
+  and `SSMConnect-<version>-ubuntu24.04-amd64.deb` with their SHA-256 files, building the helper
+  and the Qt shell on each distribution in containers. `packaging/linux/test-packages.sh`
+  inspects them and installs, upgrades and removes them on clean Fedora 43 and Ubuntu 24.04
+  containers before upload.
+
+A failed platform job leaves only its own asset missing. Retry it with **Re-run failed jobs**
+while no newer run of the branch is queued or running; the rerun keeps the run's tag and uploads
+only assets that are still missing. It never replaces a published one, so fix a bad asset by
+releasing a new version. **Re-run all jobs** finds the tag already pushed and releases nothing.
+Adding the `release:preview` label reruns the branch's CI through
+[preview.yml](.github/workflows/preview.yml). A manual run on a labelled branch may set `fail_job`
+to fail one platform job on its first attempt, to show the others still publish.
+
+The Homebrew cask (`vhco-pro/homebrew-tap` → `Casks/ssm-connect.rb`) **auto-syncs** to the latest
+release version + sha256 via a scheduled workflow in that tap (no manual cask edit needed). A separate
+`winget` job submits the validated manifest to `microsoft/winget-pkgs` with the `WINGET_TOKEN`
+secret of the `winget` environment, which only `main` can deploy to; without the secret the
+manifest stays a run artifact for a manual submission.
 
 ### Notarization (upgrade path)
 

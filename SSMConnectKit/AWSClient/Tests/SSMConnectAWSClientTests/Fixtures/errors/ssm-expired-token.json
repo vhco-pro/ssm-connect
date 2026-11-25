@@ -1,0 +1,31 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : true,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "The security token included in the request is expired (ExpiredTokenException, HTTP 400)"
+  },
+  "name" : "ssm-expired-token",
+  "operation" : "StartSession",
+  "response" : {
+    "body" : "{\"__type\":\"ExpiredTokenException\",\"message\":\"The security token included in the request is expired\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "message" : "The security token included in the request is expired",
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "ExpiredTokenException"
+  },
+  "service" : "ssm"
+}

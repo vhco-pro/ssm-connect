@@ -1,0 +1,27 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "EC2 says AuthFailure (AuthFailure, HTTP 401)"
+  },
+  "name" : "ec2-auth-failure",
+  "operation" : "DescribeInstances",
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Errors><Error><Code>AuthFailure<\/Code><Message>EC2 says AuthFailure<\/Message><\/Error><\/Errors><RequestID>req-1234<\/RequestID><\/Response>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 401
+  },
+  "sdk" : {
+    "httpStatus" : 401,
+    "message" : "EC2 says AuthFailure",
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "AuthFailure"
+  },
+  "service" : "ec2"
+}

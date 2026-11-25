@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SSM Connect
+GenericName=Remote Workstation
+Comment=Connect to EC2 workstations through AWS Systems Manager
+Exec=ssm-connect
+Icon=ssm-connect
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupNotify=false

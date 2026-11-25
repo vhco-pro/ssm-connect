@@ -1,0 +1,61 @@
+{
+  "decoded" : {
+    "count" : "1"
+  },
+  "name" : "ec2-stop-instances",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "InstanceId.1=i-0123456789abcdef0&Action=StopInstances&Version=2016-11-15",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-www-form-urlencoded"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "3a4a3594-fad6-49aa-8980-28038764a17a"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ec2\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=7c59d4475508a88f6b1bdf73d0f763f921ead5dfa277a3e9a283985cc5c0d75f"
+      ],
+      [
+        "Content-Length",
+        "72"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ec2#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<StopInstancesResponse xmlns=\"http:\/\/ec2.amazonaws.com\/doc\/2016-11-15\/\"><requestId>11111111-2222-3333-4444-555555555555<\/requestId><instancesSet><item><instanceId>i-0123456789abcdef0<\/instanceId><currentState><code>64<\/code><name>stopping<\/name><\/currentState><previousState><code>16<\/code><name>running<\/name><\/previousState><\/item><\/instancesSet><\/StopInstancesResponse>",
+    "headers" : [
+      [
+        "Content-Type",
+        "text\/xml;charset=UTF-8"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ec2"
+}

@@ -3,7 +3,7 @@ import Testing
 @testable import SSMConnectKit
 
 /// In-memory `Pasteboard` for clipboard tests.
-final class FakePasteboard: Pasteboard, @unchecked Sendable {
+final class FakePasteboard: SSMConnectWorkflow.Pasteboard, @unchecked Sendable {
     private let lock = NSLock()
     private var value: String?
 

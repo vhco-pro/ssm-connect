@@ -1,0 +1,71 @@
+{
+  "decoded" : {
+    "sessionId" : "user-0123456789abcdef0",
+    "streamUrl" : "wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/user-0123456789abcdef0?role=publish_subscribe",
+    "tokenValue" : "session-token-value"
+  },
+  "name" : "ssm-start-session-ssh",
+  "region" : "eu-central-1",
+  "request" : {
+    "body" : "{\"DocumentName\":\"AWS-StartSSHSession\",\"Parameters\":{\"portNumber\":[\"22\"]},\"Target\":\"i-0123456789abcdef0\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "amz-sdk-invocation-id",
+        "9635a944-a477-4b23-af96-46890c9d6503"
+      ],
+      [
+        "Host",
+        "127.0.0.1"
+      ],
+      [
+        "amz-sdk-request",
+        "attempt=1; max=3"
+      ],
+      [
+        "X-Amz-Security-Token",
+        "SESSIONTOKEN"
+      ],
+      [
+        "X-Amz-Date",
+        "20261120T065936Z"
+      ],
+      [
+        "Authorization",
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261120\/eu-central-1\/ssm\/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-date;x-amz-security-token, Signature=7879e7c7693153717230c57d8d1ac0b2f3ccf17562b0a8f0684bf9a34e028a7b"
+      ],
+      [
+        "Content-Length",
+        "104"
+      ],
+      [
+        "X-Amz-Target",
+        "AmazonSSM.StartSession"
+      ],
+      [
+        "User-Agent",
+        "aws-sdk-swift\/1.7.62 ua\/2.1 api\/ssm#1.7.62 os\/linux#7.1.8 lang\/swift#5.10 m\/D,N,Z,b"
+      ]
+    ],
+    "method" : "POST",
+    "uri" : "\/"
+  },
+  "response" : {
+    "body" : "{\"SessionId\":\"user-0123456789abcdef0\",\"StreamUrl\":\"wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/user-0123456789abcdef0?role=publish_subscribe\",\"TokenValue\":\"session-token-value\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "11111111-2222-3333-4444-555555555555"
+      ]
+    ],
+    "status" : 200
+  },
+  "service" : "ssm"
+}

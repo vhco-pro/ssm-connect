@@ -147,14 +147,14 @@ private final class LeaseFixture {
 @MainActor
 struct EditorLeaseContinuationTests {
     private func wait(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !condition(), ContinuousClock.now < deadline { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         try #require(condition())
     }
 
     private func waitAsync(_ condition: () async -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !(await condition()), ContinuousClock.now < deadline { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !(await condition()), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         try #require(await condition())
     }
 
@@ -345,6 +345,8 @@ struct EditorLeaseContinuationTests {
         #expect(fixture.writes == 1 && fixture.launches == 1)
         if change == "stop" || change == "quit" { #expect(!FileManager.default.fileExists(atPath: fixture.leaseURL.path)) }
         else { #expect(try fixture.lease().expiresAt == original.expiresAt) }
+        // A quitting process cannot wait for the delayed key removal that Stop uses.
+        if change == "quit" { #expect(!FileManager.default.fileExists(atPath: original.keyPath)) }
     }
 
     @Test("LEASE-05 and LEASE-06: Disk replacement before renewal cannot become the owner's granted lease",

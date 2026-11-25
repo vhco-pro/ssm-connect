@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <RootNamespace>SSMConnect.App</RootNamespace>
+    <AssemblyName>SSMConnect</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyTitle>SSM Connect</AssemblyTitle>
+    <Description>Connect to EC2 workstations through AWS Systems Manager. From vhco-pro.</Description>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SSMConnect.App.Tests" />
+    <AssemblyMetadata Include="SSMConnectBuild" Value="$(SSMConnectBuild)" Condition="'$(SSMConnectBuild)' != ''" />
+  </ItemGroup>
+
+</Project>

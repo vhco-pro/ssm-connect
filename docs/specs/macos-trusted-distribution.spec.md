@@ -164,7 +164,7 @@ alone does not make the existing v0.6.0 artifact signed/notarized or change its 
 
 ## 7. Implementation Boundaries and Dependencies
 
-Implementation changes the existing [release workflow](../../.github/workflows/release.yml),
+Implementation changes the existing [release workflow](../../.github/workflows/ci.yml) (its macOS job),
 [packaging script](../../scripts/release.sh), [project signing/embed phase](../../project.yml)
 and [entitlements](../../SSMConnect/SSMConnect.entitlements), plus tests and directly related
 distribution guidance. The Homebrew tap remains the existing independent sync consumer.

@@ -1,0 +1,39 @@
+{
+  "attempts" : 2,
+  "delays" : [
+    0.18
+  ],
+  "name" : "sso-oidc-503-then-success",
+  "outcome" : "success",
+  "responses" : [
+    {
+      "body" : "{\"error\":\"server_error\",\"error_description\":\"scripted server_error\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/json"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "InternalServerException"
+        ]
+      ],
+      "status" : 503
+    },
+    {
+      "body" : "{\"accessToken\":\"access-token\",\"tokenType\":\"Bearer\",\"expiresIn\":3600,\"refreshToken\":\"refresh-token\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/json"
+        ],
+        [
+          "x-amzn-RequestId",
+          "11111111-2222-3333-4444-555555555555"
+        ]
+      ],
+      "status" : 200
+    }
+  ],
+  "service" : "sso-oidc"
+}

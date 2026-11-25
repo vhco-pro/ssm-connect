@@ -1,0 +1,26 @@
+{
+  "attempts" : 3,
+  "delays" : [
+    0.919,
+    1.173
+  ],
+  "name" : "ssm-throttling-exhausted",
+  "outcome" : "error: UnknownAWSHTTPServiceError",
+  "responses" : [
+    {
+      "body" : "{\"__type\":\"ThrottlingException\",\"message\":\"scripted ThrottlingException\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "ThrottlingException"
+        ]
+      ],
+      "status" : 400
+    }
+  ],
+  "service" : "ssm"
+}

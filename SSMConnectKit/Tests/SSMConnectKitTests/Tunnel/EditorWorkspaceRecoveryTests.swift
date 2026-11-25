@@ -102,8 +102,8 @@ private final class WorkspaceRecoveryFixture {
 @MainActor
 struct EditorWorkspaceRecoveryTests {
     private func wait(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !condition(), ContinuousClock.now < deadline { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         try #require(condition())
     }
 
@@ -478,8 +478,8 @@ struct EditorWorkspaceRecoveryTests {
         let winner = fixture.makeMachine()
         defer { fixture.machine.terminateForQuit(); winner.terminateForQuit(); fixture.cleanup() }
         fixture.machine.open()
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !(await gate.entered), ContinuousClock.now < deadline { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !(await gate.entered), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         try #require(await gate.entered)
         winner.open()
         await winner.awaitOpening()

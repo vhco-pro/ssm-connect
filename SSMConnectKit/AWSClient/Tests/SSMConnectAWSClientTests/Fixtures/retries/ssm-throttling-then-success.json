@@ -1,0 +1,54 @@
+{
+  "attempts" : 3,
+  "delays" : [
+    0.473,
+    1.545
+  ],
+  "name" : "ssm-throttling-then-success",
+  "outcome" : "success",
+  "responses" : [
+    {
+      "body" : "{\"__type\":\"ThrottlingException\",\"message\":\"scripted ThrottlingException\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "ThrottlingException"
+        ]
+      ],
+      "status" : 400
+    },
+    {
+      "body" : "{\"__type\":\"ThrottlingException\",\"message\":\"scripted ThrottlingException\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "ThrottlingException"
+        ]
+      ],
+      "status" : 400
+    },
+    {
+      "body" : "{\"SessionId\":\"user-0123456789abcdef0\",\"StreamUrl\":\"wss:\/\/ssmmessages.eu-central-1.amazonaws.com\/v1\/data-channel\/user-0123456789abcdef0\",\"TokenValue\":\"session-token-value\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-RequestId",
+          "11111111-2222-3333-4444-555555555555"
+        ]
+      ],
+      "status" : 200
+    }
+  ],
+  "service" : "ssm"
+}

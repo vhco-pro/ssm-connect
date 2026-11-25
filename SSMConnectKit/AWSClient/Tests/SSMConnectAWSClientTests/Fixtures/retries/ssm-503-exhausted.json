@@ -1,0 +1,26 @@
+{
+  "attempts" : 3,
+  "delays" : [
+    0.802,
+    1.638
+  ],
+  "name" : "ssm-503-exhausted",
+  "outcome" : "error: UnknownAWSHTTPServiceError",
+  "responses" : [
+    {
+      "body" : "{\"__type\":\"ServiceUnavailable\",\"message\":\"scripted ServiceUnavailable\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "ServiceUnavailable"
+        ]
+      ],
+      "status" : 503
+    }
+  ],
+  "service" : "ssm"
+}

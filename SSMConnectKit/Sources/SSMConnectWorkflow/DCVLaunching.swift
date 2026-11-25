@@ -1,0 +1,63 @@
+import Foundation
+import SSMConnectDomain
+
+/// Launches Amazon DCV Viewer with an auto-login connection file (E4/E5, F-10, ADR-8).
+package protocol DCVLaunching: Sendable {
+    /// True if DCV Viewer is installed.
+    func isViewerInstalled() -> Bool
+    /// Write a transient `.dcv` file, open it with DCV Viewer, then delete it immediately.
+    /// Throws `DCVError.viewerNotInstalled` if the viewer is absent (no file is written).
+    func launch(connectionFile: DCVConnectionFile) async throws
+    /// Remove any orphaned `.dcv` temp files left by a previous crash (ADR-8, §8).
+    func sweepOrphanedFiles()
+    /// Remove connection files still waiting for the Viewer, when the app or helper quits.
+    func removeWaitingFiles()
+}
+
+extension DCVLaunching {
+    /// macOS keeps the file only for its short window, inside the launch itself.
+    package func removeWaitingFiles() {}
+}
+
+package enum DCVError: LocalizedError, Equatable {
+    case viewerNotInstalled
+    case launchFailed(reason: String)
+
+    package var errorDescription: String? {
+        switch self {
+        case .viewerNotInstalled:
+            #if os(Windows)
+            return "Amazon DCV Viewer is required but not installed. "
+                + "Install the Windows MSI from https://download.amazondcv.com."
+            #elseif os(Linux)
+            return "Amazon DCV Viewer is required but not installed. "
+                + "Install the .deb (Ubuntu) or .rpm (Fedora) package from https://download.amazondcv.com."
+            #else
+            return "Amazon DCV Viewer is required but not found at /Applications/DCV Viewer.app. "
+                + "Install via `brew install --cask dcv-viewer` or download from https://download.amazondcv.com."
+            #endif
+        case let .launchFailed(reason):
+            return "Failed to launch DCV Viewer: \(reason)"
+        }
+    }
+}
+
+// MARK: - Injectable seams (so DCVLauncher is unit-testable without AppKit / disk)
+
+/// Locates the installed DCV Viewer app bundle.
+package protocol DCVViewerLocating: Sendable {
+    /// URL of the DCV Viewer app bundle, or `nil` if not installed.
+    func viewerAppURL() -> URL?
+}
+
+/// Persists the transient connection file (`0600` temp file) and cleans it up.
+package protocol DCVConnectionFileStore: Sendable {
+    func write(_ contents: String) throws -> URL
+    func remove(_ url: URL)
+    func sweepOrphans()
+}
+
+/// Opens a file with a specific application.
+package protocol DCVViewerOpening: Sendable {
+    func open(fileURL: URL, withApp appURL: URL) async throws
+}

@@ -1,0 +1,25 @@
+{
+  "attempts" : 1,
+  "delays" : [
+
+  ],
+  "name" : "ssm-access-denied",
+  "outcome" : "error: UnknownAWSHTTPServiceError",
+  "responses" : [
+    {
+      "body" : "{\"__type\":\"AccessDeniedException\",\"message\":\"scripted AccessDeniedException\"}",
+      "headers" : [
+        [
+          "Content-Type",
+          "application\/x-amz-json-1.1"
+        ],
+        [
+          "x-amzn-ErrorType",
+          "AccessDeniedException"
+        ]
+      ],
+      "status" : 400
+    }
+  ],
+  "service" : "ssm"
+}

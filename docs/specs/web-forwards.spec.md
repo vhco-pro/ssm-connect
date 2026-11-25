@@ -9,33 +9,17 @@
 - **Related:** [`ssm-connect.spec.md`](./ssm-connect.spec.md) (F-09, F-13, F-18, ADR-1, ADR-5),
   [`cross-platform-client.spec.md`](./cross-platform-client.spec.md) (Windows parity comes later).
 
-## 0. Start here (handover)
+## 0. Historical handoff
 
-This spec was written on the workstation side, where the mechanism was built and measured. It is
-handed to an agent on the Mac because the app can only be built and run there. Do the two parts in
-order.
+The original staged handoff and companion plan are retained in
+[Git history](https://github.com/vhco-pro/ssm-connect/blob/eb4f0bc0b8f98f206ed519feb461c70ba3614b41/docs/plans/web-forwards.plan.md).
+They are evidence of the original implementation, not instructions to restart
+that flow or permission to change a live environment.
 
-On 2026-10-12 the user explicitly authorized Part B before the working-day/DCV observation,
-deferring that observation and manual testing of the built feature until after implementation.
-Those checks remain pending, not passed.
-
-**Part A: prove it from this Mac with the script. No code changes.**
-
-1. Ask the user for their settings and put them in `~/.config/web-forwards/env` (the header of
-   `scripts/web-forwards.sh` lists the variables). They are environment-specific and deliberately
-   not in this public repository.
-2. `scripts/web-forwards.sh up`, then `status`. Record cold connect time and per-request times.
-3. Point a browser at the PAC file (`scripts/web-forwards.sh pac`, see section 6.4) and open one
-   internal UI that logs in through the identity provider. Record whether the login completes from
-   this network. That is the one result the workstation could not produce.
-4. Open the local forward in the browser and click through a page that uses websockets.
-5. Leave the tunnel up for a working day next to a normal DCV session. Record whether it survives.
-6. Write the results into section 3.2. If a step fails, stop and report it before Part B: a
-   failure here changes the design, not just the numbers.
-
-**Part B: build it into the app.** Write `docs/plans/web-forwards.plan.md` in the format of the
-existing plans, then implement the requirements in section 4. `make test` must stay green. The
-script stays in the repository as the reference for behaviour.
+New work follows [the repository's vh-adlc workflow](../../AGENTS.md) and its
+accepted feature document. The requirements and dated verification below remain
+the product baseline. Unexecuted fresh-host and long-running observations have
+not become passing checks through this workflow change.
 
 ## 1. Overview and problem
 

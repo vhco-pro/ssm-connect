@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a InvalidRequestException."
+  },
+  "name" : "sso-oidc-invalid-request",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"invalid_request\",\"error_description\":\"OIDC says invalid_request\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "InvalidRequestException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSSSOOIDC.InvalidRequestException",
+    "typeName" : "InvalidRequestException"
+  },
+  "service" : "sso-oidc"
+}

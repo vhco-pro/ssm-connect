@@ -1,117 +1,75 @@
-@_spi(UnknownAWSHTTPServiceError) import AWSClientRuntime
-import AWSSSO
-import AWSSSOOIDC
 import Foundation
-import SmithyHTTPAPI
+import SSMConnectAWSClient
+@testable import SSMConnectDomain
 @testable import SSMConnectKit
 
-// Test doubles for the SSO/OIDC client seams + cache (B7, ADR-P2).
+// Test doubles for SSO sign-in on SSM Connect's AWS client: the cache, a scripted SSO endpoint,
+// service errors as the client reports them, and the URLs a provider opens.
 
 final class MockSSOCache: SSOCacheReading, @unchecked Sendable {
-    var stored: SSOToken?
-    private(set) var updatedToken: SSOToken?
+    var stored: SSMConnectDomain.SSOToken?
+    private(set) var updatedToken: SSMConnectDomain.SSOToken?
 
-    init(stored: SSOToken? = nil) { self.stored = stored }
+    init(stored: SSMConnectDomain.SSOToken? = nil) { self.stored = stored }
 
-    func token(startUrl: String, region: String) throws -> SSOToken? {
+    func token(startUrl: String, region: String) throws -> SSMConnectDomain.SSOToken? {
         guard let stored, stored.startUrl == startUrl, stored.region == region else { return nil }
         return stored
     }
 
-    func update(_ token: SSOToken) throws {
+    func update(_ token: SSMConnectDomain.SSOToken) throws {
         updatedToken = token
         stored = token
     }
 }
 
-final class MockOIDCClient: SSOOIDCClienting, @unchecked Sendable {
-    var registerOutput = RegisterClientOutput(clientId: "client-id", clientSecret: "client-secret")
-    var deviceAuthOutput = StartDeviceAuthorizationOutput(
-        deviceCode: "device-code",
-        expiresIn: 60,
-        interval: 1,
-        userCode: "USER-CODE",
-        verificationUri: "https://example.com/device",
-        verificationUriComplete: "https://example.com/device?user_code=USER-CODE"
-    )
-    /// Results returned by successive `createToken` calls. The last entry repeats if the
-    /// provider calls more times than there are entries.
-    var createTokenResults: [Result<CreateTokenOutput, any Error>] = [
-        .success(CreateTokenOutput(accessToken: "access-token", expiresIn: 3600))
-    ]
-
+/// SSO OIDC and the SSO portal on one scripted transport: client registration and device
+/// authorization succeed, CreateToken answers from a queue, and GetRoleCredentials returns
+/// credentials valid for an hour.
+final class ScriptedSSO: HTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var tokenReplies: [HTTPResponse]
     private(set) var registerCount = 0
-    private(set) var deviceAuthCount = 0
-    private(set) var createTokenCount = 0
-    private(set) var lastCreateTokenInput: CreateTokenInput?
-    var onCreateToken: ((CreateTokenInput) -> Void)?
 
-    func registerClient(_ input: RegisterClientInput) async throws -> RegisterClientOutput {
-        registerCount += 1
-        return registerOutput
+    init(tokens: [HTTPResponse]) { tokenReplies = tokens }
+
+    static func error(_ type: String, status: Int = 400) -> HTTPResponse {
+        HTTPResponse(status: status, headers: [("x-amzn-ErrorType", type)], body: Data(#"{"error":"x","error_description":"scripted"}"#.utf8))
     }
 
-    func startDeviceAuthorization(_ input: StartDeviceAuthorizationInput) async throws -> StartDeviceAuthorizationOutput {
-        deviceAuthCount += 1
-        return deviceAuthOutput
+    static func token(_ access: String) -> HTTPResponse {
+        HTTPResponse(status: 200, body: Data(#"{"accessToken":"\#(access)","tokenType":"Bearer","expiresIn":3600}"#.utf8))
     }
 
-    func createToken(_ input: CreateTokenInput) async throws -> CreateTokenOutput {
-        lastCreateTokenInput = input
-        onCreateToken?(input)
-        let index = min(createTokenCount, createTokenResults.count - 1)
-        createTokenCount += 1
-        switch createTokenResults[index] {
-        case let .success(output): return output
-        case let .failure(error): throw error
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        lock.withLock {
+            switch request.url.path {
+            case "/client/register":
+                registerCount += 1
+                return HTTPResponse(status: 200, body: Data(#"{"clientId":"client","clientSecret":"secret","clientSecretExpiresAt":4102444800}"#.utf8))
+            case "/device_authorization":
+                return HTTPResponse(status: 200, body: Data(#"{"deviceCode":"device","userCode":"ABCD","verificationUriComplete":"https://device.sso.eu-west-1.amazonaws.com/?user_code=ABCD","expiresIn":600,"interval":1}"#.utf8))
+            case "/token":
+                return tokenReplies.count > 1 ? tokenReplies.removeFirst() : tokenReplies[0]
+            case "/federation/credentials":
+                let expiration = Int64((Date().timeIntervalSince1970 + 3600) * 1000)
+                return HTTPResponse(status: 200, body: Data(#"{"roleCredentials":{"accessKeyId":"fixture","secretAccessKey":"fixture","sessionToken":"fixture","expiration":\#(expiration)}}"#.utf8))
+            default:
+                return HTTPResponse(status: 404)
+            }
         }
     }
 }
 
-final class MockSSOClient: SSOClienting, @unchecked Sendable {
-    var output = GetRoleCredentialsOutput(
-        roleCredentials: SSOClientTypes.RoleCredentials(
-            accessKeyId: "AKIAEXAMPLE",
-            expiration: 0,
-            secretAccessKey: "secret",
-            sessionToken: "session"
-        )
-    )
-    var error: (any Error)?
-    var onGetRoleCredentials: ((GetRoleCredentialsInput) throws -> Void)?
-
-    private(set) var callCount = 0
-    private(set) var lastInput: GetRoleCredentialsInput?
-
-    func getRoleCredentials(_ input: GetRoleCredentialsInput) async throws -> GetRoleCredentialsOutput {
-        callCount += 1
-        lastInput = input
-        try onGetRoleCredentials?(input)
-        if let error { throw error }
-        return output
-    }
+/// HTTP statuses the tests give their service errors.
+enum HTTPStatusCode: Int {
+    case badRequest = 400, unauthorized = 401, forbidden = 403
 }
 
-/// Builds the error the real SDK hands back when a service returns an error shape that is
-/// absent from the operation's Smithy model (#20).
-///
-/// `SSO.GetRoleCredentials` models only `InvalidRequestException`, `ResourceNotFoundException`,
-/// `TooManyRequestsException`, and `UnauthorizedException`. A real "you are not assigned this
-/// permission set" reply is a 403 `ForbiddenException`, which is *not* in that list, so the SDK
-/// wraps it as `UnknownAWSHTTPServiceError`. Using the genuine type keeps these tests honest:
-/// if a future SDK models `ForbiddenException` properly, they still pass via the `ServiceError`
-/// conformance both types share.
-func unmodeledAWSServiceError(
-    typeName: String?,
-    message: String?,
-    statusCode: HTTPStatusCode
-) -> any Error {
-    UnknownAWSHTTPServiceError(
-        httpResponse: HTTPResponse(statusCode: statusCode),
-        message: message,
-        requestID: "req-1234",
-        typeName: typeName
-    )
+/// An AWS service error as SSM Connect's client reports one: the wire type name, message and
+/// status, whatever the operation.
+func unmodeledAWSServiceError(typeName: String?, message: String?, statusCode: HTTPStatusCode) -> any Error {
+    AWSServiceError(typeName: typeName ?? "", message: message, httpStatus: statusCode.rawValue)
 }
 
 /// Thread-safe recorder for URLs passed to the provider's `openURL` closure.

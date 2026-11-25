@@ -1,0 +1,30 @@
+{
+  "app" : {
+    "isPermissionDenied" : true,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a AccessDeniedException."
+  },
+  "name" : "ssm-access-denied-no-message",
+  "operation" : "StartSession",
+  "response" : {
+    "body" : "{\"__type\":\"AccessDeniedException\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/x-amz-json-1.1"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "AccessDeniedException"
+  },
+  "service" : "ssm"
+}

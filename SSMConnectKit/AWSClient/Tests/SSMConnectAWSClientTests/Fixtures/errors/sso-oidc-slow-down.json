@@ -1,0 +1,34 @@
+{
+  "app" : {
+    "isPermissionDenied" : false,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : false,
+    "renderedMessage" : "AWS returned a SlowDownException."
+  },
+  "name" : "sso-oidc-slow-down",
+  "operation" : "CreateToken",
+  "response" : {
+    "body" : "{\"error\":\"slow_down\",\"error_description\":\"OIDC says slow_down\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "SlowDownException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 400
+  },
+  "sdk" : {
+    "httpStatus" : 400,
+    "swiftType" : "AWSSSOOIDC.SlowDownException",
+    "typeName" : "SlowDownException"
+  },
+  "service" : "sso-oidc"
+}

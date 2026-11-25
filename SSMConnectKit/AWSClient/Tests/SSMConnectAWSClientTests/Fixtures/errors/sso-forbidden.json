@@ -1,0 +1,35 @@
+{
+  "app" : {
+    "isPermissionDenied" : true,
+    "isRejectedAuthorization" : false,
+    "isRoleAccessDenied" : true,
+    "renderedMessage" : "No access (ForbiddenException, HTTP 403)"
+  },
+  "name" : "sso-forbidden",
+  "operation" : "GetRoleCredentials",
+  "response" : {
+    "body" : "{\"message\":\"No access\"}",
+    "headers" : [
+      [
+        "Content-Type",
+        "application\/json"
+      ],
+      [
+        "x-amzn-ErrorType",
+        "ForbiddenException"
+      ],
+      [
+        "x-amzn-RequestId",
+        "req-1234"
+      ]
+    ],
+    "status" : 403
+  },
+  "sdk" : {
+    "httpStatus" : 403,
+    "message" : "No access",
+    "swiftType" : "AWSClientRuntime.UnknownAWSHTTPServiceError",
+    "typeName" : "ForbiddenException"
+  },
+  "service" : "sso"
+}
