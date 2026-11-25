@@ -1,6 +1,6 @@
 ---
-status: in-progress
-status_description: "Release revision implemented (T83 to T95): versioning through vhco-pro/version-workflow v0.1.3 with the bundled GitVersion configuration, the full macOS suite before the tag, no spikes; proven on PR #41. AC-31 met, AC-11 to AC-30 residualised on #40."
+status: complete
+status_description: "Complete 2026-11-25: one shared Swift core behind the macOS app and the Windows and Linux shells, released through vhco-pro/version-workflow v0.1.3 with the bundled GitVersion configuration. AC-31 met; AC-11 to AC-30 carry owner-accepted residuals on #40."
 issue: null
 goal: "Use SSM Connect on macOS, Windows and Linux through one shared Swift implementation of its connection behavior, retaining native interfaces and current macOS functionality."
 branch: feat/shared-swift-core
