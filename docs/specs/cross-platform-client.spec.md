@@ -1485,6 +1485,7 @@ None.
 | 2026-11-24 | R-55 | spec | `6000fc2` | claude-opus-5-5 | procedural | No blocking or should-fix findings; one nit (Claude reviewer, owner's routing) |
 | 2026-11-24 | R-55 | spec | `6000fc2` | n/a | n/a | accepted by owner |
 | 2026-11-25 | R-56 | implementation | `7cbe865` | claude-opus-5-5 | procedural | AC-31 met; AC-11 to AC-30 residualised on #40; one should-fix (the graph check misses continue-on-error and a widened gate) and three nits (Claude reviewer, owner's routing) |
+| 2026-11-25 | R-57 | implementation | `265b8ee` | claude-opus-5-5 | procedural | AC-31 met; AC-11 to AC-30 residualised on #40; one should-fix (the graph check misses the version job's if and a check step's if) and two nits (Claude reviewer, owner's routing) |
 
 ### R-1
 
@@ -3118,6 +3119,109 @@ SEVERITY: nit
 WHERE: Acceptance Criteria AC-31 evidence line
 EVIDENCE: The evidence cites "runs whose checks failed or were cancelled pushed no tag (45495839464 and 45588343109 attempt 1)". In both attempts a check job was cancelled (aws-client macos-15 and aws-client windows-2025), and no check failed. The failed-check case is run 45585768768: its macOS package suite failed and version was skipped. That run is cited only under T90.
 PROPOSAL: Cite run 45585768768 for the failed-check case in the AC-31 evidence.
+
+### R-57
+
+CRITERION: AC-11 Each supported desktop client performs its connection workflows through the same shared Swift core, without a second language implementation of those rules.
+VERDICT: not verified
+EVIDENCE: At 265b8ee in /tmp/ssm-impl-r57, `git diff 7cbe865 HEAD` touches only the spec, scripts/release/check-ci-graph.py and scripts/release/test-release-assets.sh, so no shell, core, helper or test source that R-56 relied on changed. I rely on R-56's record for the CI run 45588343109 suites and the released .6 artifacts. I ran these myself: `scripts/check-boundaries.sh` printed "SSMConnectDomain ok" and "SSMConnectWorkflow ok". In CI run 45615859786 at 265b8ee, "macOS package suite", "helper (ubuntu-24.04)" and both finished aws-client legs passed. The Windows legs were still running when I reviewed. Limitations: I did not observe T27's macOS menu run or the native WPF and Qt drive-throughs (T20, T25). The row's combined drive-through of the macOS app with a Windows or Linux shell never ran, and #40 lists it under AC-11.
+
+CRITERION: AC-12 Single-user and multi-user desktop connections retain the current authentication, readiness, viewer-launch and no-shared-user-fallback behavior on each supported DCV target.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865: only the spec and two release scripts changed. I rely on R-56's record. The ConnectionStateMachine suite is part of the macOS package suite, which passed again in CI run 45615859786 at 265b8ee. Native readiness failure and retry, agent rejection with no shared-identity fallback, and authenticated Viewer access on Fedora 43 never ran on any platform. #40 lists them under AC-12.
+
+CRITERION: AC-13 Tunnel-only, web and editor actions operate independently without unintended DCV password fetch, desktop provisioning or Viewer launch, including against a target with no DCV server or desktop environment and on a client without DCV Viewer.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. No run used a target with no DCV server or desktop, counted zero password, provisioning and Viewer operations, or repeated the flows with concurrent capabilities. A client without a Viewer ran only on macOS and Fedora 43. #40 lists these under AC-13.
+
+CRITERION: AC-14 Existing profiles remain readable and retain identity, portable fields, checked attached-file saves, conflict recovery and explicit consent across the migration.
+VERDICT: untested
+EVIDENCE: The evidence line now names "CFG-07: External edit races GUI Save", "CFG-04: Stored GUI save and re-export retain unknown optional fields" and "CFG-03: Shared v1/v2 contract and migration fixtures". I found them at ProfileAttachmentTests.swift:115 and :197 and at ProfileDocumentTests.swift:73. They sit in the macOS package suite, which passed in CI run 45615859786 at 265b8ee and, per R-56, in run 45588343109. #40's AC-14 item now reads "a native conflict on Windows, and native attached-file saves on macOS" (issue updated 2026-11-25T12:39:11Z), so R-56 F-02 is resolved. Those two native steps are still unexecuted, and I did not observe the T28, T29 or T62 native runs. See F-02 for the evidence line's wording.
+
+CRITERION: AC-15 One shared authorization workflow preserves silent refresh, explicit sign-in recovery, pending-action context and cancellation without redirecting established connections.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. Natively, pending-action resume, a profile change and Stop during authorization never ran, and no check showed healthy established transports keeping their target and authorization context. #40 lists them under AC-15.
+
+CRITERION: AC-16 Supported browser integrations retain consent, ownership, restore and fail-closed private-domain routing without modifying unrelated browser or system settings.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. Policy and ownership refusal and the transport-loss fail-closed scenario never ran on any platform. The Fedora 43 row did not run because no supported browser is installed there. #40 lists these under AC-16.
+
+CRITERION: AC-17 Native editor access preserves stable workspace authority, owned leases, unsaved windows and explicit replacement/recovery behavior without weakening host trust.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. None of the row's native steps ran: the killed-helper scenario on Windows and Linux with unsaved content, concurrent windows, dirty buffers, confirmed replacement, reopening the original workspace authority and the host-key check. #40 lists them under AC-17.
+
+CRITERION: AC-18 Disconnect, cancellation, app exit, crash and supported sleep/logoff transitions leave no unintended owned local processes or reusable unauthorized access; on macOS, the plugin and ssh processes and the temporary SSH key folder that a force-quit or crash of the app leaves behind are outside this feature (#39).
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record of the T87 and T90 tests. The macOS package suite holding them passed again on a hosted runner in CI run 45615859786 at 265b8ee. The native Ubuntu suspend with an RTC wake alarm (T65) never ran, and the w11-sandbox `powercfg /a` record does not exist. #40 lists both under AC-18.
+
+CRITERION: AC-19 Profiles, ordinary state/events, diagnostics and temporary artifacts do not expose credentials or tokens; local caches and integration artifacts enforce the target OS's ownership and permission rules.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. No run seeded synthetic secrets, and cross-user access was tried natively only on Windows. #40 lists both gaps under AC-19.
+
+CRITERION: AC-20 The macOS application retains its current native interaction and documented desktop, browser, editor and recovery behavior while using the extracted core, except that AWS retry settings and configured AWS endpoints no longer affect it, its STS identity request uses the correct China endpoint, and an action missing a hard requirement is refused before any AWS call.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record of run 45588343109. The complete macOS package suite also passed in CI run 45615859786 at 265b8ee. That run builds no app because PR #41 has no label (`gh pr view 41` shows labels [] at head 265b8ee). The documented native flows were only partly exercised in T27, and #40 lists the unrun flows under AC-20.
+
+CRITERION: AC-21 Every declared Windows/Linux artifact installs, starts with its required dependencies, upgrades and uninstalls correctly on its declared native OS/CPU/desktop matrix, including while a prior version is running, without interrupting it unless the user agrees.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. None of these row steps ran: the Linux upgrade and removal with a connected prior version, the paused helper-only and plugin-only upgrades, a helper swapped between check and start, the forced failed .rpm and .deb install with its reinstall repair, a winget install of the final MSI, and recorded artifact hashes. #40 lists them under AC-21.
+
+CRITERION: AC-23 Supported Windows and Linux clients complete real SSO/refresh, AWS/SSM/plugin and native-integration scenarios; cross-compilation is not their sole support evidence.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. On Fedora 43 the final native acceptance launched no Viewer and no managed browser. Ubuntu's VS Code ran only with `--ozone-platform=wayland` in a headless session, and the Ubuntu suspend never ran. #40 lists these under AC-23 and AC-18.
+
+CRITERION: AC-24 macOS, Windows and Linux artifacts remain independently buildable and releasable, with all selected core/helper assets and required notices present in their final packages.
+VERDICT: untested
+EVIDENCE: I ran `bash scripts/release/test-release-assets.sh` at 265b8ee: all 26 checks passed, including ensure-release, rerun, mark-latest and the three package-version checks. The release scripts job of CI run 45615859786 printed the same 26 ok lines and "Every release check passed." The tags v0.8.0-feat-shared-swift-core.1 to .6 exist, there is no .7, and `releases/latest` is v0.7.1. Otherwise I rely on R-56's record of the PR #41 publishing runs, since ci.yml, release-assets.sh and the packaging are unchanged since 7cbe865. Not executed: the Homebrew sync and installs, WinGet installs after a rerun, WinGet submission, and platform jobs finishing at the same time. #40 lists them under AC-24.
+
+CRITERION: AC-25 An action whose required capability is unavailable on the platform is refused with a message naming that capability, before any AWS call, process launch or configuration write, and without switching to another connection mode; the one process allowed first is the Linux browser discovery's `--version` probe.
+VERDICT: not verified
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record of the preflight tests. The Capability preflight suite sits in the macOS package suite, which passed in CI run 45615859786 at 265b8ee. I did not observe the recorded native refusals. On Linux the native proof used strace with the plugin in place as the positive control, not the row's network namespace with a logging proxy and an STS-first build. #40 lists that under AC-25.
+
+CRITERION: AC-26 Upgrading macOS from the current release to the refactored app, and reinstalling the current release afterwards, keeps profiles, attachments, editor recovery intent and integration metadata usable, with identity, consent and restore behavior unchanged.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. Four row steps are still not recorded: a byte comparison of the restored app and Application Support folders, the preferences comparison right after `defaults import`, 0.7.1 reading the build's browser routing and ownership records, and 0.7.1's consent, conflict and restore behavior after the rollback. #40 lists all four under AC-26.
+
+CRITERION: AC-27 On Windows and Linux, each shell's helper is reachable only through its own pipes and ends with its shell; every admitted command receives exactly one terminal result; and no command is ever repeated after a helper stop.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record. These steps were not executed natively: on Linux, the absence of a named pipe or socket, a second launch focusing the first and a helper-only kill; on either platform, a helper kill during an established transport and a count of exactly one StartSession. #40 lists them under AC-27.
+
+CRITERION: AC-28 Every client reaches AWS through the one SSM Connect AWS client, no shipped artifact contains aws-sdk-swift or aws-crt-swift, and each SDK operation the app uses sends the same requests, retries the same failures, corrects a skewed clock the same way and yields the same user-facing errors as the current SDK-based app with no retry settings configured; the STS identity request sends the same request as today's direct path, except that in China regions it goes to the resolver's `amazonaws.com.cn` host, and keeps its single attempt.
+VERDICT: untested
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record of the AWSClient suites, the resolved graphs and the scanned .6 DEB, RPM and ZIP. In CI run 45615859786 at 265b8ee, aws-client passed on ubuntu-24.04 and macos-15, and windows-2025 was still running. No record shows GetCallerIdentity sent natively on Fedora 43 or Ubuntu 24.04. #40 lists the gap under AC-28.
+
+CRITERION: AC-29 On Windows and Linux, every user action and setting of the macOS menu, settings window and profile editor is offered by the shell, runs the shared workflow through a helper command (the Zen-only controls refusing naming the browser capability until #38), and keeps macOS's confirmations and availability rules; controls that interrupt work in progress cancel the running command of their workflow; and the parity inventory lists none as missing.
+VERDICT: not verified
+EVIDENCE: At 265b8ee, `node scripts/check-macos-parity.mjs` printed "macOS parity: 107 controls, all in the inventory". The views, inventory and shells are unchanged since 7cbe865, so I rely on R-56's record of the WPF 44/44 and Qt parity_test 7/7 results in run 45588343109. Limitations: I did not observe the T62 and T66 native passes. The controls the row exempts by owner decision rest on the parity and helper tests.
+
+CRITERION: AC-30 On Windows and Linux the DCV connection file stays readable for 120 seconds after the Viewer is asked to open it, without delaying Connected, and is removed at the end of that window, at Quit, or after a crash by the sweep of a later connect once its window has passed; a Viewer that takes up to that long to start opens the desktop; the missing-Viewer message names the platform's own install; and macOS keeps its current window and message.
+VERDICT: not verified
+EVIDENCE: Nothing this criterion rests on changed since 7cbe865, so I rely on R-56's record of the helper tests. The DCVLauncher and DCVConnectionFile suites sit in the macOS package suite, which passed in CI run 45615859786 at 265b8ee. Limitation: I did not observe the native Ubuntu cold-start Connect (T52). There the Viewer started within seconds, so a Viewer that takes close to 120 seconds rests on the helper test.
+
+CRITERION: AC-31 Each release version is calculated and tagged once, after every check job of its run has passed, by `vhco-pro/version-workflow` with the GitVersion configuration bundled with its tag action; only `main` and a branch whose open PR has the `release:preview` label at that commit are tagged; and a release publishes only the tag its own run pushed. The publishing jobs are the release, macOS, latest-mark, Windows, WinGet submission and Linux jobs; every other job except the version job is a check job.
+VERDICT: met
+EVIDENCE: ci.yml is unchanged since 7cbe865. Its version job calls version-workflow at c30d3b5 with no `with:` and needs aws-client, helper, macos-package and release-scripts. Every publishing job needs version and is gated on `needs.version.outputs.tagged == 'true'`; winget adds `&& github.ref_name == github.event.repository.default_branch`. At 265b8ee, `actionlint` passed, `yq -o=json .github/workflows/ci.yml | python3 scripts/release/check-ci-graph.py` exited 0, and `test-release-assets.sh` passed all 26 checks, including the three T91 mutations. The release scripts job of run 45615859786 passed the same 26 on a hosted runner. R-56 F-01 is resolved. In /tmp/r57scratch the check fails continue-on-error on the aws-client job, on the macOS suite step and as an expression on helper, and it fails a winget gate with `|| true`, a gate with `|| ` inside the `&&` operand, and a gate with `&& !cancelled()`. It passes `continue-on-error: false`. For the live label, tag and publish behavior I rely on R-56's record of runs 45489598354, 45495839464, 45588343109, 45585768768 and 45599528915, since ci.yml and the pinned workflow are unchanged. The tags still end at .6 and v0.7.1 is still latest. PR #41 has no label at 265b8ee. Limitations: run 45615859786 was still in progress, so I did not observe its version job deciding not to tag. No run has happened on main. The committed graph check still passes some wrong graphs (F-01).
+
+FINDING: F-01
+KIND: factual
+SEVERITY: should-fix
+WHERE: scripts/release/check-ci-graph.py; Test Plan row AC-31; Tasks T91
+EVIDENCE: In /tmp/r57scratch I ran `yq -o=json <copy> | python3 scripts/release/check-ci-graph.py` on mutated copies of ci.yml at 265b8ee. It exits 0 for `.jobs.version.if = "always()"` and for `.jobs.version.if = "!failure()"`. With either one, the version job runs and tags after a failed check job, which breaks AC-31's "after every check job of its run has passed". It also exits 0 with `if: "false"` on the macos-package step "Test the macOS package", where the job passes without running the suite. The check reads `needs`, a check job's and its steps' `continue-on-error`, and the publishing jobs' `if`. It never reads the version job's own `if` or a check step's `if`. This gap already existed at 7cbe865, and R-56 did not name it. The current ci.yml sets neither, and every must-fail copy the row lists fails.
+PROPOSAL: Make the graph check fail when the version job has an `if`, or one containing `always()`, `failure()`, `cancelled()` or `!`. Also make it fail when the macos-package step that runs the suite has an `if`. Add the matching mutations to test-release-assets.sh.
+
+FINDING: F-02
+KIND: factual
+SEVERITY: nit
+WHERE: Acceptance Criteria AC-14 evidence line
+EVIDENCE: 265b8ee, applying R-56 F-02, rewrote the line's "Not established:" part. It now opens with tests that passed ("the Save race, unknown-field retention and v1/v2 cross-import are covered by ... which passed"). It then states each native gap twice: "no native conflict ran on Windows, and macOS native attached-file saves are not recorded. On Windows only the consent-gated save is recorded natively, not a conflict. macOS attached-file saves were not run natively; they rest on the ProfileStore tests (T27)."
+PROPOSAL: Move the CFG-03, CFG-04 and CFG-07 sentence before "Not established:" and keep one statement of each native gap.
+
+FINDING: F-03
+KIND: factual
+SEVERITY: nit
+WHERE: Acceptance Criteria AC-31 evidence line
+EVIDENCE: The line still says the graph check "rejects copies of ci.yml with a check missing from version's needs, a publishing job not needing version or lacking the tagged gate, `always()`, a non-publishing job after version, a filtered or non-macOS `macos-package` job (T83)". It does not mention T91's rejection of `continue-on-error` on check jobs and their steps, or of gates widened with `||`, although 265b8ee edited this line for R-56 F-04. R-56 F-03 and F-04 are otherwise resolved: status_description and the Owner summary now name T83 to T91, the T88 to T90 proof and AC-31 as met, and the line cites run 45585768768 for the failed-check case.
+PROPOSAL: Add the continue-on-error and `||` rejections to the AC-31 evidence and cite T91 next to T83.
 
 ## Sources
 
