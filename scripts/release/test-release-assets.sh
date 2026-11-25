@@ -151,6 +151,12 @@ TOKEN_EXPR="\${{ secrets['WINGET_TOKEN'] }}" yq '.jobs.release-scripts.steps[0].
 check "a check job reading a secret by index fails the graph check" '! cmp -s "$ci" "$work/job-secret-bracket.yml" && ! graph "$work/job-secret-bracket.yml"'
 yq '.jobs.inherit-check = {"uses": "./.github/workflows/preview.yml", "secrets": "inherit"} | .jobs.version.needs += ["inherit-check"]' "$ci" > "$work/job-inherit.yml"
 check "a check job inheriting every secret fails the graph check" '! graph "$work/job-inherit.yml"'
+TOKEN_EXPR="\${{ secrets.WINGET_TOKEN }}" yq '.env.T = strenv(TOKEN_EXPR)' "$ci" > "$work/wf-env-secret.yml"
+check "a workflow-level env reading a secret fails the graph check" '! graph "$work/wf-env-secret.yml"'
+TOKEN_EXPR="\${{ SECRETS.WINGET_TOKEN }}" yq '.jobs.release-scripts.steps[0].env.T = strenv(TOKEN_EXPR)' "$ci" > "$work/upper-secret.yml"
+check "an uppercase SECRETS in a check job fails the graph check" '! graph "$work/upper-secret.yml"'
+yq '.jobs.lint-check = {"uses": "./.github/workflows/preview.yml"} | .jobs.version.needs += ["lint-check"]' "$ci" > "$work/called.yml"
+check "a check job calling a reusable workflow fails the graph check" '! graph "$work/called.yml"'
 
 # The Linux package version: a tilde before the prerelease so it sorts below its release, and only
 # characters rpmbuild accepts in Version (letters, digits, . _ + ~ ^).

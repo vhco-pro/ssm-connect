@@ -45,9 +45,9 @@ else:
             errors.append(f"the check job {n} asks for a write permission")
         if "environment" in jobs[n]:
             errors.append(f"the check job {n} uses an environment")
-        # The word, not "secrets.": also secrets['X'], toJSON(secrets) and secrets: inherit.
-        if re.search(r"\bsecrets\b", json.dumps(jobs[n])):
-            errors.append(f"the check job {n} reads a secret")
+        # A called workflow's environment and secrets are not visible from here.
+        if "uses" in jobs[n]:
+            errors.append(f"the check job {n} calls a reusable workflow")
         # A check that may fail without failing would let version tag a commit it did not pass.
         if str(jobs[n].get("continue-on-error", "false")).lower() != "false":
             errors.append(f"the check job {n} sets continue-on-error")
@@ -79,6 +79,13 @@ else:
         errors.append("macos-package does not run on a macOS runner")
     if not any(full_suite.search(str(step.get("run", ""))) for step in macos.get("steps", [])):
         errors.append("macos-package does not run the full suite (swift test --package-path SSMConnectKit, unfiltered)")
+# The word in any case, anywhere but the publishing jobs: secrets.X, secrets['X'], SECRETS.X,
+# toJSON(secrets), secrets: inherit, and a workflow-level env every job inherits. This reads only
+# ci.yml; what a called workflow or action does is left to review.
+outside = {k: v for k, v in workflow.items() if k != "jobs"}
+outside["jobs"] = {n: j for n, j in jobs.items() if n not in PUBLISHING}
+if re.search(r"\bsecrets\b", json.dumps(outside), re.I):
+    errors.append("a secret is referenced outside the publishing jobs")
 for e in errors:
     print(f"FAIL {e}")
 sys.exit(1 if errors else 0)
