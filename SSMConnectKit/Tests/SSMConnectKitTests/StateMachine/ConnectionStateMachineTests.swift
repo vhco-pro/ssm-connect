@@ -54,11 +54,13 @@ struct ConnectionStateMachineTests {
         return ec2
     }
 
-    /// Spin (cooperatively) until `condition` is true or the deadline elapses.
-    private func waitUntil(_ timeout: Duration = .seconds(2), _ condition: () -> Bool) async {
+    /// Polls until `condition` is true or the deadline elapses. The deadline is generous because
+    /// hosted runners run the whole suite in parallel under load; a sleep, not a yield, leaves the
+    /// main actor to the work being waited for.
+    private func waitUntil(_ timeout: Duration = .seconds(10), _ condition: () -> Bool) async {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while !condition(), ContinuousClock.now < deadline {
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(5))
         }
     }
 
@@ -527,8 +529,9 @@ struct ConnectionStateMachineTests {
     private func recordingMachine(_ termination: RecordingTermination, quit: AppQuitHandler? = nil,
                                   auth: AuthProviding = MockAuthProvider(), tunnel: TunnelProvider,
                                   readiness: WorkstationReadinessProbing = StubReadinessProbe(),
-                                  profile: ConnectionProfile = .example) -> ConnectionStateMachine {
-        ConnectionStateMachine(platform: termination.platform, authProvider: auth, ec2: runningEC2(),
+                                  profile: ConnectionProfile = .example,
+                                  ec2: MockEC2Service? = nil) -> ConnectionStateMachine {
+        ConnectionStateMachine(platform: termination.platform, authProvider: auth, ec2: ec2 ?? runningEC2(),
             ssm: MockSSMService(), tunnel: tunnel, secrets: MockSecretsService(), dcv: MockDCVLauncher(),
             readiness: readiness, tunnelListener: StubTunnelListenerProbe(), instanceIds: MockInstanceIdStore(),
             clipboard: ClipboardManager(pasteboard: FakePasteboard(), autoClearAfter: nil), log: ConnectionLog(),
@@ -557,7 +560,10 @@ struct ConnectionStateMachineTests {
         // One profile value for both: the session cancels work for any other profile.
         let profile = ConnectionProfile.example
         let session = AuthorizationSession(platform: termination.platform, profile: profile, provider: SignedInAuthProvider())
-        let machine = recordingMachine(termination, auth: session, tunnel: tunnel, readiness: held, profile: profile)
+        // A lookup slower than a short deadline, as on a loaded hosted runner.
+        let ec2 = runningEC2()
+        ec2.resolveDelay = .milliseconds(2500)
+        let machine = recordingMachine(termination, auth: session, tunnel: tunnel, readiness: held, profile: profile, ec2: ec2)
         machine.connect()
         await waitUntil { tunnel.startCount == 1 }
         let started = try #require(tunnel.issuedHandles.first)

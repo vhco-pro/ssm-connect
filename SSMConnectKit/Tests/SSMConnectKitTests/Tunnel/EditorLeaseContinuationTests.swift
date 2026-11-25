@@ -147,14 +147,14 @@ private final class LeaseFixture {
 @MainActor
 struct EditorLeaseContinuationTests {
     private func wait(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !condition(), ContinuousClock.now < deadline { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         try #require(condition())
     }
 
     private func waitAsync(_ condition: () async -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !(await condition()), ContinuousClock.now < deadline { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !(await condition()), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         try #require(await condition())
     }
 
