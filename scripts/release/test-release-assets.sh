@@ -131,6 +131,14 @@ yq '(.jobs.macos-package.steps[] | select(.name == "Test the macOS package")).co
 check "a check step that may fail without failing fails the graph check" '! cmp -s "$ci" "$work/coe-step.yml" && ! graph "$work/coe-step.yml"'
 yq '.jobs.winget.if = .jobs.winget.if + " || true"' "$ci" > "$work/widened.yml"
 check "a publishing gate widened with || fails the graph check" '! graph "$work/widened.yml"'
+yq '.jobs.version.if = "always()"' "$ci" > "$work/version-always.yml"
+check "a version job that runs after a failed check fails the graph check" '! graph "$work/version-always.yml"'
+yq '.jobs.version.if = "!failure()"' "$ci" > "$work/version-notfailure.yml"
+check "a version job gated on !failure() fails the graph check" '! graph "$work/version-notfailure.yml"'
+yq '(.jobs.macos-package.steps[] | select(.name == "Test the macOS package")).if = "false"' "$ci" > "$work/skip-suite.yml"
+check "a skipped macOS suite step fails the graph check" '! cmp -s "$ci" "$work/skip-suite.yml" && ! graph "$work/skip-suite.yml"'
+yq '(.jobs.aws-client.steps[] | select(.name == "Test the AWS client package")).if = "false"' "$ci" > "$work/skip-aws.yml"
+check "a skipped AWS client test step fails the graph check" '! cmp -s "$ci" "$work/skip-aws.yml" && ! graph "$work/skip-aws.yml"'
 
 # The Linux package version: a tilde before the prerelease so it sorts below its release, and only
 # characters rpmbuild accepts in Version (letters, digits, . _ + ~ ^).

@@ -23,6 +23,9 @@ if "version" not in jobs:
 else:
     if "vhco-pro/version-workflow/" not in jobs["version"].get("uses", ""):
         errors.append("the version job does not call vhco-pro/version-workflow")
+    # Any if on version (always(), !failure(), ...) could let it run after a check failed.
+    if "if" in jobs["version"]:
+        errors.append("the version job has an if")
     checks = [n for n in jobs if n != "version" and n not in PUBLISHING]
     for n in sorted(PUBLISHING - set(jobs)):
         errors.append(f"the publishing job {n} is missing")
@@ -38,6 +41,10 @@ else:
         for step in jobs[n].get("steps", []):
             if str(step.get("continue-on-error", "false")).lower() != "false":
                 errors.append(f"a step of the check job {n} sets continue-on-error")
+            # A run step that can be skipped lets the job pass without its check; only the
+            # toolchain setup actions are conditional.
+            if "run" in step and "if" in step:
+                errors.append(f"a run step of the check job {n} has an if")
     for n in jobs:
         if n == "version" or n in checks:
             continue
