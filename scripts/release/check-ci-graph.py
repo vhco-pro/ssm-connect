@@ -32,13 +32,21 @@ else:
     for n in checks:
         if n not in needs("version"):
             errors.append(f"version does not need the check job {n}")
+        # A check that may fail without failing would let version tag a commit it did not pass.
+        if str(jobs[n].get("continue-on-error", "false")).lower() != "false":
+            errors.append(f"the check job {n} sets continue-on-error")
+        for step in jobs[n].get("steps", []):
+            if str(step.get("continue-on-error", "false")).lower() != "false":
+                errors.append(f"a step of the check job {n} sets continue-on-error")
     for n in jobs:
         if n == "version" or n in checks:
             continue
-        condition = str(jobs[n].get("if", ""))
+        condition = " ".join(str(jobs[n].get("if", "")).split())
         if "version" not in needs(n):
             errors.append(f"{n} does not need version")
-        if "needs.version.outputs.tagged == 'true'" not in condition:
+        # The tagged expression alone, or narrowed with &&; never widened with ||.
+        gate = "needs.version.outputs.tagged == 'true'"
+        if not (condition == gate or condition.startswith(gate + " && ")) or "||" in condition:
             errors.append(f"{n} does not run only on version's tagged output")
         if any(f in condition for f in ("always()", "failure()", "cancelled()")):
             errors.append(f"{n} can run when a job it needs did not succeed")

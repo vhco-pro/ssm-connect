@@ -125,6 +125,12 @@ sed "s|^\( *\)swift test --package-path SSMConnectKit$|\1swift test --package-pa
 check "a filter on the macOS package suite fails the graph check" '! cmp -s "$ci" "$work/filtered.yml" && ! graph "$work/filtered.yml"'
 yq '.jobs.macos-package.runs-on = "ubuntu-24.04"' "$ci" > "$work/linux-suite.yml"
 check "the macOS package suite on a Linux runner fails the graph check" '! graph "$work/linux-suite.yml"'
+yq '.jobs.aws-client.continue-on-error = true' "$ci" > "$work/coe-job.yml"
+check "a check job that may fail without failing fails the graph check" '! graph "$work/coe-job.yml"'
+yq '(.jobs.macos-package.steps[] | select(.name == "Test the macOS package")).continue-on-error = true' "$ci" > "$work/coe-step.yml"
+check "a check step that may fail without failing fails the graph check" '! cmp -s "$ci" "$work/coe-step.yml" && ! graph "$work/coe-step.yml"'
+yq '.jobs.winget.if = .jobs.winget.if + " || true"' "$ci" > "$work/widened.yml"
+check "a publishing gate widened with || fails the graph check" '! graph "$work/widened.yml"'
 
 # The Linux package version: a tilde before the prerelease so it sorts below its release, and only
 # characters rpmbuild accepts in Version (letters, digits, . _ + ~ ^).
